@@ -320,6 +320,12 @@ export interface BuddyRig {
   isGoldenRatio: boolean;
   setPush: (progress: number, roadY: number) => void;
   setArmPose: (left: FriendArmPose | null, right: FriendArmPose | null, k: number) => void;
+  setRagdoll: (
+    armL: { rx: number; ry: number; rz: number },
+    armR: { rx: number; ry: number; rz: number },
+    legL: { rx: number; ry: number; rz: number; dy?: number },
+    legR: { rx: number; ry: number; rz: number; dy?: number }
+  ) => void;
   dispose: () => void;
 }
 

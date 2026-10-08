@@ -337,6 +337,12 @@ export interface ShibuyaAnimalRig {
    * pose bekerja pada pivot yang dibungkus di SEKITAR node lengan/sayap sumber.
    */
   setArmPose: (left: FriendArmPose | null, right: FriendArmPose | null, k: number) => void;
+  setRagdoll: (
+    armL: { rx: number; ry: number; rz: number },
+    armR: { rx: number; ry: number; rz: number },
+    legL: { rx: number; ry: number; rz: number },
+    legR: { rx: number; ry: number; rz: number }
+  ) => void;
   dispose: () => void;
 }
 

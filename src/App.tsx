@@ -131,35 +131,7 @@ export default function App() {
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden bg-[#151823]">
-      {/* ── Floating Game Mode Switcher Bar ── */}
-      <div className="fixed top-2.5 left-1/2 -translate-x-1/2 z-50 flex items-center p-1 rounded-full bg-white/75 border border-white/90 shadow-[0_4px_14px_rgba(34,77,104,0.2)] backdrop-blur-md font-sans">
-        <button
-          type="button"
-          onClick={() => switchGameMode("pigeon")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-extrabold text-xs transition-all ${
-            !isSelectingSkinOrSkate
-              ? "bg-[#ffd21f] text-[#151823] shadow-md scale-105"
-              : "text-[#1f405b]/70 hover:text-[#1f405b] hover:bg-white/70"
-          }`}
-          title="Mode Game: Pigeon Skateboard Runner"
-        >
-          <span>🛹</span>
-          <span>PIGEON SK8</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => switchGameMode("buddies")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-extrabold text-xs transition-all ${
-            isSelectingSkinOrSkate
-              ? "bg-[#ff6b6b] text-white shadow-md scale-105"
-              : "text-[#1f405b]/70 hover:text-[#1f405b] hover:bg-white/70"
-          }`}
-          title="Mode: Voxel Buddies — Skin 3D & Efek ala Crossy Road"
-        >
-          <span>🦊</span>
-          <span>VOXEL BUDDIES</span>
-        </button>
-      </div>
+
 
       {isSelectingSkinOrSkate ? (
         <BuddiesApp onBackToPigeon={() => switchGameMode("pigeon")} />

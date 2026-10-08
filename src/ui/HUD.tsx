@@ -29,7 +29,6 @@ export function HUD() {
   const toggleMute = useUI((s) => s.toggleMute);
   const nos = useUI((s) => s.nos);
   const nosActive = useUI((s) => s.nosActive);
-  const speedMode = useUI((s) => s.speedMode);
   const trackMode = useUI((s) => s.trackMode);
   const shibuyaTime = useUI((s) => s.shibuyaTime);
   const wordHunt = useUI((s) => s.wordHunt);
@@ -68,6 +67,7 @@ export function HUD() {
   const setTrailWave = useUI((s) => s.setTrailWave);
   const resetTrailAdjustments = useUI((s) => s.resetTrailAdjustments);
   const [trailAdjusting, setTrailAdjusting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const trailEffectEmoji =
     trailEffect === "rainbow"
       ? "🌈"
@@ -89,18 +89,13 @@ export function HUD() {
   const sprint = useUI((s) => s.sprint);
   const sprintLevel = useUI((s) => s.sprintLevel);
   const sprinting = sprint > 0.02 || sprintLevel > 0;
-  const locationLabel = trackMode === "shibuya"
-    ? `SHIBUYA ${shibuyaTime.toUpperCase()} ${dist} M`
-    : trackMode === "haruna"
-      ? `MT. HARUNA ${dist} M`
-      : `TOKYO CITY ${dist} M`;
 
   return (
     <div
       className={`pointer-events-none absolute inset-0 select-none ${camAdjusting || pigeonAdjusting || trailAdjusting ? "z-50" : "z-20"}`}
       style={{ inset: "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)" }}
     >
-      {/* bread counter (top-left) in vibrant royal blue pill + optional small speed indicator */}
+      {/* bread counter (top-left) in vibrant royal blue pill */}
       {inRun && (
         <div className="pointer-events-auto absolute left-[3.5%] top-[3%] flex items-center gap-2">
           <div
@@ -109,33 +104,31 @@ export function HUD() {
             <BreadIcon size={24} />
             <span className="font-display text-[4.8cqw] leading-none text-white txt-outline-sm">{bread}</span>
           </div>
-          {speedMode > 1 && (
-            <div className="flex h-[8cqw] min-h-[32px] items-center rounded-full border-2 border-[#1f2430] bg-[#ffd23f] px-2.5 font-display text-[3.6cqw] font-bold text-[#1f2430] shadow-[0_2px_0_#c99a00]">
-              {speedMode}×
-            </div>
-          )}
         </div>
       )}
 
-      {/* score + location banner + Daily Word Hunt "SKATE" berhadiah (top-center, completely unblocked) */}
+      {/* score + distance minimalis + Daily Word Hunt "SKATE" berhadiah (top-center, pandangan jalur balap lapang & bersih) */}
       {inRun && (
-        <div className="absolute left-0 right-0 top-[2.2%] flex flex-col items-center gap-1.5 z-30">
-          <div className="font-display txt-outline text-[13.5cqw] leading-none text-white drop-shadow-md">{score}</div>
-          <div className="flex items-center gap-1.5 rounded-full border border-white/30 bg-[#0b66e4] px-3.5 py-1 shadow-[0_3px_0_#0748a3]">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="text-white" aria-hidden="true">
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z" />
-            </svg>
-            <span className="font-display text-[2.8cqw] tracking-wider text-white">{locationLabel}</span>
+        <div className="absolute left-0 right-0 top-[2%] flex flex-col items-center gap-1 z-30">
+          <div className="font-display txt-outline text-[12.5cqw] leading-none text-white drop-shadow-md">{score}</div>
+
+          {/* Indikator Jarak Minimalis & Elegan (bebas dari balok tebal yang memblokir pandangan) */}
+          <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/45 px-3 py-0.5 backdrop-blur-[3px] shadow-sm">
+            <span className="font-display text-[3.2cqw] font-bold text-white tracking-wide">{dist} M</span>
+            <span className="h-2 w-[1px] bg-white/25" />
+            <span className="font-display text-[2.3cqw] tracking-wider text-white/75">
+              {trackMode === "shibuya" ? `SHIBUYA ${shibuyaTime.toUpperCase()}` : trackMode === "haruna" ? "MT. HARUNA" : "TOKYO"}
+            </span>
           </div>
 
-          {/* Daily Word Hunt letter bar (SKATE berhadiah) — selalu jelas terlihat tanpa tertutup */}
+          {/* Daily Word Hunt letter bar (SKATE berhadiah) — ramping, kompak & rapi */}
           <button
             type="button"
             onClick={() => {
               unlockAudio();
               setShowMysteryBox(true);
             }}
-            className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/25 bg-black/55 px-2.5 py-1 backdrop-blur-[4px] shadow-md transition-transform active:scale-95"
+            className="pointer-events-auto mt-0.5 flex items-center gap-1 rounded-full border border-white/20 bg-black/40 px-2 py-0.5 backdrop-blur-[3px] shadow transition-transform active:scale-95"
             aria-label="Daily Word Hunt progress"
           >
             {wordHunt.word.split("").map((ch, idx) => {
@@ -143,10 +136,10 @@ export function HUD() {
               return (
                 <div
                   key={idx}
-                  className={`flex h-[5.6cqw] w-[5.6cqw] min-h-[22px] min-w-[22px] items-center justify-center rounded-lg border text-[3.0cqw] font-display leading-none transition-all ${
+                  className={`flex h-[5cqw] w-[5cqw] min-h-[20px] min-w-[20px] items-center justify-center rounded-md border text-[2.7cqw] font-display leading-none transition-all ${
                     isDone
-                      ? "border-[#ffd21f] bg-gradient-to-b from-[#ffd60a] to-[#ff9f1c] text-[#1c1400] shadow-[0_0_8px_rgba(255,214,10,0.8)] scale-105 font-bold"
-                      : "border-white/20 bg-white/10 text-white/50"
+                      ? "border-[#ffd21f] bg-gradient-to-b from-[#ffd60a] to-[#ff9f1c] text-[#1c1400] shadow-[0_0_6px_rgba(255,214,10,0.8)] scale-105 font-bold"
+                      : "border-white/15 bg-white/10 text-white/45"
                   }`}
                 >
                   {ch}
@@ -154,9 +147,9 @@ export function HUD() {
               );
             })}
             <span
-              className={`ml-1 flex items-center text-[4cqw] leading-none ${
+              className={`ml-0.5 flex items-center text-[3.6cqw] leading-none ${
                 wordHunt.pendingBox || (wordHunt.collected.every(Boolean) && !wordHunt.claimed)
-                  ? "animate-bounce filter drop-shadow-[0_0_8px_#ffd21f]"
+                  ? "animate-bounce filter drop-shadow-[0_0_6px_#ffd21f]"
                   : "opacity-75"
               }`}
             >
@@ -166,93 +159,155 @@ export function HUD() {
         </div>
       )}
 
-      {/* top-right control: MUTE + tombol adjust kamera (📷 membuka panel; game dijeda) */}
+      {/* top-right controls: Tombol MUTE [🔊] dan PENGATURAN [⚙️] bersebelahan rapi & bersih */}
       {inRun && (
-        <div className="pointer-events-auto absolute right-[3.5%] top-[3%] flex flex-col items-end gap-2">
+        <div className="pointer-events-auto absolute right-[3.5%] top-[3%] flex items-center gap-2 z-40">
           <button
             type="button"
             onClick={toggleMute}
-            className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#ff9500] text-white shadow-[0_3px_0_#c96f00] active:translate-y-[2px] active:shadow-none"
+            className="flex h-[9.5cqw] w-[9.5cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#ff9500] text-white shadow-[0_3px_0_#c96f00] active:translate-y-[2px] active:shadow-none"
             aria-label={muted ? "Unmute" : "Mute"}
           >
             <SpeakerIcon muted={muted} />
           </button>
-          {phase === "playing" && !camAdjusting && !pigeonAdjusting && (
-            <>
+
+          {phase === "playing" && !camAdjusting && !pigeonAdjusting && !trailAdjusting && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                unlockAudio();
+                sfx.click();
+                setSettingsOpen((prev) => !prev);
+              }}
+              className={`flex h-[9.5cqw] w-[9.5cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 text-white shadow-[0_3px_0_rgba(0,0,0,0.3)] active:translate-y-[2px] active:shadow-none transition-all ${
+                settingsOpen
+                  ? "border-[#ffd60a] bg-[#ffd60a] text-[#1f2430] rotate-45 shadow-[0_0_12px_rgba(255,214,10,0.6)]"
+                  : "border-white/20 bg-[#3a86ff] hover:bg-[#2563eb]"
+              }`}
+              aria-label="Pengaturan & Penyetelan Alat"
+              title="Pengaturan & Penyetelan Alat"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Pop-up Menu Pengaturan Ringkas (dibuka saat tombol ⚙️ ditekan) */}
+      {inRun && settingsOpen && phase === "playing" && !camAdjusting && !pigeonAdjusting && !trailAdjusting && (
+        <>
+          <div
+            className="pointer-events-auto absolute inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => setSettingsOpen(false)}
+          />
+          <div
+            className="pointer-events-auto absolute right-[3.5%] top-[11%] z-50 flex w-[260px] max-w-[85vw] flex-col gap-2 rounded-2xl border border-white/20 bg-[#161a2b]/95 p-3 shadow-2xl backdrop-blur-md"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <span className="font-display text-[3.2cqw] text-white flex items-center gap-1.5 font-bold">
+                <span>⚙️</span>
+                <span>PENGATURAN ALAT</span>
+              </span>
               <button
                 type="button"
-                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setSettingsOpen(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 active:scale-95"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
                 onClick={() => {
                   unlockAudio();
                   sfx.click();
+                  setSettingsOpen(false);
                   setCamAdjusting(true);
                 }}
-                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#3a86ff] text-[4.6cqw] text-white shadow-[0_3px_0_#2456ad] active:translate-y-[2px] active:shadow-none"
-                aria-label="Atur kamera (game dijeda)"
-                title="Atur Sudut Kamera"
+                className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 px-3 py-2 text-left font-display text-[2.9cqw] text-white transition-colors"
               >
-                📷
+                <span className="text-[3.8cqw]">📷</span>
+                <div className="flex flex-col">
+                  <span className="font-bold">Sudut Kamera</span>
+                  <span className="text-[2.1cqw] text-white/60">Tinggi, sudut & jarak zoom</span>
+                </div>
               </button>
+
               <button
                 type="button"
-                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   unlockAudio();
                   sfx.click();
+                  setSettingsOpen(false);
                   setPigeonAdjusting(true);
                 }}
-                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#ff9500] text-[4.6cqw] text-white shadow-[0_3px_0_#bd6e00] active:translate-y-[2px] active:shadow-none"
-                aria-label="Atur ukuran & letak tubuh pigeon"
-                title="Atur Ukuran & Letak Tubuh Pigeon"
+                className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 px-3 py-2 text-left font-display text-[2.9cqw] text-white transition-colors"
               >
-                🐦
+                <span className="text-[3.8cqw]">🐦</span>
+                <div className="flex flex-col">
+                  <span className="font-bold">Ukuran Karakter</span>
+                  <span className="text-[2.1cqw] text-white/60">Skala & posisi tubuh pigeon</span>
+                </div>
               </button>
+
               <button
                 type="button"
-                onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
                   unlockAudio();
                   sfx.click();
+                  setSettingsOpen(false);
                   setAdjustTargetDeck(deckOverride);
                   setDeckAdjustOpen(true);
                 }}
-                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#2ec4b6] text-[4.6cqw] text-white shadow-[0_3px_0_#1f9a8f] active:translate-y-[2px] active:shadow-none"
-                aria-label="Atur ukuran papan & export"
-                title="Atur Ukuran Papan Skateboard & Export"
+                className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 px-3 py-2 text-left font-display text-[2.9cqw] text-white transition-colors"
               >
-                🛹
+                <span className="text-[3.8cqw]">🛹</span>
+                <div className="flex flex-col">
+                  <span className="font-bold">Ukuran Skateboard</span>
+                  <span className="text-[2.1cqw] text-white/60">Panjang, lebar & tebal deck</span>
+                </div>
               </button>
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => {
-                  unlockAudio();
-                  sfx.click();
-                  cycleTrailEffect();
-                }}
-                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-gradient-to-tr from-[#9b5aff] to-[#3fa9f5] text-[4.6cqw] text-white shadow-[0_3px_0_#6c38cc] active:translate-y-[2px] active:shadow-none transition-transform hover:scale-105"
-                aria-label="Ganti efek trail (Pelangi, Air, Asap, Api, Petir, Kembang Api, Sakura)"
-                title="Ganti Efek Trail (Pelangi, Air, Asap, Api, dll)"
-              >
-                {trailEffectEmoji}
-              </button>
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => {
-                  unlockAudio();
-                  sfx.click();
-                  setTrailAdjusting(true);
-                }}
-                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#9b5aff] text-[4.4cqw] text-white shadow-[0_3px_0_#6c38cc] active:translate-y-[2px] active:shadow-none transition-transform hover:scale-105"
-                aria-label="Atur lebar & panjang efek trail"
-                title="Atur Lebar & Panjang Efek Trail (Motion)"
-              >
-                📐
-              </button>
-            </>
-          )}
-        </div>
+
+              <div className="flex items-center gap-1.5 pt-1 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    unlockAudio();
+                    sfx.click();
+                    cycleTrailEffect();
+                  }}
+                  className="flex-1 flex items-center justify-between rounded-xl bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-left font-display text-[2.7cqw] text-white transition-colors"
+                  title="Ganti jenis trail"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>{trailEffectEmoji}</span>
+                    <span>Trail</span>
+                  </div>
+                  <span className="text-white/40 text-xs">➔</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    unlockAudio();
+                    sfx.click();
+                    setSettingsOpen(false);
+                    setTrailAdjusting(true);
+                  }}
+                  className="flex items-center justify-center rounded-xl bg-[#9b5aff] hover:bg-[#8644ea] px-3 py-1.5 font-display text-[2.7cqw] text-white shadow active:scale-95"
+                  title="Buka panel slider lebar & panjang trail"
+                >
+                  <span>📐 Slider</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* trick / info popups (ditempatkan di bawah tulisan SKATE berhadiah agar tidak pernah menutupi) */}

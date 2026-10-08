@@ -1104,9 +1104,10 @@ export function Player() {
           </group>
         </group>
       </group>
-      {/* Efek trail 3D animasi dinamis (Air, Asap, Pelangi, Api, Petir, Kembang Api, Sakura) */}
-      {/* Diletakkan di luar yawG agar mengalir alami di jalan raya & TIDAK ikut muter saat skateboard trik 360/flip */}
-      <InGameTrailEffect effectId={trailEffect} width={trailWidth} length={trailLength} wave={trailWave} />
+      {/* 3D Animated Trail Effect: mengalir stabil di jalur lari di belakang pemain (tidak ikut berputar saat skateboard spinning / trik) */}
+      <group position={[-0.45, 0.05, 0]}>
+        <InGameTrailEffect effectId={trailEffect} width={trailWidth} length={trailLength} wave={trailWave} />
+      </group>
     </group>
   );
 }

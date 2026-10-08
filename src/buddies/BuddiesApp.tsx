@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Scene from "./Scene";
 import { SKINS } from "./characters";
-import { EFFECTS } from "./effects";
 import { cn } from "./utils/cn";
 import { useUI } from "../game/store";
 import { engine } from "../game/engine";
@@ -19,6 +18,26 @@ function toBuddyCharId(pigeonSkinId: string): string {
   return "pigeon";
 }
 
+function ShirtIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="62%" height="62%" fill="currentColor" aria-hidden="true" className="drop-shadow-sm">
+      <path d="M12 4.5c1.1 0 2 .5 2.7 1.2.6-.4 1.3-.7 2.1-.7H19l3 6-3 1.5-1.5-3V20c0 .6-.4 1-1 1H7.5c-.6 0-1-.4-1-1V9.5L5 12.5 2 11l3-6h2.2c.8 0 1.5.3 2.1.7.7-.7 1.6-1.2 2.7-1.2z" />
+    </svg>
+  );
+}
+
+function SkateboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="66%" height="66%" fill="currentColor" aria-hidden="true" className="drop-shadow-sm" style={{ transform: "rotate(-25deg)" }}>
+      {/* Board deck */}
+      <rect x="2" y="9.5" width="20" height="5" rx="2.5" />
+      {/* Wheels */}
+      <circle cx="6" cy="17" r="2.2" />
+      <circle cx="18" cy="17" r="2.2" />
+    </svg>
+  );
+}
+
 export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => void } = {}) {
   const initialCategory = useUI((s) => s.skinsCategory);
   const setSkinsCategory = useUI((s) => s.setSkinsCategory);
@@ -27,17 +46,8 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
   const selectSkin = useUI((s) => s.selectSkin);
   const selectDeck = useUI((s) => s.selectDeck);
   const trailEffect = useUI((s) => s.trailEffect);
-  const setTrailEffect = useUI((s) => s.setTrailEffect);
-  const trailWidth = useUI((s) => s.trailWidth);
-  const setTrailWidth = useUI((s) => s.setTrailWidth);
-  const trailLength = useUI((s) => s.trailLength);
-  const setTrailLength = useUI((s) => s.setTrailLength);
-  const trailWave = useUI((s) => s.trailWave);
-  const setTrailWave = useUI((s) => s.setTrailWave);
-  const resetTrailAdjustments = useUI((s) => s.resetTrailAdjustments);
 
   const [category, setCategory] = useState<Category>(initialCategory);
-  const [showTrailAdjust, setShowTrailAdjust] = useState(false);
 
   // Sync category if skinsCategory changes externally
   useEffect(() => {
@@ -167,12 +177,12 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
             style={{ clipPath: "polygon(0 0, 100% 0, 55% 50%, 100% 100%, 0 100%)" }}
           />
           {/* banner utama */}
-          <div className="relative rounded-md bg-gradient-to-b from-[#4DC4DE] to-[#35AECB] px-10 py-2.5 shadow-lg">
+          <div className="relative rounded-md bg-gradient-to-b from-[#4DC4DE] to-[#35AECB] px-8 sm:px-10 py-2 sm:py-2.5 shadow-lg">
             <h1
-              className="text-2xl font-black uppercase tracking-widest text-white sm:text-3xl"
+              className="font-display text-base sm:text-xl font-black uppercase tracking-wider text-white"
               style={{ textShadow: "0 2px 0 rgba(0,0,0,0.25)" }}
             >
-              {category === "char" ? "Characters" : "Skates"}
+              {category === "char" ? "CHARACTERS" : "SKATES"}
             </h1>
           </div>
         </div>
@@ -188,266 +198,84 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
           }}
           aria-label="Kembali ke Pigeon SK8"
           title="Kembali ke Pigeon SK8"
-          className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/30 text-xl font-black text-white backdrop-blur-md transition hover:scale-110 hover:bg-white/50 active:scale-95 sm:right-5 sm:top-5"
+          className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 text-xl font-display font-black text-white backdrop-blur-md transition hover:scale-110 hover:bg-white/40 active:scale-95 sm:right-5 sm:top-5"
           style={{ textShadow: "0 2px 0 rgba(0,0,0,0.2)" }}
         >
           ✕
         </button>
       )}
 
-      {/* ===== PANAH KIRI-KANAN ===== */}
+      {/* ===== PANAH KIRI-KANAN (Huruf < dan > putih tanpa panel lingkaran) ===== */}
       <button
+        type="button"
         onClick={prev}
         aria-label="Sebelumnya"
-        className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/30 p-3 text-2xl text-white backdrop-blur-md transition hover:scale-110 hover:bg-white/50 active:scale-95 sm:left-5"
-        style={{ textShadow: "0 2px 0 rgba(0,0,0,0.2)" }}
+        className="pointer-events-auto absolute left-2 sm:left-5 top-1/2 z-10 -translate-y-1/2 p-2 sm:p-4 font-display text-4xl sm:text-5xl font-black text-white transition hover:scale-125 active:scale-90"
+        style={{ textShadow: "0 2px 8px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.3)" }}
       >
-        ◀
+        &lt;
       </button>
       <button
+        type="button"
         onClick={next}
         aria-label="Berikutnya"
-        className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/30 p-3 text-2xl text-white backdrop-blur-md transition hover:scale-110 hover:bg-white/50 active:scale-95 sm:right-5"
-        style={{ textShadow: "0 2px 0 rgba(0,0,0,0.2)" }}
+        className="pointer-events-auto absolute right-2 sm:right-5 top-1/2 z-10 -translate-y-1/2 p-2 sm:p-4 font-display text-4xl sm:text-5xl font-black text-white transition hover:scale-125 active:scale-90"
+        style={{ textShadow: "0 2px 8px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.3)" }}
       >
-        ▶
+        &gt;
       </button>
 
-      {/* ===== EFFECT PANEL (kiri) ===== */}
-      <div className="absolute left-2 top-24 z-10 flex flex-col gap-1.5 sm:left-5">
-        <p className="text-center text-[9px] font-bold uppercase tracking-wider text-white/80">
-          Efek
-        </p>
-        <button
-          onClick={() => {
-            sfx.click();
-            setEffectId(null);
-            setTrailEffect(null);
-          }}
-          className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
-            effectId === null
-              ? "scale-110 bg-white shadow-lg ring-2 ring-[#2A9BB5]"
-              : "bg-white/30 backdrop-blur-md hover:bg-white/50"
-          )}
-          title="Tanpa efek"
-        >
-          🚫
-        </button>
-        {EFFECTS.map((e) => (
-          <button
-            key={e.id}
-            onClick={() => {
-              sfx.click();
-              setEffectId(e.id);
-              setTrailEffect(e.id);
-            }}
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
-              effectId === e.id
-                ? "scale-110 bg-white shadow-lg ring-2 ring-[#2A9BB5]"
-                : "bg-white/30 backdrop-blur-md hover:bg-white/50"
-            )}
-            title={e.name}
-          >
-            {e.emoji}
-          </button>
-        ))}
-
-        {/* Tombol Atur Ukuran Efek (Lebar & Panjang) */}
-        {effectId !== null && (
-          <button
-            onClick={() => {
-              sfx.click();
-              setShowTrailAdjust((s) => !s);
-            }}
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
-              showTrailAdjust
-                ? "bg-[#2ec4b6] text-white shadow-lg scale-110"
-                : "bg-white/30 backdrop-blur-md text-white hover:bg-white/50"
-            )}
-            title="Atur Lebar & Panjang Efek"
-          >
-            ⚙️
-          </button>
-        )}
-      </div>
-
-      {/* Popover Pengaturan Ukuran Efek (Lebar & Panjang) */}
-      {showTrailAdjust && effectId !== null && (
-        <div className="absolute left-14 top-24 z-20 w-64 rounded-2xl border-2 border-white/20 bg-slate-900/90 p-3.5 text-white shadow-2xl backdrop-blur-md animate-[popIn_0.2s_ease]">
-          <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm">✨</span>
-              <span className="text-xs font-black uppercase tracking-wider text-[#ffd21f]">
-                UKURAN EFEK
-              </span>
-            </div>
-            <button
-              onClick={() => setShowTrailAdjust(false)}
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[10px] hover:bg-white/20"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Slider Lebar */}
-          <div className="mb-3 space-y-1">
-            <div className="flex justify-between text-[11px] font-bold">
-              <span className="text-white/80">↔️ Lebar:</span>
-              <span className="text-[#3fa9f5] font-black">{trailWidth.toFixed(2)}×</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setTrailWidth(Math.max(0.4, trailWidth - 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                −
-              </button>
-              <input
-                type="range"
-                min={0.4}
-                max={2.5}
-                step={0.05}
-                value={trailWidth}
-                onChange={(e) => setTrailWidth(parseFloat(e.target.value))}
-                className="h-1.5 flex-1 cursor-pointer accent-[#3fa9f5]"
-              />
-              <button
-                onClick={() => setTrailWidth(Math.min(2.5, trailWidth + 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          {/* Slider Panjang */}
-          <div className="mb-3 space-y-1">
-            <div className="flex justify-between text-[11px] font-bold">
-              <span className="text-white/80">↕️ Panjang:</span>
-              <span className="text-[#9b5aff] font-black">{trailLength.toFixed(2)}×</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setTrailLength(Math.max(0.4, trailLength - 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                −
-              </button>
-              <input
-                type="range"
-                min={0.4}
-                max={2.5}
-                step={0.05}
-                value={trailLength}
-                onChange={(e) => setTrailLength(parseFloat(e.target.value))}
-                className="h-1.5 flex-1 cursor-pointer accent-[#9b5aff]"
-              />
-              <button
-                onClick={() => setTrailLength(Math.min(2.5, trailLength + 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          {/* Slider Tingkat Gelombang & Segment Telat */}
-          <div className="mb-3 space-y-1">
-            <div className="flex justify-between text-[11px] font-bold">
-              <span className="text-white/80">🌊 Gelombang:</span>
-              <span className="text-[#00f2fe] font-black">{trailWave.toFixed(2)}×</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setTrailWave(Math.max(0.0, trailWave - 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                −
-              </button>
-              <input
-                type="range"
-                min={0.0}
-                max={2.5}
-                step={0.05}
-                value={trailWave}
-                onChange={(e) => setTrailWave(parseFloat(e.target.value))}
-                className="h-1.5 flex-1 cursor-pointer accent-[#00f2fe]"
-              />
-              <button
-                onClick={() => setTrailWave(Math.min(2.5, trailWave + 0.1))}
-                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-1 border-t border-white/10">
-            <button
-              onClick={() => {
-                sfx.click();
-                resetTrailAdjustments();
-              }}
-              className="flex-1 rounded-lg bg-white/10 py-1 text-[10px] font-bold hover:bg-white/20 text-white/80"
-            >
-              Reset 1.0×
-            </button>
-            <button
-              onClick={() => setShowTrailAdjust(false)}
-              className="flex-1 rounded-lg bg-[#2ec4b6] py-1 text-[10px] font-black hover:bg-[#25ab9e] text-white"
-            >
-              Simpan ✓
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ===== BOTTOM UI (nama nempel dekat karakter) ===== */}
-      <div className="absolute bottom-[20%] left-0 right-0 z-10 flex flex-col items-center gap-2.5">
-        {/* nama karakter */}
+      {/* ===== NAMA KARAKTER (Dinaikkan 5 nilai lagi dari posisi sebelumnya, tepat di bawah model) ===== */}
+      <div className="pointer-events-none absolute bottom-[14.75rem] sm:bottom-[16.75rem] left-0 right-0 z-10 flex justify-center px-4">
         <h2
           key={skin.id}
-          className="animate-[popIn_0.3s_ease] text-3xl font-black uppercase tracking-widest text-white sm:text-4xl"
-          style={{ textShadow: "0 3px 0 rgba(0,0,0,0.22)" }}
+          className="animate-[popIn_0.3s_ease] font-display text-base sm:text-xl font-black uppercase tracking-wider text-white drop-shadow-md text-center max-w-full"
+          style={{ textShadow: "0 2px 0 rgba(0,0,0,0.3)" }}
         >
           {skin.name}
         </h2>
+      </div>
 
-        {/* tombol kategori */}
-        <div className="flex gap-3">
+      {/* ===== KONTROL BAWAH (Kembali ke bawah normal, tidak ikut naik) ===== */}
+      <div className="absolute bottom-9 sm:bottom-12 left-0 right-0 z-10 flex flex-col items-center gap-2.5 sm:gap-3">
+        {/* tombol kategori: Skin Baju (Kuning) & Skin Skate (Biru) bergaya Main Menu */}
+        <div className="flex items-center gap-3">
+          {/* Tombol Skin Baju (Kuning dengan ShirtIcon) */}
           <button
+            type="button"
             onClick={() => switchCategory("char")}
+            title="Karakter / Skin Baju"
+            aria-label="Pilih Karakter"
             className={cn(
-              "flex h-13 w-16 items-center justify-center rounded-2xl border-b-4 text-2xl transition-all active:translate-y-0.5 active:border-b-2",
+              "pointer-events-auto flex h-13 w-13 sm:h-15 sm:w-15 items-center justify-center rounded-2xl bg-[#ffd60a] text-white transition-all active:translate-y-[2px] active:shadow-none",
               category === "char"
-                ? "scale-110 border-[#D9A800] bg-gradient-to-b from-[#FFDE4D] to-[#FFC928] shadow-lg"
-                : "border-black/20 bg-white/40 backdrop-blur-md hover:bg-white/60"
+                ? "scale-105 shadow-[0_5px_0_#c9a400] ring-3 ring-white"
+                : "opacity-60 shadow-[0_3px_0_#c9a400] hover:opacity-90"
             )}
-            style={{ height: "3.25rem" }}
-            title="Karakter"
           >
-            👕
+            <ShirtIcon />
           </button>
+
+          {/* Tombol Skin Skate (Biru dengan SkateboardIcon) */}
           <button
+            type="button"
             onClick={() => switchCategory("skate")}
+            title="Skateboard / Skin Skate"
+            aria-label="Pilih Skateboard"
             className={cn(
-              "flex w-16 items-center justify-center rounded-2xl border-b-4 text-2xl transition-all active:translate-y-0.5 active:border-b-2",
+              "pointer-events-auto flex h-13 w-13 sm:h-15 sm:w-15 items-center justify-center rounded-2xl bg-[#38bdf8] text-white transition-all active:translate-y-[2px] active:shadow-none",
               category === "skate"
-                ? "scale-110 border-[#1E88C9] bg-gradient-to-b from-[#5BC8F5] to-[#38ABE8] shadow-lg"
-                : "border-black/20 bg-white/40 backdrop-blur-md hover:bg-white/60"
+                ? "scale-105 shadow-[0_5px_0_#0284c7] ring-3 ring-white"
+                : "opacity-60 shadow-[0_3px_0_#0284c7] hover:opacity-90"
             )}
-            style={{ height: "3.25rem" }}
-            title="Skate / Kendaraan"
           >
-            🛹
+            <SkateboardIcon />
           </button>
         </div>
 
-        {/* tombol SELECT */}
+        {/* tombol SELECT (font 8-bit bergaya main menu) */}
         <button
+          type="button"
           onClick={() => {
             unlockAudio();
             sfx.unlock();
@@ -462,14 +290,14 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
           }}
           key={bump}
           className={cn(
-            "animate-[popIn_0.25s_ease] rounded-2xl border-b-8 px-16 py-3.5 text-3xl font-black uppercase tracking-wider text-white transition-all active:translate-y-1 active:border-b-4 sm:px-20",
+            "pointer-events-auto animate-[popIn_0.25s_ease] rounded-2xl px-10 py-3 sm:py-3.5 sm:px-14 font-display text-base sm:text-xl font-black uppercase tracking-wider text-white transition-all active:translate-y-1",
             isSelected
-              ? "border-[#2E8B3A] bg-gradient-to-b from-[#6FD96A] to-[#4CBF4A]"
-              : "border-[#C96F00] bg-gradient-to-b from-[#FFB400] to-[#FF9500]"
+              ? "bg-gradient-to-b from-[#2ecc71] to-[#27ae60] shadow-[0_6px_0_#1b7a43] active:shadow-[0_2px_0_#1b7a43]"
+              : "bg-gradient-to-b from-[#ffb400] to-[#ff9500] shadow-[0_6px_0_#c96f00] active:shadow-[0_2px_0_#c96f00]"
           )}
-          style={{ textShadow: "0 2px 0 rgba(0,0,0,0.25)" }}
+          style={{ textShadow: "0 2px 4px rgba(0,0,0,0.3)" }}
         >
-          {isSelected ? "Selected ✓" : "Select ▶"}
+          {isSelected ? "SELECTED" : "SELECT"}
         </button>
       </div>
 

@@ -13,9 +13,9 @@ function ResponsiveCamera() {
     const aspect = size.width / size.height;
     const z =
       aspect < 0.5 ? 38 : aspect < 0.65 ? 33 : aspect < 0.8 ? 27 : aspect < 1.1 ? 19 : 13;
-    const y = aspect < 0.8 ? 6.5 : 5.2;
+    const y = aspect < 0.8 ? 6.0 : 5.0;
     camera.position.set(0, y, z);
-    camera.lookAt(0, 2.6, 0);
+    camera.lookAt(0, 1.8, 0);
     camera.updateProjectionMatrix();
   }, [camera, size]);
   return null;
@@ -135,8 +135,10 @@ function Slot({
       inner.current.rotation.x = 0;
     }
 
-    // Rotasi Y: Tatap depan dengan goyangan lembut di tengah, bukan putar kencang yang membingungkan mata
-    inner.current.rotation.y = Math.sin(t * 0.8) * 0.12 * centerWeight;
+    // Rotasi berkelanjutan (muter terus saat selection, tidak diam)
+    // Karakter & skate berputar anggun mengelilingi sumbu Y (showcase 360 derajat)
+    const spinSpeed = float ? 1.3 : 1.1;
+    inner.current.rotation.y = (t * spinSpeed) % (Math.PI * 2);
   });
 
   return (
@@ -250,7 +252,7 @@ export default function Scene({
         maxAzimuthAngle={Math.PI / 8}
         minPolarAngle={0.6}
         maxPolarAngle={Math.PI / 2.15}
-        target={[0, 2.6, 0]}
+        target={[0, 1.8, 0]}
       />
     </Canvas>
   );

@@ -538,11 +538,14 @@ export const useUI = create<UIState>((set, get) => ({
     }
   },
   trailWidth: (() => {
-    const raw = load<number>("pigeon-sk8-trail-width", 1.0);
-    return typeof raw === "number" && isFinite(raw) ? Math.max(0.3, Math.min(3.0, raw)) : 1.0;
+    const raw = load<number>("pigeon-sk8-trail-width-v2", -1);
+    if (raw > 0) return Math.max(0.3, Math.min(3.0, raw));
+    const old = load<number>("pigeon-sk8-trail-width", 0.4);
+    return typeof old === "number" && isFinite(old) && old !== 1.0 ? Math.max(0.3, Math.min(3.0, old)) : 0.4;
   })(),
   setTrailWidth: (trailWidth) => {
     const rounded = Math.round(Math.max(0.3, Math.min(3.0, trailWidth)) * 100) / 100;
+    save("pigeon-sk8-trail-width-v2", rounded);
     save("pigeon-sk8-trail-width", rounded);
     set({ trailWidth: rounded });
   },
@@ -556,19 +559,24 @@ export const useUI = create<UIState>((set, get) => ({
     set({ trailLength: rounded });
   },
   trailWave: (() => {
-    const raw = load<number>("pigeon-sk8-trail-wave", 1.0);
-    return typeof raw === "number" && isFinite(raw) ? Math.max(0.0, Math.min(3.0, raw)) : 1.0;
+    const raw = load<number>("pigeon-sk8-trail-wave-v2", -1);
+    if (raw >= 0) return Math.max(0.0, Math.min(3.0, raw));
+    const old = load<number>("pigeon-sk8-trail-wave", 2.5);
+    return typeof old === "number" && isFinite(old) && old !== 1.0 ? Math.max(0.0, Math.min(3.0, old)) : 2.5;
   })(),
   setTrailWave: (trailWave) => {
     const rounded = Math.round(Math.max(0.0, Math.min(3.0, trailWave)) * 100) / 100;
+    save("pigeon-sk8-trail-wave-v2", rounded);
     save("pigeon-sk8-trail-wave", rounded);
     set({ trailWave: rounded });
   },
   resetTrailAdjustments: () => {
-    save("pigeon-sk8-trail-width", 1.0);
+    save("pigeon-sk8-trail-width-v2", 0.4);
+    save("pigeon-sk8-trail-width", 0.4);
     save("pigeon-sk8-trail-length", 1.0);
-    save("pigeon-sk8-trail-wave", 1.0);
-    set({ trailWidth: 1.0, trailLength: 1.0, trailWave: 1.0 });
+    save("pigeon-sk8-trail-wave-v2", 2.5);
+    save("pigeon-sk8-trail-wave", 2.5);
+    set({ trailWidth: 0.4, trailLength: 1.0, trailWave: 2.5 });
   },
   wheelColor: (() => {
     const w = load<string>("pigeon-sk8-wheels", "black");

@@ -627,9 +627,9 @@ export function DeckAdjustModal({ onClose }: DeckAdjustModalProps) {
               </div>
               <div className="mt-1.5 flex gap-1.5">
                 {[
-                  { label: "0.6× Tipis", val: 0.6 },
-                  { label: "1.0× Normal", val: 1.0 },
-                  { label: "1.5× Lebar", val: 1.5 },
+                  { label: "0.4× Default", val: 0.4 },
+                  { label: "0.8× Sedang", val: 0.8 },
+                  { label: "1.2× Lebar", val: 1.2 },
                   { label: "2.0× Jumbo", val: 2.0 },
                 ].map((p) => (
                   <button
@@ -760,9 +760,9 @@ export function DeckAdjustModal({ onClose }: DeckAdjustModalProps) {
               <div className="mt-1.5 flex gap-1.5">
                 {[
                   { label: "0.0× Lurus", val: 0.0 },
-                  { label: "0.5× Halus", val: 0.5 },
                   { label: "1.0× Normal", val: 1.0 },
-                  { label: "1.8× Liuk Ekstrem", val: 1.8 },
+                  { label: "1.8× Liuk", val: 1.8 },
+                  { label: "2.5× Default", val: 2.5 },
                 ].map((p) => (
                   <button
                     key={p.val}
