@@ -455,30 +455,51 @@ export function Broom() {
   const straw = "#E8C25A";
   const strawD = "#C99B33";
   const gold = "#F5D042";
-  const tilt: [number, number, number] = [-0.35, 0, 0];
+  const sparkleRef = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (sparkleRef.current) {
+      sparkleRef.current.position.y = Math.sin(t * 5) * 0.05;
+    }
+  });
+
   return (
-    <group position={[0, 2.6, 0]} rotation={tilt}>
-      {/* handle */}
-      <B p={[0, 0, 1.6]} s={[0.4, 0.4, 4.2]} c={wood} />
-      <B p={[0, 0, 3.75]} s={[0.55, 0.55, 0.5]} c={woodDark} />
-      {/* grip rings */}
-      <B p={[0, 0, 2.6]} s={[0.5, 0.5, 0.25]} c={gold} />
-      {/* binding */}
-      <B p={[0, 0, -0.65]} s={[0.8, 0.8, 0.5]} c={woodDark} />
-      <B p={[0, 0, -0.95]} s={[1.0, 1.0, 0.25]} c={gold} />
-      {/* straw bristles (layered pyramid) */}
-      <B p={[0, 0, -1.45]} s={[1.3, 1.3, 0.8]} c={straw} />
-      <B p={[0, 0, -2.15]} s={[1.65, 1.65, 0.7]} c={strawD} />
-      <B p={[0, 0, -2.8]} s={[1.9, 1.9, 0.65]} c={straw} />
-      {/* bristle tips (split ends) */}
-      <Pair x={0.6} p={[0, 0, -3.35]} s={[0.5, 0.5, 0.5]} c={strawD} />
-      <B p={[0, 0.6, -3.35]} s={[0.5, 0.5, 0.5]} c={strawD} />
-      <B p={[0, -0.6, -3.35]} s={[0.5, 0.5, 0.5]} c={strawD} />
-      <B p={[0, 0, -3.45]} s={[0.45, 0.45, 0.45]} c={straw} />
-      {/* little magic sparkles */}
-      <B p={[1.4, 0.9, -3.9]} s={[0.22, 0.22, 0.22]} c="#FFF3B0" />
-      <B p={[-1.2, -0.6, -4.2]} s={[0.18, 0.18, 0.18]} c="#FFF3B0" />
-      <B p={[0.8, -1.1, -4.0]} s={[0.15, 0.15, 0.15]} c="#FFE066" />
+    <group position={[0, 2.6, 0]}>
+      {/* Sedikit mendongak ke depan: gagang naik (+Z, +Y), ijuk turun (-Z, -Y) */}
+      <group rotation={[-0.18, 0, 0]}>
+        {/* handle */}
+        <B p={[0, 0, 1.4]} s={[0.4, 0.4, 4.2]} c={wood} />
+        <B p={[0, 0, 3.6]} s={[0.55, 0.55, 0.5]} c={woodDark} />
+        {/* grip rings */}
+        <B p={[0, 0, 2.5]} s={[0.5, 0.5, 0.25]} c={gold} />
+        {/* binding */}
+        <B p={[0, 0, -0.7]} s={[0.8, 0.8, 0.5]} c={woodDark} />
+        <B p={[0, 0, -1.0]} s={[1.0, 1.0, 0.25]} c={gold} />
+        {/* straw bristles (layered pyramid) */}
+        <B p={[0, 0, -1.5]} s={[1.3, 1.3, 0.8]} c={straw} />
+        <B p={[0, 0, -2.2]} s={[1.65, 1.65, 0.7]} c={strawD} />
+        <B p={[0, 0, -2.85]} s={[1.9, 1.9, 0.65]} c={straw} />
+        {/* bristle tips (split ends) */}
+        <Pair x={0.6} p={[0, 0, -3.4]} s={[0.5, 0.5, 0.5]} c={strawD} />
+        <B p={[0, 0.6, -3.4]} s={[0.5, 0.5, 0.5]} c={strawD} />
+        <B p={[0, -0.6, -3.4]} s={[0.5, 0.5, 0.5]} c={strawD} />
+        <B p={[0, 0, -3.5]} s={[0.45, 0.45, 0.45]} c={straw} />
+        {/* little magic sparkles */}
+        <group ref={sparkleRef}>
+          <mesh position={[1.4, 0.9, -3.9]}>
+            <boxGeometry args={[0.22, 0.22, 0.22]} />
+            <meshStandardMaterial color="#FFF3B0" emissive="#FFE066" emissiveIntensity={0.9} />
+          </mesh>
+          <mesh position={[-1.2, -0.6, -4.2]}>
+            <boxGeometry args={[0.18, 0.18, 0.18]} />
+            <meshStandardMaterial color="#FFF3B0" emissive="#FFE066" emissiveIntensity={0.9} />
+          </mesh>
+          <mesh position={[0.8, -1.1, -4.0]}>
+            <boxGeometry args={[0.15, 0.15, 0.15]} />
+            <meshStandardMaterial color="#FFE066" emissive="#FFD700" emissiveIntensity={0.9} />
+          </mesh>
+        </group>
+      </group>
     </group>
   );
 }
@@ -489,53 +510,71 @@ export function Ufo() {
   const silverD = "#8D99A6";
   const dome = "#7FDBFF";
   const glow = "#B4F04A";
+  const beamRef = useRef<THREE.Group>(null);
+  const lightsRef = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (beamRef.current) {
+      beamRef.current.scale.y = 1 + Math.sin(t * 5) * 0.12;
+    }
+    if (lightsRef.current) {
+      lightsRef.current.rotation.y += 0.02;
+    }
+  });
+
   return (
     <group position={[0, 2.3, 0]}>
       {/* saucer body (stacked discs) */}
       <B p={[0, 0, 0]} s={[4.0, 0.55, 4.0]} c={silver} />
       <B p={[0, 0.35, 0]} s={[3.0, 0.5, 3.0]} c={silverD} />
       <B p={[0, -0.35, 0]} s={[2.9, 0.45, 2.9]} c={silverD} />
-      {/* glass dome */}
-      <mesh position={[0, 0.95, 0]} castShadow>
-        <boxGeometry args={[1.7, 1.1, 1.7]} />
-        <meshStandardMaterial
-          color={dome}
-          roughness={0.15}
-          transparent
-          opacity={0.6}
-        />
-      </mesh>
-      {/* tiny alien pilot inside */}
-      <B p={[0, 0.85, 0]} s={[0.7, 0.75, 0.6]} c={glow} />
-      <Pair x={0.2} p={[0, 1.0, 0.31]} s={[0.16, 0.22, 0.06]} c="#1d1d1f" />
-      <Pair x={0.3} p={[0, 1.4, 0]} s={[0.08, 0.3, 0.08]} c={glow} />
-      <Pair x={0.3} p={[0, 1.58, 0]} s={[0.16, 0.16, 0.16]} c="#8FE03A" />
-      {/* rim lights */}
-      <B p={[1.75, 0, 0]} s={[0.3, 0.3, 0.3]} c="#FF5A5A" />
-      <B p={[-1.75, 0, 0]} s={[0.3, 0.3, 0.3]} c="#FFD93D" />
-      <B p={[0, 0, 1.75]} s={[0.3, 0.3, 0.3]} c="#5AC8FF" />
-      <B p={[0, 0, -1.75]} s={[0.3, 0.3, 0.3]} c="#9B5AFF" />
-      {/* tractor beam */}
-      <mesh position={[0, -1.3, 0]}>
-        <boxGeometry args={[1.6, 1.6, 1.6]} />
-        <meshStandardMaterial
-          color="#BFFF7A"
-          transparent
-          opacity={0.25}
-          emissive="#9AE84A"
-          emissiveIntensity={0.6}
-        />
-      </mesh>
-      <mesh position={[0, -2.1, 0]}>
-        <boxGeometry args={[2.3, 0.8, 2.3]} />
-        <meshStandardMaterial
-          color="#BFFF7A"
-          transparent
-          opacity={0.15}
-          emissive="#9AE84A"
-          emissiveIntensity={0.4}
-        />
-      </mesh>
+      {/* glass dome in front cockpit */}
+      <group position={[0, 0, 0.6]}>
+        <mesh position={[0, 0.95, 0]} castShadow>
+          <boxGeometry args={[1.5, 1.0, 1.5]} />
+          <meshStandardMaterial
+            color={dome}
+            roughness={0.1}
+            transparent
+            opacity={0.65}
+          />
+        </mesh>
+        {/* tiny alien pilot inside */}
+        <B p={[0, 0.85, 0]} s={[0.65, 0.7, 0.55]} c={glow} />
+        <Pair x={0.16} p={[0, 0.98, 0.29]} s={[0.14, 0.2, 0.06]} c="#1d1d1f" />
+        <Pair x={0.15} p={[0, 1.35, 0]} s={[0.08, 0.28, 0.08]} c={glow} />
+        <Pair x={0.15} p={[0, 1.52, 0]} s={[0.15, 0.15, 0.15]} c="#8FE03A" />
+      </group>
+      {/* rim lights revolving */}
+      <group ref={lightsRef}>
+        <B p={[1.75, 0, 0]} s={[0.3, 0.3, 0.3]} c="#FF5A5A" />
+        <B p={[-1.75, 0, 0]} s={[0.3, 0.3, 0.3]} c="#FFD93D" />
+        <B p={[0, 0, 1.75]} s={[0.3, 0.3, 0.3]} c="#5AC8FF" />
+        <B p={[0, 0, -1.75]} s={[0.3, 0.3, 0.3]} c="#9B5AFF" />
+      </group>
+      {/* tractor beam underneath */}
+      <group ref={beamRef} position={[0, -1.3, 0]}>
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[1.6, 1.6, 1.6]} />
+          <meshStandardMaterial
+            color="#BFFF7A"
+            transparent
+            opacity={0.3}
+            emissive="#9AE84A"
+            emissiveIntensity={0.8}
+          />
+        </mesh>
+        <mesh position={[0, -0.8, 0]}>
+          <boxGeometry args={[2.3, 0.8, 2.3]} />
+          <meshStandardMaterial
+            color="#BFFF7A"
+            transparent
+            opacity={0.18}
+            emissive="#9AE84A"
+            emissiveIntensity={0.6}
+          />
+        </mesh>
+      </group>
       {/* landing feet */}
       <Pair x={1.35} p={[0, -0.75, 0]} s={[0.3, 0.5, 0.3]} c={silverD} />
     </group>
@@ -1253,86 +1292,6 @@ export function Goldfish() {
   );
 }
 
-/* ================= DEMEKIN (krem + pelana merah) ================= */
-export function Demekin() {
-  const cream = "#F8E8D0";
-  const creamD = "#EED8BC";
-  const red = "#D63A2A";
-  const redO = "#E8622E";
-  const finP = "#F2D0C0";
-  const tailRef = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (tailRef.current) {
-      tailRef.current.rotation.y = Math.sin(t * 4.5) * 0.4;
-    }
-  });
-  return (
-    <group position={[0, 1.8, 0]}>
-      {/* KEPALA krem kotak di depan */}
-      <B p={[0, 0, 1.75]} s={[1.5, 1.5, 1.0]} c={cream} />
-      {/* mata hitam kotak langsung di muka krem (kek referensi) */}
-      <Pair x={0.76} p={[0, 0.25, 1.85]} s={[0.1, 0.42, 0.42]} c="#1d1d1f" />
-      {/* dagu bawah */}
-      <B p={[0, -0.6, 1.7]} s={[1.2, 0.35, 0.8]} c={creamD} />
-      {/* BADAN krem */}
-      <B p={[0, 0, 0.3]} s={[1.7, 1.7, 2.0]} c={cream} />
-      {/* PELANA MERAH di punggung (khas referensi) */}
-      <B p={[0, 0.78, 0.9]} s={[1.72, 0.45, 1.5]} c={red} />
-      <B p={[0, 0.6, 0.1]} s={[1.72, 0.35, 0.6]} c={redO} />
-      {/* gradasi oranye turun di sisi */}
-      <Pair x={0.87} p={[0, 0.25, 0.9]} s={[0.1, 0.5, 0.9]} c={redO} />
-      {/* sirip punggung krem kotak di atas */}
-      <B p={[0, 1.35, -0.1]} s={[0.35, 0.8, 0.9]} c={finP} />
-      {/* sirip perut menggantung di bawah */}
-      <B p={[0, -1.1, 0.6]} s={[0.3, 0.75, 0.55]} c={finP} />
-      {/* sirip dada kecil */}
-      <Pair x={0.95} p={[0, -0.45, 1.0]} s={[0.35, 0.14, 0.55]} c={creamD} />
-      {/* EKOR kipas kotak-kotak bertingkat (kek referensi) */}
-      <group ref={tailRef} position={[0, 0, -0.7]}>
-        {/* pangkal */}
-        <B p={[0, 0, -0.25]} s={[0.9, 1.0, 0.6]} c={cream} />
-        {/* kipas besar vertikal: susunan kotak pink-oranye selang-seling */}
-        <B p={[0, 0.5, -0.85]} s={[0.35, 0.9, 0.7]} c={finP} />
-        <B p={[0, -0.5, -0.85]} s={[0.35, 0.9, 0.7]} c={redO} />
-        <B p={[0, 1.1, -1.15]} s={[0.3, 0.7, 0.6]} c={redO} />
-        <B p={[0, -1.1, -1.15]} s={[0.3, 0.7, 0.6]} c={finP} />
-        <B p={[0, 0, -1.3]} s={[0.3, 0.8, 0.6]} c={cream} />
-        {/* ujung kipas */}
-        <B p={[0, 0.6, -1.7]} s={[0.26, 0.6, 0.5]} c={finP} />
-        <B p={[0, -0.6, -1.7]} s={[0.26, 0.6, 0.5]} c={finP} />
-      </group>
-    </group>
-  );
-}
-
-/* ================= BATU ZEN (tumpukan batu) ================= */
-export function ZenStone() {
-  const s1 = "#8C8C88";
-  const s2 = "#6E6E6A";
-  const s3 = "#A8A8A2";
-  const moss = "#7A9E5C";
-  return (
-    <group position={[0, 1.5, 0]}>
-      {/* batu dasar besar pipih (deck) */}
-      <B p={[0, -0.3, 0]} s={[3.2, 0.8, 2.6]} c={s1} />
-      {/* batu tengah */}
-      <B p={[0, 0.4, -0.2]} s={[2.3, 0.7, 1.9]} c={s2} />
-      {/* batu atas kecil */}
-      <B p={[0, 1.0, -0.1]} s={[1.4, 0.55, 1.2]} c={s3} />
-      {/* kerikil puncak */}
-      <B p={[0, 1.45, 0]} s={[0.7, 0.4, 0.6]} c={s2} />
-      {/* lumut di sisi batu */}
-      <B p={[1.2, -0.05, 0.6]} s={[0.5, 0.25, 0.5]} c={moss} />
-      <B p={[-1.0, 0.55, -0.5]} s={[0.4, 0.2, 0.4]} c={moss} />
-      {/* kerikil kecil mengambang di sekitar (aura zen) */}
-      <B p={[1.8, 0.8, 0.4]} s={[0.25, 0.25, 0.25]} c={s3} />
-      <B p={[-1.9, 0.5, -0.3]} s={[0.22, 0.22, 0.22]} c={s1} />
-      <B p={[1.5, 1.4, -0.6]} s={[0.18, 0.18, 0.18]} c={s2} />
-    </group>
-  );
-}
-
 /* ================= BAMBU TERBANG (satu batang panjang rapi) ================= */
 export function Bamboo() {
   const green = "#6FB54E";
@@ -1729,59 +1688,210 @@ export function IceCream() {
 }
 
 /* ================= DRONE QUADCOPTER ================= */
-function Rotor({
-  pos,
-  dir,
-  color,
-}: {
-  pos: [number, number, number];
-  dir: 1 | -1;
-  color: string;
-}) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * 18 * dir;
-  });
-  return (
-    <group position={pos}>
-      {/* hub motor */}
-      <B p={[0, 0, 0]} s={[0.4, 0.35, 0.4]} c="#3A3F47" />
-      {/* baling-baling berputar */}
-      <group ref={ref} position={[0, 0.25, 0]}>
-        <B p={[0, 0, 0]} s={[2.0, 0.08, 0.3]} c={color} />
-        <B p={[0, 0, 0]} s={[0.3, 0.08, 2.0]} c={color} />
-        <B p={[0, 0.07, 0]} s={[0.25, 0.08, 0.25]} c="#8D99A6" />
-      </group>
-    </group>
-  );
-}
-
 export function Drone() {
-  const body = "#4A5568";
-  const bodyD = "#2E3640";
-  const arm = "#5C6B7E";
+  const r0 = useRef<THREE.Group>(null);
+  const r1 = useRef<THREE.Group>(null);
+  const r2 = useRef<THREE.Group>(null);
+  const r3 = useRef<THREE.Group>(null);
+
+  useFrame((_, dt) => {
+    const spd = 28;
+    if (r0.current) r0.current.rotation.y += dt * spd;
+    if (r1.current) r1.current.rotation.y -= dt * spd;
+    if (r2.current) r2.current.rotation.y -= dt * spd;
+    if (r3.current) r3.current.rotation.y += dt * spd;
+  });
+
+  const whiteBody = "#FFFFFF";
+  const whiteTrim = "#F1F5F9";
+  const silverD = "#CBD5E1";
+  const redSport = "#EF4444";
+  const redSeat = "#E63946";
+  const redSeatDark = "#B91C1C";
+  const tipRed = "#FF3B30";
+
   return (
     <group position={[0, 2.2, 0]} scale={0.8}>
-      {/* badan tengah memanjang */}
-      <B p={[0, 0, 0]} s={[1.9, 0.7, 4.0]} c={body} />
-      <B p={[0, -0.4, 0]} s={[1.4, 0.3, 3.2]} c={bodyD} />
-      {/* punggung atas */}
-      <B p={[0, 0.4, -0.3]} s={[1.3, 0.25, 2.6]} c={arm} />
-      {/* kamera depan */}
-      <B p={[0, -0.1, 2.1]} s={[0.55, 0.45, 0.35]} c={bodyD} />
-      <B p={[0, -0.1, 2.28]} s={[0.3, 0.3, 0.1]} c="#5AC8FF" />
-      {/* lampu status belakang */}
-      <Pair x={0.55} p={[0, 0.1, -2.03]} s={[0.25, 0.2, 0.1]} c="#FF5A5A" />
-      {/* 4 lengan diagonal ke sudut */}
-      <B p={[1.1, 0.05, 1.75]} s={[1.5, 0.25, 0.4]} c={arm} r={[0, -0.785, 0]} />
-      <B p={[-1.1, 0.05, 1.75]} s={[1.5, 0.25, 0.4]} c={arm} r={[0, 0.785, 0]} />
-      <B p={[1.1, 0.05, -1.75]} s={[1.5, 0.25, 0.4]} c={arm} r={[0, 0.785, 0]} />
-      <B p={[-1.1, 0.05, -1.75]} s={[1.5, 0.25, 0.4]} c={arm} r={[0, -0.785, 0]} />
-      {/* 4 rotor di sudut, putaran selang-seling CW/CCW */}
-      <Rotor pos={[1.7, 0.3, 2.35]} dir={1} color="#D8DEE6" />
-      <Rotor pos={[-1.7, 0.3, 2.35]} dir={-1} color="#3A3F47" />
-      <Rotor pos={[1.7, 0.3, -2.35]} dir={-1} color="#3A3F47" />
-      <Rotor pos={[-1.7, 0.3, -2.35]} dir={1} color="#D8DEE6" />
+      {/* Central fuselage / bodi utama drone putih bersih aerodinamis */}
+      <mesh position={[0, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.85, 0.5, 3.8]} />
+        <meshStandardMaterial color={whiteBody} roughness={0.25} metalness={0.08} />
+      </mesh>
+      {/* Cangkang bawah drone (silver-white) */}
+      <mesh position={[0, -0.28, 0]} receiveShadow>
+        <boxGeometry args={[1.4, 0.24, 3.1]} />
+        <meshStandardMaterial color={silverD} roughness={0.3} metalness={0.12} />
+      </mesh>
+      {/* Strip racing merah sporty di sepanjang bodi */}
+      <mesh position={[0, 0.26, 0]}>
+        <boxGeometry args={[0.35, 0.04, 3.7]} />
+        <meshStandardMaterial color={redSport} roughness={0.2} />
+      </mesh>
+      <mesh position={[0.7, 0.12, 0]}>
+        <boxGeometry args={[0.06, 0.16, 2.8]} />
+        <meshStandardMaterial color={redSport} roughness={0.2} />
+      </mesh>
+      <mesh position={[-0.7, 0.12, 0]}>
+        <boxGeometry args={[0.06, 0.16, 2.8]} />
+        <meshStandardMaterial color={redSport} roughness={0.2} />
+      </mesh>
+
+      {/* KURSI MERAH MINI (tempat duduk / pijakan rider) */}
+      <mesh position={[0, 0.25, -0.1]} castShadow>
+        <boxGeometry args={[1.15, 0.08, 1.3]} />
+        <meshStandardMaterial color={redSeat} roughness={0.4} />
+      </mesh>
+      {/* Sandaran kursi merah mini */}
+      <mesh position={[0, 0.48, -0.72]} castShadow>
+        <boxGeometry args={[0.95, 0.42, 0.14]} />
+        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
+      </mesh>
+      {/* Pelindung sisi kursi */}
+      <mesh position={[0.55, 0.35, -0.15]}>
+        <boxGeometry args={[0.08, 0.22, 1.0]} />
+        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
+      </mesh>
+      <mesh position={[-0.55, 0.35, -0.15]}>
+        <boxGeometry args={[0.08, 0.22, 1.0]} />
+        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
+      </mesh>
+
+      {/* Kamera gimbal 4K di hidung depan */}
+      <mesh position={[0, -0.06, 2.02]} castShadow>
+        <boxGeometry args={[0.55, 0.4, 0.35]} />
+        <meshStandardMaterial color={silverD} roughness={0.3} metalness={0.2} />
+      </mesh>
+      <mesh position={[0, -0.06, 2.21]}>
+        <boxGeometry args={[0.32, 0.28, 0.08]} />
+        <meshStandardMaterial color="#38BDF8" emissive="#38BDF8" emissiveIntensity={0.8} />
+      </mesh>
+
+      {/* Lampu Navigasi Depan (Hijau Neon Menyala) */}
+      <mesh position={[0.65, 0.12, 1.95]}>
+        <boxGeometry args={[0.2, 0.16, 0.1]} />
+        <meshStandardMaterial color="#22C55E" emissive="#22C55E" emissiveIntensity={1.2} />
+      </mesh>
+      <mesh position={[-0.65, 0.12, 1.95]}>
+        <boxGeometry args={[0.2, 0.16, 0.1]} />
+        <meshStandardMaterial color="#22C55E" emissive="#22C55E" emissiveIntensity={1.2} />
+      </mesh>
+
+      {/* Lampu Navigasi Belakang (Merah Ruby Menyala) */}
+      <mesh position={[0.65, 0.12, -1.95]}>
+        <boxGeometry args={[0.2, 0.16, 0.1]} />
+        <meshStandardMaterial color="#EF4444" emissive="#EF4444" emissiveIntensity={1.2} />
+      </mesh>
+      <mesh position={[-0.65, 0.12, -1.95]}>
+        <boxGeometry args={[0.2, 0.16, 0.1]} />
+        <meshStandardMaterial color="#EF4444" emissive="#EF4444" emissiveIntensity={1.2} />
+      </mesh>
+
+      {/* 4 Lengan diagonal aerodinamis putih */}
+      <mesh position={[1.1, 0.02, 1.7]} rotation-y={-0.785} castShadow>
+        <boxGeometry args={[1.5, 0.22, 0.38]} />
+        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
+      </mesh>
+      <mesh position={[-1.1, 0.02, 1.7]} rotation-y={0.785} castShadow>
+        <boxGeometry args={[1.5, 0.22, 0.38]} />
+        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
+      </mesh>
+      <mesh position={[1.1, 0.02, -1.7]} rotation-y={0.785} castShadow>
+        <boxGeometry args={[1.5, 0.22, 0.38]} />
+        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
+      </mesh>
+      <mesh position={[-1.1, 0.02, -1.7]} rotation-y={-0.785} castShadow>
+        <boxGeometry args={[1.5, 0.22, 0.38]} />
+        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
+      </mesh>
+
+      {/* 4 Rotor & Baling-Baling Terang */}
+      <group position={[1.7, 0.22, 2.3]}>
+        <mesh position={[0, 0, 0]} castShadow>
+          <boxGeometry args={[0.42, 0.35, 0.42]} />
+          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
+        </mesh>
+        <group ref={r0} position={[0, 0.24, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.1, 0.07, 0.28]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh castShadow>
+            <boxGeometry args={[0.28, 0.07, 2.1]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh position={[0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[-0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, 0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, -0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.06, 0]}><boxGeometry args={[0.26, 0.08, 0.26]} /><meshStandardMaterial color={silverD} metalness={0.3} /></mesh>
+        </group>
+      </group>
+
+      <group position={[-1.7, 0.22, 2.3]}>
+        <mesh position={[0, 0, 0]} castShadow>
+          <boxGeometry args={[0.42, 0.35, 0.42]} />
+          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
+        </mesh>
+        <group ref={r1} position={[0, 0.24, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.1, 0.07, 0.28]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh castShadow>
+            <boxGeometry args={[0.28, 0.07, 2.1]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh position={[0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[-0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, 0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, -0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.06, 0]}><boxGeometry args={[0.26, 0.08, 0.26]} /><meshStandardMaterial color={silverD} metalness={0.3} /></mesh>
+        </group>
+      </group>
+
+      <group position={[1.7, 0.22, -2.3]}>
+        <mesh position={[0, 0, 0]} castShadow>
+          <boxGeometry args={[0.42, 0.35, 0.42]} />
+          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
+        </mesh>
+        <group ref={r2} position={[0, 0.24, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.1, 0.07, 0.28]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh castShadow>
+            <boxGeometry args={[0.28, 0.07, 2.1]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh position={[0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[-0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, 0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, -0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.06, 0]}><boxGeometry args={[0.26, 0.08, 0.26]} /><meshStandardMaterial color={silverD} metalness={0.3} /></mesh>
+        </group>
+      </group>
+
+      <group position={[-1.7, 0.22, -2.3]}>
+        <mesh position={[0, 0, 0]} castShadow>
+          <boxGeometry args={[0.42, 0.35, 0.42]} />
+          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
+        </mesh>
+        <group ref={r3} position={[0, 0.24, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[2.1, 0.07, 0.28]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh castShadow>
+            <boxGeometry args={[0.28, 0.07, 2.1]} />
+            <meshStandardMaterial color={whiteBody} roughness={0.2} />
+          </mesh>
+          <mesh position={[0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[-0.95, 0.005, 0]}><boxGeometry args={[0.22, 0.075, 0.28]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, 0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.005, -0.95]}><boxGeometry args={[0.28, 0.075, 0.22]} /><meshStandardMaterial color={tipRed} /></mesh>
+          <mesh position={[0, 0.06, 0]}><boxGeometry args={[0.26, 0.08, 0.26]} /><meshStandardMaterial color={silverD} metalness={0.3} /></mesh>
+        </group>
+      </group>
     </group>
   );
 }
@@ -2033,26 +2143,6 @@ export const SKINS: Skin[] = [
     bg: ["#FFE8C0", "#F0C068"],
     desc: "Ikan mas koki gembul dengan ekor kipas ganda. Blub blub~",
     Comp: Goldfish,
-    float: true,
-  },
-  {
-    id: "demekin",
-    name: "Demekin",
-    emoji: "🐡",
-    color: "#D63A2A",
-    bg: ["#F8E0D0", "#E8A890"],
-    desc: "Ikan demekin krem dengan pelana merah dan ekor kipas kotak. Elegan berenang!",
-    Comp: Demekin,
-    float: true,
-  },
-  {
-    id: "zenstone",
-    name: "Batu Zen",
-    emoji: "🪨",
-    color: "#8C8C88",
-    bg: ["#E0E0D8", "#A8A8A0"],
-    desc: "Tumpukan batu meditasi berlumut dengan kerikil mengambang. Keseimbangan sempurna.",
-    Comp: ZenStone,
     float: true,
   },
   {

@@ -4,6 +4,7 @@ import { OrbitControls, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import { SKINS } from "./characters";
 import { EFFECTS } from "./effects";
+import { useUI } from "../game/store";
 
 /* Kamera responsif: layar portrait (mobile) zoom out biar proporsional */
 function ResponsiveCamera() {
@@ -158,6 +159,9 @@ function EffectHolder({
   currentRef: React.MutableRefObject<number>;
 }) {
   const ref = useRef<THREE.Group>(null);
+  const trailWidth = useUI((s) => s.trailWidth);
+  const trailLength = useUI((s) => s.trailLength);
+
   useFrame(() => {
     if (!ref.current) return;
     const settled = Math.abs(pos - currentRef.current) < 0.2;
@@ -168,7 +172,7 @@ function EffectHolder({
   if (!effect) return null;
 
   return (
-    <group ref={ref}>
+    <group ref={ref} scale={[trailLength, 1, trailWidth]}>
       <effect.Comp key={effect.id} />
     </group>
   );

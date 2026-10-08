@@ -9,6 +9,8 @@ import { RIG, LegRig } from "./pigeonRig";
 import { nosTankParts } from "./models";
 import { buildShibuyaAnimalRig } from "./shibuyaPacks";
 import { buildBuddyRig, VOXEL_BOARD_IDS } from "./buddiesSkins";
+import { Koi, Goldfish, Ufo, Broom, Drone } from "../buddies/characters";
+import { InGameTrailEffect } from "./trailEffects";
 
 /** Max truck steering angle (rad) at full lean — real trucks turn ~10–20° with the deck tilted ~15–20° */
 const TRUCK_MAX = 0.42;
@@ -61,8 +63,6 @@ export const DECK_SURFACE_TOP: Record<string, number> = {
   hoverboard: 0.097,
   koi: 0.05,
   goldfish: 0.05,
-  demekin: 0.05,
-  zenstone: 0.05,
   bamboo: 0.05,
   zabuton: 0.05,
   minijet: 0.05,
@@ -83,297 +83,45 @@ export const DECK_SURFACE_TOP: Record<string, number> = {
 
 /** Papan Drone Quadcopter putih sporty dengan 4 baling-baling berputar kencang, kursi merah mini & lampu LED menyala */
 function AnimatedDroneDeck() {
-  const r0 = useRef<THREE.Group>(null);
-  const r1 = useRef<THREE.Group>(null);
-  const r2 = useRef<THREE.Group>(null);
-  const r3 = useRef<THREE.Group>(null);
-
-  useFrame((_, dt) => {
-    const spd = 40;
-    if (r0.current) r0.current.rotation.y += dt * spd;
-    if (r1.current) r1.current.rotation.y -= dt * spd;
-    if (r2.current) r2.current.rotation.y -= dt * spd;
-    if (r3.current) r3.current.rotation.y += dt * spd;
-  });
-
-  const whiteBody = "#FFFFFF";
-  const whiteTrim = "#F1F5F9";
-  const silverD = "#CBD5E1";
-  const redSport = "#EF4444";
-  const redSeat = "#E63946";
-  const redSeatDark = "#B91C1C";
-  const tipRed = "#FF3B30";
-
   return (
-    <group rotation-y={Math.PI / 2} scale={0.46} position={[0, -0.065, 0]}>
-      {/* Central fuselage / bodi utama drone putih bersih aerodinamis */}
-      <mesh position={[0, 0, 0]} castShadow receiveShadow>
-        <boxGeometry args={[1.85, 0.5, 3.8]} />
-        <meshStandardMaterial color={whiteBody} roughness={0.25} metalness={0.08} />
-      </mesh>
-      {/* Cangkang bawah drone (silver-white) */}
-      <mesh position={[0, -0.28, 0]} receiveShadow>
-        <boxGeometry args={[1.4, 0.24, 3.1]} />
-        <meshStandardMaterial color={silverD} roughness={0.3} metalness={0.12} />
-      </mesh>
-      {/* Strip racing merah sporty di sepanjang bodi */}
-      <mesh position={[0, 0.26, 0]}>
-        <boxGeometry args={[0.35, 0.04, 3.7]} />
-        <meshStandardMaterial color={redSport} roughness={0.2} />
-      </mesh>
-      <mesh position={[0.7, 0.12, 0]}>
-        <boxGeometry args={[0.06, 0.16, 2.8]} />
-        <meshStandardMaterial color={redSport} roughness={0.2} />
-      </mesh>
-      <mesh position={[-0.7, 0.12, 0]}>
-        <boxGeometry args={[0.06, 0.16, 2.8]} />
-        <meshStandardMaterial color={redSport} roughness={0.2} />
-      </mesh>
+    <group rotation-y={Math.PI / 2} scale={0.46} position={[0, -1.02, 0]}>
+      <Drone />
+    </group>
+  );
+}
 
-      {/* KURSI MERAH MINI (tempat duduk / pijakan kaki rider) */}
-      <mesh position={[0, 0.25, -0.1]} castShadow>
-        <boxGeometry args={[1.15, 0.08, 1.3]} />
-        <meshStandardMaterial color={redSeat} roughness={0.4} />
-      </mesh>
-      {/* Sandaran kursi merah mini */}
-      <mesh position={[0, 0.48, -0.72]} castShadow>
-        <boxGeometry args={[0.95, 0.42, 0.14]} />
-        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
-      </mesh>
-      {/* Pelindung sisi kursi */}
-      <mesh position={[0.55, 0.35, -0.15]}>
-        <boxGeometry args={[0.08, 0.22, 1.0]} />
-        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
-      </mesh>
-      <mesh position={[-0.55, 0.35, -0.15]}>
-        <boxGeometry args={[0.08, 0.22, 1.0]} />
-        <meshStandardMaterial color={redSeatDark} roughness={0.4} />
-      </mesh>
+/** Papan Sapu Terbang dengan gagang kayu lurus mulus, cincin emas, ijuk jerami & percikan sihir */
+function AnimatedBroomDeck() {
+  return (
+    <group rotation-y={Math.PI / 2} scale={0.34} position={[0, -0.90, 0]}>
+      <Broom />
+    </group>
+  );
+}
 
-      {/* Kamera gimbal 4K di hidung depan */}
-      <mesh position={[0, -0.06, 2.02]} castShadow>
-        <boxGeometry args={[0.55, 0.4, 0.35]} />
-        <meshStandardMaterial color={silverD} roughness={0.3} metalness={0.2} />
-      </mesh>
-      <mesh position={[0, -0.06, 2.21]}>
-        <boxGeometry args={[0.32, 0.28, 0.08]} />
-        <meshStandardMaterial
-          color="#38BDF8"
-          emissive="#38BDF8"
-          emissiveIntensity={0.8}
-          roughness={0.1}
-        />
-      </mesh>
+/** Papan UFO Mini dengan kubah kaca kokpit, pilot alien hijau, lampu rim berputar & sinar traktor neon */
+function AnimatedUfoDeck() {
+  return (
+    <group rotation-y={Math.PI / 2} scale={0.42} position={[0, -0.98, 0]}>
+      <Ufo />
+    </group>
+  );
+}
 
-      {/* Lampu Navigasi Depan (Hijau Neon Menyala) */}
-      <mesh position={[0.65, 0.12, 1.95]}>
-        <boxGeometry args={[0.2, 0.16, 0.1]} />
-        <meshStandardMaterial color="#22C55E" emissive="#22C55E" emissiveIntensity={1.2} />
-      </mesh>
-      <mesh position={[-0.65, 0.12, 1.95]}>
-        <boxGeometry args={[0.2, 0.16, 0.1]} />
-        <meshStandardMaterial color="#22C55E" emissive="#22C55E" emissiveIntensity={1.2} />
-      </mesh>
+/** Papan Skate Ikan Koi hidup dengan animasi kibasan ekor & liukan badan live saat seluncur */
+function AnimatedKoiDeck() {
+  return (
+    <group rotation-y={Math.PI / 2} scale={0.34} position={[0, -0.58, 0]}>
+      <Koi />
+    </group>
+  );
+}
 
-      {/* Lampu Navigasi Belakang (Merah Ruby Menyala) */}
-      <mesh position={[0.65, 0.12, -1.95]}>
-        <boxGeometry args={[0.2, 0.16, 0.1]} />
-        <meshStandardMaterial color="#EF4444" emissive="#EF4444" emissiveIntensity={1.2} />
-      </mesh>
-      <mesh position={[-0.65, 0.12, -1.95]}>
-        <boxGeometry args={[0.2, 0.16, 0.1]} />
-        <meshStandardMaterial color="#EF4444" emissive="#EF4444" emissiveIntensity={1.2} />
-      </mesh>
-
-      {/* Strobe anti-tabrakan di bagian bawah */}
-      <mesh position={[0, -0.42, 0]}>
-        <boxGeometry args={[0.3, 0.08, 0.3]} />
-        <meshStandardMaterial color="#06B6D4" emissive="#06B6D4" emissiveIntensity={0.9} />
-      </mesh>
-
-      {/* 4 Lengan diagonal aerodinamis putih */}
-      <mesh position={[1.1, 0.02, 1.7]} rotation-y={-0.785} castShadow>
-        <boxGeometry args={[1.5, 0.22, 0.38]} />
-        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
-      </mesh>
-      <mesh position={[-1.1, 0.02, 1.7]} rotation-y={0.785} castShadow>
-        <boxGeometry args={[1.5, 0.22, 0.38]} />
-        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
-      </mesh>
-      <mesh position={[1.1, 0.02, -1.7]} rotation-y={0.785} castShadow>
-        <boxGeometry args={[1.5, 0.22, 0.38]} />
-        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
-      </mesh>
-      <mesh position={[-1.1, 0.02, -1.7]} rotation-y={-0.785} castShadow>
-        <boxGeometry args={[1.5, 0.22, 0.38]} />
-        <meshStandardMaterial color={whiteTrim} roughness={0.3} />
-      </mesh>
-
-      {/* Strip merah sporty di lengan depan */}
-      <mesh position={[1.1, 0.14, 1.7]} rotation-y={-0.785}>
-        <boxGeometry args={[0.7, 0.03, 0.24]} />
-        <meshStandardMaterial color={redSport} />
-      </mesh>
-      <mesh position={[-1.1, 0.14, 1.7]} rotation-y={0.785}>
-        <boxGeometry args={[0.7, 0.03, 0.24]} />
-        <meshStandardMaterial color={redSport} />
-      </mesh>
-
-      {/* 4 Rotor & Baling-Baling Terang (Putih dengan Tip Merah) */}
-      {/* Rotor 0: Depan Kanan */}
-      <group position={[1.7, 0.22, 2.3]}>
-        <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[0.42, 0.35, 0.42]} />
-          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
-        </mesh>
-        <group ref={r0} position={[0, 0.24, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[2.1, 0.07, 0.28]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh castShadow>
-            <boxGeometry args={[0.28, 0.07, 2.1]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          {/* Tip baling-baling merah terang */}
-          <mesh position={[0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[-0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, 0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, -0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          {/* Hub cap perak */}
-          <mesh position={[0, 0.06, 0]}>
-            <boxGeometry args={[0.26, 0.08, 0.26]} />
-            <meshStandardMaterial color={silverD} metalness={0.3} />
-          </mesh>
-        </group>
-      </group>
-
-      {/* Rotor 1: Depan Kiri */}
-      <group position={[-1.7, 0.22, 2.3]}>
-        <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[0.42, 0.35, 0.42]} />
-          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
-        </mesh>
-        <group ref={r1} position={[0, 0.24, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[2.1, 0.07, 0.28]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh castShadow>
-            <boxGeometry args={[0.28, 0.07, 2.1]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          {/* Tip baling-baling merah terang */}
-          <mesh position={[0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[-0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, 0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, -0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.06, 0]}>
-            <boxGeometry args={[0.26, 0.08, 0.26]} />
-            <meshStandardMaterial color={silverD} metalness={0.3} />
-          </mesh>
-        </group>
-      </group>
-
-      {/* Rotor 2: Belakang Kanan */}
-      <group position={[1.7, 0.22, -2.3]}>
-        <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[0.42, 0.35, 0.42]} />
-          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
-        </mesh>
-        <group ref={r2} position={[0, 0.24, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[2.1, 0.07, 0.28]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh castShadow>
-            <boxGeometry args={[0.28, 0.07, 2.1]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh position={[0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[-0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, 0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, -0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.06, 0]}>
-            <boxGeometry args={[0.26, 0.08, 0.26]} />
-            <meshStandardMaterial color={silverD} metalness={0.3} />
-          </mesh>
-        </group>
-      </group>
-
-      {/* Rotor 3: Belakang Kiri */}
-      <group position={[-1.7, 0.22, -2.3]}>
-        <mesh position={[0, 0, 0]} castShadow>
-          <boxGeometry args={[0.42, 0.35, 0.42]} />
-          <meshStandardMaterial color={silverD} metalness={0.2} roughness={0.3} />
-        </mesh>
-        <group ref={r3} position={[0, 0.24, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[2.1, 0.07, 0.28]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh castShadow>
-            <boxGeometry args={[0.28, 0.07, 2.1]} />
-            <meshStandardMaterial color={whiteBody} roughness={0.2} />
-          </mesh>
-          <mesh position={[0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[-0.95, 0.005, 0]}>
-            <boxGeometry args={[0.22, 0.075, 0.28]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, 0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.005, -0.95]}>
-            <boxGeometry args={[0.28, 0.075, 0.22]} />
-            <meshStandardMaterial color={tipRed} />
-          </mesh>
-          <mesh position={[0, 0.06, 0]}>
-            <boxGeometry args={[0.26, 0.08, 0.26]} />
-            <meshStandardMaterial color={silverD} metalness={0.3} />
-          </mesh>
-        </group>
-      </group>
+/** Papan Skate Ikan Mas Koki gembul dengan animasi kibasan ekor kipas ganda live saat seluncur */
+function AnimatedGoldfishDeck() {
+  return (
+    <group rotation-y={Math.PI / 2} scale={0.42} position={[0, -0.76, 0]}>
+      <Goldfish />
     </group>
   );
 }
@@ -390,6 +138,10 @@ export function Player() {
   const isFloatingDeck = deckOverride === "hoverboard" || VOXEL_BOARD_IDS.has(deckOverride);
   const wheellessDeck = isFloatingDeck;
   const broomDeck = deckOverride === "broom";
+  const trailEffect = useUI((s) => s.trailEffect);
+  const trailWidth = useUI((s) => s.trailWidth);
+  const trailLength = useUI((s) => s.trailLength);
+  const trailWave = useUI((s) => s.trailWave);
   const skin = getSkin(skinId);
   const pigeonSize = useUI((s) => s.pigeonSize);
   const buddyScale = useUI((s) => s.buddyScale);
@@ -413,9 +165,21 @@ export function Player() {
   /** State spring ragdoll: posisi+kecepatan sekunder tiap anggota badan (di-reset tiap ronde) */
   const flop = useRef({
     hx: 0, hy: 0, hz: 0, hvx: 0, hvy: 0, hvz: 0,
-    wrx: 0, wrz: 0, wrvx: 0, wrvz: 0,
-    wlx: 0, wlz: 0, wlvx: 0, wlvz: 0,
+    wrx: 0, wry: 0, wrz: 0, wrvx: 0, wrvy: 0, wrvz: 0,
+    wlx: 0, wly: 0, wlz: 0, wlvx: 0, wlvy: 0, wlvz: 0,
     tz: 0, tvz: 0, arch: 0, archv: 0,
+    // Kaki Merpati (IK Sole target right & left)
+    legRx: 0, legRy: 0, legRz: 0, legRvx: 0, legRvy: 0, legRvz: 0,
+    legLx: 0, legLy: 0, legLz: 0, legLvx: 0, legLvy: 0, legLvz: 0,
+    // Pergelangan kaki / cakar merpati (ankle flop pitch & roll)
+    ankRx: 0, ankRz: 0, ankRvx: 0, ankRvz: 0,
+    ankLx: 0, ankLz: 0, ankLvx: 0, ankLvz: 0,
+    // Buddy / Friend Arm rotations (shoulder swing, twist, flail)
+    b_armLx: 0, b_armLy: 0, b_armLz: 0, b_armLvx: 0, b_armLvy: 0, b_armLvz: 0,
+    b_armRx: 0, b_armRy: 0, b_armRz: 0, b_armRvx: 0, b_armRvy: 0, b_armRvz: 0,
+    // Buddy / Friend Leg rotations (hip swing, twist, flail)
+    b_legLx: 0, b_legLy: 0, b_legLz: 0, b_legLvx: 0, b_legLvy: 0, b_legLvz: 0,
+    b_legRx: 0, b_legRy: 0, b_legRz: 0, b_legRvx: 0, b_legRvy: 0, b_legRvz: 0,
     prevBounces: 0,
     seeded: false,
     justSeeded: false,
@@ -560,8 +324,16 @@ export function Player() {
       fl2.seeded = false;
       fl2.prevBounces = 0;
       fl2.hvx = fl2.hvy = fl2.hvz = 0;
-      fl2.wrvx = fl2.wrvz = 0;
-      fl2.wlvx = fl2.wlvz = 0;
+      fl2.wrvx = fl2.wrvy = fl2.wrvz = 0;
+      fl2.wlvx = fl2.wlvy = fl2.wlvz = 0;
+      fl2.legRvx = fl2.legRvy = fl2.legRvz = 0;
+      fl2.legLvx = fl2.legLvy = fl2.legLvz = 0;
+      fl2.ankRvx = fl2.ankRvz = 0;
+      fl2.ankLvx = fl2.ankLvz = 0;
+      fl2.b_armLvx = fl2.b_armLvy = fl2.b_armLvz = 0;
+      fl2.b_armRvx = fl2.b_armRvy = fl2.b_armRvz = 0;
+      fl2.b_legLvx = fl2.b_legLvy = fl2.b_legLvz = 0;
+      fl2.b_legRvx = fl2.b_legRvy = fl2.b_legRvz = 0;
       fl2.tvz = 0;
       fl2.archv = 0;
     }
@@ -794,14 +566,11 @@ export function Player() {
         friendModel.current.position.set(0, 0, 0);
         friendModel.current.rotation.set(0, 0, 0);
         friendModel.current.scale.setScalar(1);
-        // lengan lunglai kembali ke bawah saat ragdoll (tanpa snap)
-        friendRig.setArmPose(null, null, 1 - Math.exp(-dt * 5));
       }
       if (buddyModel.current && buddyRig) {
         buddyModel.current.position.set(0, 0, 0);
         buddyModel.current.rotation.set(0, 0, 0);
         buddyModel.current.scale.setScalar(0.24 * pigeonSize * buddyScale * buddyRig.scaleFactor);
-        buddyRig.setArmPose(null, null, 1 - Math.exp(-dt * 5));
       }
       if (body) {
         // Pigeon ragdoll: rotate smoothly about center of mass (≈0.50 above feet)
@@ -822,17 +591,49 @@ export function Player() {
           const first = !fl2.seeded;
           fl2.prevBounces = body.bounces;
           if (!first) {
-            // tiap benturan: kepala/sayap/ekor "kelebat" — inersia boneka sungguhan
-            const kick = clamp(Math.abs(body.vh) * 0.5 + Math.abs(body.wz) * 0.3, 0.35, 2.6);
-            fl2.hvx += rand(-1, 1) * kick;
-            fl2.hvy += rand(-0.8, 0.8) * kick;
-            fl2.hvz += rand(-1.6, 1.6) * kick;
-            fl2.wrvx += rand(-2, 0.5) * kick;
-            fl2.wrvz += rand(1.1, 2.8) * kick;
-            fl2.wlvx += rand(-0.5, 2) * kick;
-            fl2.wlvz += rand(-2.8, -1.1) * kick;
-            fl2.tvz += rand(-1.4, 1.4) * kick;
-            fl2.archv += rand(-0.8, 0.8) * kick * 0.5;
+            // tiap benturan ke aspal: hentakan keras memicu kelebat liar (ragdoll whip impulse)
+            const kick = clamp(Math.abs(body.vh) * 0.7 + Math.abs(body.wz) * 0.45 + Math.abs(body.vs) * 0.1, 0.6, 3.8);
+            fl2.hvx += rand(-1.2, 1.2) * kick;
+            fl2.hvy += rand(-1.0, 1.0) * kick;
+            fl2.hvz += rand(-2.0, 2.0) * kick;
+            fl2.wrvx += rand(-3.0, 1.5) * kick;
+            fl2.wrvy += rand(-2.0, 2.0) * kick;
+            fl2.wrvz += rand(1.5, 4.0) * kick;
+            fl2.wlvx += rand(-1.5, 3.0) * kick;
+            fl2.wlvy += rand(-2.0, 2.0) * kick;
+            fl2.wlvz += rand(-4.0, -1.5) * kick;
+            fl2.tvz += rand(-2.0, 2.0) * kick;
+            fl2.archv += rand(-1.2, 1.2) * kick * 0.6;
+
+            // Kaki Merpati (IK Sole target impulse - menendang dan menekuk lepas bebas)
+            fl2.legRvx += rand(-2.0, 2.2) * kick;
+            fl2.legRvy += rand(-2.2, 3.2) * kick;
+            fl2.legRvz += rand(-2.2, 2.8) * kick;
+            fl2.legLvx += rand(-2.2, 2.0) * kick;
+            fl2.legLvy += rand(-2.0, 3.5) * kick;
+            fl2.legLvz += rand(-2.8, 2.2) * kick;
+
+            // Pergelangan kaki / cakar merpati (ankle flop kick)
+            fl2.ankRvx += rand(-4.5, 4.5) * kick;
+            fl2.ankRvz += rand(-4.5, 4.5) * kick;
+            fl2.ankLvx += rand(-4.5, 4.5) * kick;
+            fl2.ankLvz += rand(-4.5, 4.5) * kick;
+
+            // Buddy & Friend Lengan (ragdoll impulse pada bahu)
+            fl2.b_armLvx += rand(-3.8, 3.8) * kick;
+            fl2.b_armLvy += rand(-2.5, 2.5) * kick;
+            fl2.b_armLvz += rand(-4.5, 1.5) * kick;
+            fl2.b_armRvx += rand(-3.8, 3.8) * kick;
+            fl2.b_armRvy += rand(-2.5, 2.5) * kick;
+            fl2.b_armRvz += rand(-1.5, 4.5) * kick;
+
+            // Buddy & Friend Kaki (ragdoll impulse pada pinggul)
+            fl2.b_legLvx += rand(-3.5, 3.5) * kick;
+            fl2.b_legLvy += rand(-2.2, 2.2) * kick;
+            fl2.b_legLvz += rand(-3.8, 2.2) * kick;
+            fl2.b_legRvx += rand(-3.5, 3.5) * kick;
+            fl2.b_legRvy += rand(-2.2, 2.2) * kick;
+            fl2.b_legRvz += rand(-2.2, 3.8) * kick;
           }
         }
 
@@ -891,25 +692,161 @@ export function Player() {
           lerp(dynHeadPos[2], restHeadPos[2], rb)
         );
         hd.rotation.set(fl2.hx, fl2.hy, fl2.hz);
+
+        // 3. Legs: true floppy ragdoll dummy limbs trailing in the wind, whipping with centrifugal spin, and sprawled on asphalt
+        const spinSpd = Math.hypot(body.wx, body.wy, body.wz);
+        const spinFlail = clamp(spinSpd * 0.12, 0, 0.8) * limp;
+
+        // Dynamic in-air flail (kaki terseret angin, terlempar sentrifugal saat berputar, berayun asinkron)
+        const dynLegPush = [
+          -0.16 - 0.28 * drag + Math.sin(wob * 11.2) * 0.16 * drag + clamp(-body.wz * 0.12, -0.28, 0.28),
+          -0.22 + Math.cos(wob * 9.4) * 0.14 * drag + clamp(body.vh * 0.05, -0.18, 0.15),
+          0.06 + 0.22 * spinFlail + Math.sin(wob * 13.1) * 0.14 * drag,
+        ];
+        const dynLegPlant = [
+          -0.13 - 0.32 * drag + Math.sin(wob * 9.8 + 1.9) * 0.16 * drag + clamp(-body.wz * 0.12, -0.28, 0.28),
+          -0.26 + Math.cos(wob * 11.7 + 0.7) * 0.14 * drag + clamp(body.vh * 0.05, -0.18, 0.15),
+          -0.06 - 0.22 * spinFlail - Math.sin(wob * 12.5 + 1.2) * 0.14 * drag,
+        ];
+
+        // Ankle dynamic flail (cakar/telapak kaki terkulai lunglai dihempas angin)
+        const dynAnkRx = Math.sin(wob * 14.2) * 0.6 * limp + clamp(body.wz * 0.2, -0.8, 0.8);
+        const dynAnkRz = Math.cos(wob * 12.8) * 0.5 * limp;
+        const dynAnkLx = Math.sin(wob * 13.5 + 1.4) * 0.6 * limp + clamp(body.wz * 0.2, -0.8, 0.8);
+        const dynAnkLz = Math.cos(wob * 11.9 + 1.1) * 0.5 * limp;
+
+        // Rest sprawled pose on asphalt (posisi lunglai pasrah terkapar di jalan)
+        const restLegPush = [-0.14 + 0.08 * p.impactDir, -0.14, 0.22];
+        const restLegPlant = [-0.20 - 0.06 * p.impactDir, -0.17, -0.22];
+        const restAnkRx = 0.35;
+        const restAnkRz = 0.25;
+        const restAnkLx = -0.25;
+        const restAnkLz = -0.3;
+
+        const legRxT = lerp(dynLegPush[0], restLegPush[0], rb);
+        const legRyT = lerp(dynLegPush[1], restLegPush[1], rb);
+        const legRzT = lerp(dynLegPush[2], restLegPush[2], rb);
+        const legLxT = lerp(dynLegPlant[0], restLegPlant[0], rb);
+        const legLyT = lerp(dynLegPlant[1], restLegPlant[1], rb);
+        const legLzT = lerp(dynLegPlant[2], restLegPlant[2], rb);
+
+        const ankRxT = lerp(dynAnkRx, restAnkRx, rb);
+        const ankRzT = lerp(dynAnkRz, restAnkRz, rb);
+        const ankLxT = lerp(dynAnkLx, restAnkLx, rb);
+        const ankLzT = lerp(dynAnkLz, restAnkLz, rb);
+
+        if (!fl2.seeded) {
+          fl2.legRx = legRxT; fl2.legRy = legRyT; fl2.legRz = legRzT;
+          fl2.legLx = legLxT; fl2.legLy = legLyT; fl2.legLz = legLzT;
+          fl2.ankRx = ankRxT; fl2.ankRz = ankRzT;
+          fl2.ankLx = ankLxT; fl2.ankLz = ankLzT;
+        }
+
+        // Spring-damper lembut & elastis khas dummy kain (stiffness 56, damping 4.8)
+        [fl2.legRx, fl2.legRvx] = springStep(fl2.legRx, fl2.legRvx, legRxT, 56, 4.8, sdt);
+        [fl2.legRy, fl2.legRvy] = springStep(fl2.legRy, fl2.legRvy, legRyT, 56, 4.8, sdt);
+        [fl2.legRz, fl2.legRvz] = springStep(fl2.legRz, fl2.legRvz, legRzT, 56, 4.8, sdt);
+
+        [fl2.legLx, fl2.legLvx] = springStep(fl2.legLx, fl2.legLvx, legLxT, 56, 4.8, sdt);
+        [fl2.legLy, fl2.legLvy] = springStep(fl2.legLy, fl2.legLvy, legLyT, 56, 4.8, sdt);
+        [fl2.legLz, fl2.legLvz] = springStep(fl2.legLz, fl2.legLvz, legLzT, 56, 4.8, sdt);
+
+        [fl2.ankRx, fl2.ankRvx] = springStep(fl2.ankRx, fl2.ankRvx, ankRxT, 68, 5.2, sdt);
+        [fl2.ankRz, fl2.ankRvz] = springStep(fl2.ankRz, fl2.ankRvz, ankRzT, 68, 5.2, sdt);
+        [fl2.ankLx, fl2.ankLvx] = springStep(fl2.ankLx, fl2.ankLvx, ankLxT, 68, 5.2, sdt);
+        [fl2.ankLz, fl2.ankLvz] = springStep(fl2.ankLz, fl2.ankLvz, ankLzT, 68, 5.2, sdt);
+
+        legPush.solve(fl2.legRx, fl2.legRy, fl2.legRz, fl2.ankRx, fl2.ankRz);
+        legPlant.solve(fl2.legLx, fl2.legLy, fl2.legLz, fl2.ankLx, fl2.ankLz);
+
+        // 4. Voxel Buddies & Little Japan Friends Limbs: tangan dan kaki berayun & lunglai ragdoll
+        if (buddyRig || friendRig) {
+          const dynB_armLx = -0.95 * drag + Math.sin(wob * 11.5) * 0.7 * limp + clamp(body.wx * 0.2, -0.9, 0.9);
+          const dynB_armLy = clamp(body.wy * 0.25, -0.7, 0.7) + Math.sin(wob * 8.3) * 0.35 * limp;
+          const dynB_armLz = -0.45 * drag - 0.75 * spinFlail - Math.sin(wob * 12.8) * 0.5 * limp;
+
+          const dynB_armRx = -0.85 * drag + Math.sin(wob * 10.2 + 2.1) * 0.7 * limp + clamp(-body.wx * 0.2, -0.9, 0.9);
+          const dynB_armRy = clamp(body.wy * 0.25, -0.7, 0.7) + Math.sin(wob * 9.1) * 0.35 * limp;
+          const dynB_armRz = 0.45 * drag + 0.75 * spinFlail + Math.sin(wob * 13.4 + 1.2) * 0.5 * limp;
+
+          const restB_armLx = 0.35;
+          const restB_armLy = 0.2 * p.impactDir;
+          const restB_armLz = -0.55;
+
+          const restB_armRx = 0.25;
+          const restB_armRy = -0.2 * p.impactDir;
+          const restB_armRz = 0.55;
+
+          const dynB_legLx = -0.9 * drag + Math.sin(wob * 12.4) * 0.65 * limp + clamp(-body.wz * 0.2, -0.8, 0.8);
+          const dynB_legLy = clamp(body.wy * 0.2, -0.5, 0.5);
+          const dynB_legLz = -0.35 - 0.45 * spinFlail - Math.sin(wob * 10.9) * 0.4 * limp;
+
+          const dynB_legRx = -0.8 * drag + Math.sin(wob * 11.1 + 1.7) * 0.65 * limp + clamp(-body.wz * 0.2, -0.8, 0.8);
+          const dynB_legRy = clamp(body.wy * 0.2, -0.5, 0.5);
+          const dynB_legRz = 0.35 + 0.45 * spinFlail + Math.sin(wob * 12.1 + 1.5) * 0.4 * limp;
+
+          const restB_legLx = -0.35;
+          const restB_legLy = 0.25 * p.impactDir;
+          const restB_legLz = -0.5;
+
+          const restB_legRx = -0.25;
+          const restB_legRy = -0.25 * p.impactDir;
+          const restB_legRz = 0.5;
+
+          const b_armLxT = lerp(dynB_armLx, restB_armLx, rb);
+          const b_armLyT = lerp(dynB_armLy, restB_armLy, rb);
+          const b_armLzT = lerp(dynB_armLz, restB_armLz, rb);
+
+          const b_armRxT = lerp(dynB_armRx, restB_armRx, rb);
+          const b_armRyT = lerp(dynB_armRy, restB_armRy, rb);
+          const b_armRzT = lerp(dynB_armRz, restB_armRz, rb);
+
+          const b_legLxT = lerp(dynB_legLx, restB_legLx, rb);
+          const b_legLyT = lerp(dynB_legLy, restB_legLy, rb);
+          const b_legLzT = lerp(dynB_legLz, restB_legLz, rb);
+
+          const b_legRxT = lerp(dynB_legRx, restB_legRx, rb);
+          const b_legRyT = lerp(dynB_legRy, restB_legRy, rb);
+          const b_legRzT = lerp(dynB_legRz, restB_legRz, rb);
+
+          if (!fl2.seeded) {
+            fl2.b_armLx = b_armLxT; fl2.b_armLy = b_armLyT; fl2.b_armLz = b_armLzT;
+            fl2.b_armRx = b_armRxT; fl2.b_armRy = b_armRyT; fl2.b_armRz = b_armRzT;
+            fl2.b_legLx = b_legLxT; fl2.b_legLy = b_legLyT; fl2.b_legLz = b_legLzT;
+            fl2.b_legRx = b_legRxT; fl2.b_legRy = b_legRyT; fl2.b_legRz = b_legRzT;
+          }
+
+          [fl2.b_armLx, fl2.b_armLvx] = springStep(fl2.b_armLx, fl2.b_armLvx, b_armLxT, 64, 4.6, sdt);
+          [fl2.b_armLy, fl2.b_armLvy] = springStep(fl2.b_armLy, fl2.b_armLvy, b_armLyT, 64, 4.6, sdt);
+          [fl2.b_armLz, fl2.b_armLvz] = springStep(fl2.b_armLz, fl2.b_armLvz, b_armLzT, 64, 4.6, sdt);
+
+          [fl2.b_armRx, fl2.b_armRvx] = springStep(fl2.b_armRx, fl2.b_armRvx, b_armRxT, 64, 4.6, sdt);
+          [fl2.b_armRy, fl2.b_armRvy] = springStep(fl2.b_armRy, fl2.b_armRvy, b_armRyT, 64, 4.6, sdt);
+          [fl2.b_armRz, fl2.b_armRvz] = springStep(fl2.b_armRz, fl2.b_armRvz, b_armRzT, 64, 4.6, sdt);
+
+          [fl2.b_legLx, fl2.b_legLvx] = springStep(fl2.b_legLx, fl2.b_legLvx, b_legLxT, 60, 4.8, sdt);
+          [fl2.b_legLy, fl2.b_legLvy] = springStep(fl2.b_legLy, fl2.b_legLvy, b_legLyT, 60, 4.8, sdt);
+          [fl2.b_legLz, fl2.b_legLvz] = springStep(fl2.b_legLz, fl2.b_legLvz, b_legLzT, 60, 4.8, sdt);
+
+          [fl2.b_legRx, fl2.b_legRvx] = springStep(fl2.b_legRx, fl2.b_legRvx, b_legRxT, 60, 4.8, sdt);
+          [fl2.b_legRy, fl2.b_legRvy] = springStep(fl2.b_legRy, fl2.b_legRvy, b_legRyT, 60, 4.8, sdt);
+          [fl2.b_legRz, fl2.b_legRvz] = springStep(fl2.b_legRz, fl2.b_legRvz, b_legRzT, 60, 4.8, sdt);
+
+          buddyRig?.setRagdoll(
+            { rx: fl2.b_armLx, ry: fl2.b_armLy, rz: fl2.b_armLz },
+            { rx: fl2.b_armRx, ry: fl2.b_armRy, rz: fl2.b_armRz },
+            { rx: fl2.b_legLx, ry: fl2.b_legLy, rz: fl2.b_legLz },
+            { rx: fl2.b_legRx, ry: fl2.b_legRy, rz: fl2.b_legRz },
+          );
+          friendRig?.setRagdoll(
+            { rx: fl2.b_armLx, ry: fl2.b_armLy, rz: fl2.b_armLz },
+            { rx: fl2.b_armRx, ry: fl2.b_armRy, rz: fl2.b_armRz },
+            { rx: fl2.b_legLx, ry: fl2.b_legLy, rz: fl2.b_legLz },
+            { rx: fl2.b_legRx, ry: fl2.b_legRy, rz: fl2.b_legRz },
+          );
+        }
+
         fl2.seeded = true;
-
-        // 3. Legs: floppy cords trailing in the wind and smoothly resting on the asphalt
-        const dynLegPush = [-0.14 - 0.12 * drag, -0.28, 0.06];
-        const dynLegPlant = [-0.11 - 0.12 * drag, -0.30, -0.06];
-
-        const restLegPush = [-0.16, -0.20, 0.08];
-        const restLegPlant = [-0.13, -0.22, -0.07];
-
-        legPush.solve(
-          lerp(dynLegPush[0], restLegPush[0], rb),
-          lerp(dynLegPush[1], restLegPush[1], rb),
-          lerp(dynLegPush[2], restLegPush[2], rb)
-        );
-        legPlant.solve(
-          lerp(dynLegPlant[0], restLegPlant[0], rb),
-          lerp(dynLegPlant[1], restLegPlant[1], rb),
-          lerp(dynLegPlant[2], restLegPlant[2], rb)
-        );
       } else {
         leanTorso(0, 0, 0, 0, 0);
       }
@@ -983,32 +920,46 @@ export function Player() {
       const wrFlutter = flail * (0.55 + 0.45 * Math.sin(wob * 11.0)) + Math.sin(wob * 15.7) * 0.05 * drag * (1 - rb);
       const wlFlutter = flail * (0.55 + 0.45 * Math.sin(wob * 13.1 + 2.2)) + Math.sin(wob * 17.3 + 1.1) * 0.05 * drag * (1 - rb);
 
-      // Flight wings: trail backward naturally along body from air resistance
-      const dynWr = [-0.85 * drag + Math.sin(wob * 9.4) * 0.09 * drag * (1 - rb), -0.35 * drag, 0.40 * drag + wrFlutter];
-      const dynWl = [0.85 * drag + Math.sin(wob * 10.6 + 0.8) * 0.09 * drag * (1 - rb), 0.35 * drag, -0.40 * drag - wlFlutter];
+      // Flight wings: trail backward naturally along body from air resistance with 3D twist
+      const dynWr = [
+        -0.85 * drag + Math.sin(wob * 9.4) * 0.09 * drag * (1 - rb),
+        -0.35 * drag + clamp(body ? body.wy * 0.15 : 0, -0.4, 0.4) + Math.sin(wob * 8.7) * 0.12 * drag * (1 - rb),
+        0.40 * drag + wrFlutter,
+      ];
+      const dynWl = [
+        0.85 * drag + Math.sin(wob * 10.6 + 0.8) * 0.09 * drag * (1 - rb),
+        0.35 * drag + clamp(body ? body.wy * 0.15 : 0, -0.4, 0.4) + Math.sin(wob * 9.5 + 1.2) * 0.12 * drag * (1 - rb),
+        -0.40 * drag - wlFlutter,
+      ];
 
       // Rest wings: drape flat and limp on the road beside the body
       const restWr = [-0.25, -0.15 * p.impactDir, 0.65];
       const restWl = [0.25, 0.15 * p.impactDir, -0.65];
 
       const wrxT = lerp(dynWr[0], restWr[0], rb);
+      const wryT = lerp(dynWr[1], restWr[1], rb);
       const wrzT = lerp(dynWr[2], restWr[2], rb);
       const wlxT = lerp(dynWl[0], restWl[0], rb);
+      const wlyT = lerp(dynWl[1], restWl[1], rb);
       const wlzT = lerp(dynWl[2], restWl[2], rb);
       if (fl2.justSeeded) {
         fl2.wrx = wrxT;
+        fl2.wry = wryT;
         fl2.wrz = wrzT;
         fl2.wlx = wlxT;
+        fl2.wly = wlyT;
         fl2.wlz = wlzT;
       }
       // Sendi bahu kendor: sayap berayun & overshoot alami (bukan nempel kaku di tubuh)
-      [fl2.wrx, fl2.wrvx] = springStep(fl2.wrx, fl2.wrvx, wrxT, 82, 4.6, sdt);
-      [fl2.wrz, fl2.wrvz] = springStep(fl2.wrz, fl2.wrvz, wrzT, 82, 4.6, sdt);
-      [fl2.wlx, fl2.wlvx] = springStep(fl2.wlx, fl2.wlvx, wlxT, 82, 4.6, sdt);
-      [fl2.wlz, fl2.wlvz] = springStep(fl2.wlz, fl2.wlvz, wlzT, 82, 4.6, sdt);
+      [fl2.wrx, fl2.wrvx] = springStep(fl2.wrx, fl2.wrvx, wrxT, 72, 4.5, sdt);
+      [fl2.wry, fl2.wrvy] = springStep(fl2.wry, fl2.wrvy, wryT, 72, 4.5, sdt);
+      [fl2.wrz, fl2.wrvz] = springStep(fl2.wrz, fl2.wrvz, wrzT, 72, 4.5, sdt);
+      [fl2.wlx, fl2.wlvx] = springStep(fl2.wlx, fl2.wlvx, wlxT, 72, 4.5, sdt);
+      [fl2.wly, fl2.wlvy] = springStep(fl2.wly, fl2.wlvy, wlyT, 72, 4.5, sdt);
+      [fl2.wlz, fl2.wlvz] = springStep(fl2.wlz, fl2.wlvz, wlzT, 72, 4.5, sdt);
 
-      wr.rotation.set(fl2.wrx, lerp(dynWr[1], restWr[1], rb), fl2.wrz);
-      wl.rotation.set(fl2.wlx, lerp(dynWl[1], restWl[1], rb), fl2.wlz);
+      wr.rotation.set(fl2.wrx, fl2.wry, fl2.wrz);
+      wl.rotation.set(fl2.wlx, fl2.wly, fl2.wlz);
     } else if (wl && wr) {
       const tr2 = p.trick;
       const isFlap = tr2 && tr2.kind === "wingflap";
@@ -1056,22 +1007,17 @@ export function Player() {
             <group ref={board} name="rig-board" position={[0, RIG.boardY, 0]}>
               {deckOverride === "drone" ? (
                 <AnimatedDroneDeck />
+              ) : deckOverride === "broom" ? (
+                <AnimatedBroomDeck />
+              ) : deckOverride === "ufo" ? (
+                <AnimatedUfoDeck />
+              ) : deckOverride === "koi" ? (
+                <AnimatedKoiDeck />
+              ) : deckOverride === "goldfish" ? (
+                <AnimatedGoldfishDeck />
               ) : (
                 <mesh geometry={geos.deck} material={voxelMaterial} castShadow receiveShadow />
               )}
-              <mesh ref={tanks} geometry={geos.tanks} material={voxelMaterial} position={[0, -0.16, 0]} visible={false} />
-              {/* nitro flames out of the tail: three nested cones pointing backward (-x) */}
-              <group ref={flames} position={[-0.85, -0.07, 0]} visible={false}>
-                <mesh material={flameMats.outer} position={[-0.7, 0, 0]} rotation-z={Math.PI / 2}>
-                  <coneGeometry args={[0.26, 1.6, 8]} />
-                </mesh>
-                <mesh material={flameMats.mid} position={[-0.5, 0, 0]} rotation-z={Math.PI / 2}>
-                  <coneGeometry args={[0.18, 1.2, 8]} />
-                </mesh>
-                <mesh material={flameMats.core} position={[-0.32, 0, 0]} rotation-z={Math.PI / 2}>
-                  <coneGeometry args={[0.1, 0.8, 8]} />
-                </mesh>
-              </group>
               {/* trucks: hanger + 2 wheels each, pivoting about the kingpin */}
               <group ref={truckFront} name="truck-front" position={[RIG.truckX, RIG.truckY, 0]} visible={!wheellessDeck}>
                 <mesh geometry={geos.truck} material={voxelMaterial} castShadow />
@@ -1158,6 +1104,9 @@ export function Player() {
           </group>
         </group>
       </group>
+      {/* Efek trail 3D animasi dinamis (Air, Asap, Pelangi, Api, Petir, Kembang Api, Sakura) */}
+      {/* Diletakkan di luar yawG agar mengalir alami di jalan raya & TIDAK ikut muter saat skateboard trik 360/flip */}
+      <InGameTrailEffect effectId={trailEffect} width={trailWidth} length={trailLength} wave={trailWave} />
     </group>
   );
 }

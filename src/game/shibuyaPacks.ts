@@ -511,6 +511,25 @@ export function buildShibuyaAnimalRig(id: ShibuyaAnimalId): ShibuyaAnimalRig {
     }
   };
 
+  const setRagdoll = (
+    armL: { rx: number; ry: number; rz: number },
+    armR: { rx: number; ry: number; rz: number },
+    legL: { rx: number; ry: number; rz: number },
+    legR: { rx: number; ry: number; rz: number }
+  ) => {
+    const pL = armPivots.get("L");
+    if (pL) pL.rotation.set(armL.rx, armL.ry, armL.rz);
+    const pR = armPivots.get("R");
+    if (pR) pR.rotation.set(armR.rx, armR.ry, armR.rz);
+    for (const [nodeName, pivot] of pushPivots) {
+      if (nodeName.includes("left") || nodeName.endsWith("_L")) {
+        pivot.rotation.set(legL.rx, legL.ry, legL.rz);
+      } else {
+        pivot.rotation.set(legR.rx, legR.ry, legR.rz);
+      }
+    }
+  };
+
   return {
     group,
     mixer,
@@ -518,6 +537,7 @@ export function buildShibuyaAnimalRig(id: ShibuyaAnimalId): ShibuyaAnimalRig {
     activeClip: play?.name ?? null,
     setPush,
     setArmPose,
+    setRagdoll,
     dispose: () => {
       mixer.stopAllAction();
       mixer.uncacheRoot(group);

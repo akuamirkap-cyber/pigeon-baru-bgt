@@ -26,8 +26,18 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
   const currentEquippedDeck = useUI((s) => s.deckOverride);
   const selectSkin = useUI((s) => s.selectSkin);
   const selectDeck = useUI((s) => s.selectDeck);
+  const trailEffect = useUI((s) => s.trailEffect);
+  const setTrailEffect = useUI((s) => s.setTrailEffect);
+  const trailWidth = useUI((s) => s.trailWidth);
+  const setTrailWidth = useUI((s) => s.setTrailWidth);
+  const trailLength = useUI((s) => s.trailLength);
+  const setTrailLength = useUI((s) => s.setTrailLength);
+  const trailWave = useUI((s) => s.trailWave);
+  const setTrailWave = useUI((s) => s.setTrailWave);
+  const resetTrailAdjustments = useUI((s) => s.resetTrailAdjustments);
 
   const [category, setCategory] = useState<Category>(initialCategory);
+  const [showTrailAdjust, setShowTrailAdjust] = useState(false);
 
   // Sync category if skinsCategory changes externally
   useEffect(() => {
@@ -59,8 +69,12 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
   );
 
   const [pos, setPos] = useState(() => getInitialPos(initialCategory));
-  const [effectId, setEffectId] = useState<string | null>(null);
+  const [effectId, setEffectId] = useState<string | null>(trailEffect);
   const [bump, setBump] = useState(0);
+
+  useEffect(() => {
+    setEffectId(trailEffect);
+  }, [trailEffect]);
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -205,11 +219,15 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
           Efek
         </p>
         <button
-          onClick={() => setEffectId(null)}
+          onClick={() => {
+            sfx.click();
+            setEffectId(null);
+            setTrailEffect(null);
+          }}
           className={cn(
             "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
             effectId === null
-              ? "scale-110 bg-white shadow-lg"
+              ? "scale-110 bg-white shadow-lg ring-2 ring-[#2A9BB5]"
               : "bg-white/30 backdrop-blur-md hover:bg-white/50"
           )}
           title="Tanpa efek"
@@ -219,11 +237,15 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
         {EFFECTS.map((e) => (
           <button
             key={e.id}
-            onClick={() => setEffectId(e.id)}
+            onClick={() => {
+              sfx.click();
+              setEffectId(e.id);
+              setTrailEffect(e.id);
+            }}
             className={cn(
               "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
               effectId === e.id
-                ? "scale-110 bg-white shadow-lg"
+                ? "scale-110 bg-white shadow-lg ring-2 ring-[#2A9BB5]"
                 : "bg-white/30 backdrop-blur-md hover:bg-white/50"
             )}
             title={e.name}
@@ -231,7 +253,157 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
             {e.emoji}
           </button>
         ))}
+
+        {/* Tombol Atur Ukuran Efek (Lebar & Panjang) */}
+        {effectId !== null && (
+          <button
+            onClick={() => {
+              sfx.click();
+              setShowTrailAdjust((s) => !s);
+            }}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all",
+              showTrailAdjust
+                ? "bg-[#2ec4b6] text-white shadow-lg scale-110"
+                : "bg-white/30 backdrop-blur-md text-white hover:bg-white/50"
+            )}
+            title="Atur Lebar & Panjang Efek"
+          >
+            ⚙️
+          </button>
+        )}
       </div>
+
+      {/* Popover Pengaturan Ukuran Efek (Lebar & Panjang) */}
+      {showTrailAdjust && effectId !== null && (
+        <div className="absolute left-14 top-24 z-20 w-64 rounded-2xl border-2 border-white/20 bg-slate-900/90 p-3.5 text-white shadow-2xl backdrop-blur-md animate-[popIn_0.2s_ease]">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">✨</span>
+              <span className="text-xs font-black uppercase tracking-wider text-[#ffd21f]">
+                UKURAN EFEK
+              </span>
+            </div>
+            <button
+              onClick={() => setShowTrailAdjust(false)}
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[10px] hover:bg-white/20"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Slider Lebar */}
+          <div className="mb-3 space-y-1">
+            <div className="flex justify-between text-[11px] font-bold">
+              <span className="text-white/80">↔️ Lebar:</span>
+              <span className="text-[#3fa9f5] font-black">{trailWidth.toFixed(2)}×</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTrailWidth(Math.max(0.4, trailWidth - 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                −
+              </button>
+              <input
+                type="range"
+                min={0.4}
+                max={2.5}
+                step={0.05}
+                value={trailWidth}
+                onChange={(e) => setTrailWidth(parseFloat(e.target.value))}
+                className="h-1.5 flex-1 cursor-pointer accent-[#3fa9f5]"
+              />
+              <button
+                onClick={() => setTrailWidth(Math.min(2.5, trailWidth + 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Slider Panjang */}
+          <div className="mb-3 space-y-1">
+            <div className="flex justify-between text-[11px] font-bold">
+              <span className="text-white/80">↕️ Panjang:</span>
+              <span className="text-[#9b5aff] font-black">{trailLength.toFixed(2)}×</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTrailLength(Math.max(0.4, trailLength - 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                −
+              </button>
+              <input
+                type="range"
+                min={0.4}
+                max={2.5}
+                step={0.05}
+                value={trailLength}
+                onChange={(e) => setTrailLength(parseFloat(e.target.value))}
+                className="h-1.5 flex-1 cursor-pointer accent-[#9b5aff]"
+              />
+              <button
+                onClick={() => setTrailLength(Math.min(2.5, trailLength + 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Slider Tingkat Gelombang & Segment Telat */}
+          <div className="mb-3 space-y-1">
+            <div className="flex justify-between text-[11px] font-bold">
+              <span className="text-white/80">🌊 Gelombang:</span>
+              <span className="text-[#00f2fe] font-black">{trailWave.toFixed(2)}×</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTrailWave(Math.max(0.0, trailWave - 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                −
+              </button>
+              <input
+                type="range"
+                min={0.0}
+                max={2.5}
+                step={0.05}
+                value={trailWave}
+                onChange={(e) => setTrailWave(parseFloat(e.target.value))}
+                className="h-1.5 flex-1 cursor-pointer accent-[#00f2fe]"
+              />
+              <button
+                onClick={() => setTrailWave(Math.min(2.5, trailWave + 0.1))}
+                className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-xs font-black hover:bg-white/20"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1 border-t border-white/10">
+            <button
+              onClick={() => {
+                sfx.click();
+                resetTrailAdjustments();
+              }}
+              className="flex-1 rounded-lg bg-white/10 py-1 text-[10px] font-bold hover:bg-white/20 text-white/80"
+            >
+              Reset 1.0×
+            </button>
+            <button
+              onClick={() => setShowTrailAdjust(false)}
+              className="flex-1 rounded-lg bg-[#2ec4b6] py-1 text-[10px] font-black hover:bg-[#25ab9e] text-white"
+            >
+              Simpan ✓
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== BOTTOM UI (nama nempel dekat karakter) ===== */}
       <div className="absolute bottom-[20%] left-0 right-0 z-10 flex flex-col items-center gap-2.5">

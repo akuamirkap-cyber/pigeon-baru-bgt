@@ -4,8 +4,6 @@
   "hoverboard": { "scale": 1.0, "scaleX": 0.9, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
   "koi": { "scale": 0.9, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
   "goldfish": { "scale": 0.9, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
-  "demekin": { "scale": 0.9, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
-  "zenstone": { "scale": 0.85, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
   "bamboo": { "scale": 0.95, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
   "zabuton": { "scale": 0.85, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },
   "minijet": { "scale": 0.88, "scaleX": 1.0, "scaleY": 1.0, "scaleZ": 1.0, "offsetY": 0.0 },

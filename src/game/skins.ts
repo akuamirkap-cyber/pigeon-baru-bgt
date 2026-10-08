@@ -25,8 +25,6 @@ export type DeckId =
   | "hoverboard"
   | "koi"
   | "goldfish"
-  | "demekin"
-  | "zenstone"
   | "bamboo"
   | "zabuton"
   | "minijet"
@@ -92,22 +90,6 @@ export const DECKS: DeckOption[] = [
     tagline: "Ikan mas koki gembul dengan ekor kipas ganda",
     badge: "VOXEL BOARD",
     emoji: "🐠",
-    cost: 0,
-  },
-  {
-    id: "demekin",
-    name: "Demekin",
-    tagline: "Ikan demekin krem dengan pelana merah & ekor kipas",
-    badge: "VOXEL BOARD",
-    emoji: "🐡",
-    cost: 0,
-  },
-  {
-    id: "zenstone",
-    name: "Batu Zen",
-    tagline: "Tumpukan batu meditasi berlumut dengan kerikil mengambang",
-    badge: "VOXEL BOARD",
-    emoji: "🪨",
     cost: 0,
   },
   {
@@ -752,6 +734,9 @@ export function specialDeckParts(_kind: "hoverboard"): Part[] {
 }
 
 export function deckParts(k: Skin, deckOverride: DeckId = "default"): Part[] {
+  if (deckOverride === "drone" || deckOverride === "broom" || deckOverride === "ufo" || deckOverride === "koi" || deckOverride === "goldfish") {
+    return [{ x: 0, y: -10, z: 0, w: 0.01, h: 0.01, d: 0.01, color: "#000000" }];
+  }
   if (deckOverride === "baguette" || k.deckType === "baguette") {
     return baguetteDeckParts();
   }

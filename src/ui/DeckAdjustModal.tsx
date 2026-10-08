@@ -20,6 +20,15 @@ export function DeckAdjustModal({ onClose }: DeckAdjustModalProps) {
   const applyDefaultJsonAdjustments = useUI((s) => s.applyDefaultJsonAdjustments);
   const deckOverride = useUI((s) => s.deckOverride);
   const setDeckOverride = useUI((s) => s.setDeckOverride);
+  const trailEffect = useUI((s) => s.trailEffect);
+  const setTrailEffect = useUI((s) => s.setTrailEffect);
+  const trailWidth = useUI((s) => s.trailWidth);
+  const setTrailWidth = useUI((s) => s.setTrailWidth);
+  const trailLength = useUI((s) => s.trailLength);
+  const setTrailLength = useUI((s) => s.setTrailLength);
+  const trailWave = useUI((s) => s.trailWave);
+  const setTrailWave = useUI((s) => s.setTrailWave);
+  const resetTrailAdjustments = useUI((s) => s.resetTrailAdjustments);
 
   const [copied, setCopied] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -505,6 +514,273 @@ export function DeckAdjustModal({ onClose }: DeckAdjustModalProps) {
               <p className="mt-1 text-[10px] text-amber-200/80 leading-snug">
                 Sistem otomatis menempelkan permukaan papan pas di telapak kaki hewan. Geser slider ini jika ingin menaikkan/menurunkan sedikit sesuai kenyamanan.
               </p>
+            </div>
+          </div>
+
+          {/* Section: Pengaturan Efek Trail (Motion Dinamis, Lebar & Panjang) */}
+          <div className="rounded-2xl border-2 border-[#9b5aff]/50 bg-gradient-to-b from-[#9b5aff]/15 via-[#1e2333] to-[#1e2333] p-4 space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[#9b5aff] to-[#3fa9f5] text-base text-white shadow">
+                  ✨
+                </span>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                    EFEK TRAIL MOTION (LEBAR & PANJANG)
+                  </h4>
+                  <p className="text-[10px] text-purple-200/80 font-medium">
+                    Efek mengalir dinamis di jalan &amp; TIDAK ikut muter saat skateboard trik 360/flip
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  resetTrailAdjustments();
+                }}
+                className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-black text-white/80 transition hover:bg-white/20 hover:text-white active:scale-95"
+                title="Kembalikan ukuran efek ke 1.0x normal"
+              >
+                ⚡ Reset (1.0×)
+              </button>
+            </div>
+
+            {/* Pilihan Efek */}
+            <div>
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-white/70 block mb-1.5">
+                PILIH EFEK TRAIL:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: null, emoji: "🚫", name: "Tanpa Efek" },
+                  { id: "rainbow", emoji: "🌈", name: "Pelangi" },
+                  { id: "water", emoji: "💧", name: "Air" },
+                  { id: "smoke", emoji: "💨", name: "Asap" },
+                  { id: "fire", emoji: "🔥", name: "Api" },
+                  { id: "lightning", emoji: "⚡", name: "Petir" },
+                  { id: "fireworks", emoji: "🎆", name: "Kembang Api" },
+                  { id: "sakura", emoji: "🌸", name: "Sakura" },
+                ].map((eff) => {
+                  const active = trailEffect === eff.id;
+                  return (
+                    <button
+                      key={eff.id ?? "none"}
+                      type="button"
+                      onClick={() => {
+                        sfx.click();
+                        setTrailEffect(eff.id);
+                      }}
+                      className={`flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-black transition-all ${
+                        active
+                          ? "bg-gradient-to-r from-[#9b5aff] to-[#3fa9f5] text-white shadow-md scale-105 ring-2 ring-white/50"
+                          : "bg-white/10 text-white/80 hover:bg-white/20 hover:text-white"
+                      }`}
+                    >
+                      <span className="text-sm">{eff.emoji}</span>
+                      <span>{eff.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Slider 1: Lebar Efek Trail (Width) */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="flex items-center justify-between text-xs font-bold mb-1">
+                <span className="flex items-center gap-1 text-white/90">
+                  <span>↔️</span> Lebar Efek Trail (Samping):
+                </span>
+                <span className="font-black text-[#3fa9f5]">{trailWidth.toFixed(2)}×</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailWidth(Math.max(0.4, trailWidth - 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={0.4}
+                  max={2.5}
+                  step={0.05}
+                  value={trailWidth}
+                  onChange={(e) => setTrailWidth(parseFloat(e.target.value))}
+                  className="h-2 flex-1 cursor-pointer accent-[#3fa9f5]"
+                  aria-label="Lebar Efek Trail"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailWidth(Math.min(2.5, trailWidth + 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  +
+                </button>
+              </div>
+              <div className="mt-1.5 flex gap-1.5">
+                {[
+                  { label: "0.6× Tipis", val: 0.6 },
+                  { label: "1.0× Normal", val: 1.0 },
+                  { label: "1.5× Lebar", val: 1.5 },
+                  { label: "2.0× Jumbo", val: 2.0 },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => {
+                      sfx.click();
+                      setTrailWidth(p.val);
+                    }}
+                    className={`flex-1 rounded-lg py-1 text-[10px] font-extrabold transition-all ${
+                      Math.abs(trailWidth - p.val) < 0.04
+                        ? "bg-[#3fa9f5] text-slate-950 font-black shadow"
+                        : "bg-white/10 text-white/70 hover:bg-white/15"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Slider 2: Panjang Efek Trail (Length) */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="flex items-center justify-between text-xs font-bold mb-1">
+                <span className="flex items-center gap-1 text-white/90">
+                  <span>↕️</span> Panjang Jangkauan Efek (Mundur):
+                </span>
+                <span className="font-black text-[#9b5aff]">{trailLength.toFixed(2)}×</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailLength(Math.max(0.4, trailLength - 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={0.4}
+                  max={2.5}
+                  step={0.05}
+                  value={trailLength}
+                  onChange={(e) => setTrailLength(parseFloat(e.target.value))}
+                  className="h-2 flex-1 cursor-pointer accent-[#9b5aff]"
+                  aria-label="Panjang Jangkauan Efek Trail"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailLength(Math.min(2.5, trailLength + 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  +
+                </button>
+              </div>
+              <div className="mt-1.5 flex gap-1.5">
+                {[
+                  { label: "0.6× Pendek", val: 0.6 },
+                  { label: "1.0× Normal", val: 1.0 },
+                  { label: "1.5× Panjang", val: 1.5 },
+                  { label: "2.0× Maksimal", val: 2.0 },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => {
+                      sfx.click();
+                      setTrailLength(p.val);
+                    }}
+                    className={`flex-1 rounded-lg py-1 text-[10px] font-extrabold transition-all ${
+                      Math.abs(trailLength - p.val) < 0.04
+                        ? "bg-[#9b5aff] text-white font-black shadow"
+                        : "bg-white/10 text-white/70 hover:bg-white/15"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Slider 3: Tingkat Gelombang & Segment Telat (Wave / Delayed Flow) */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="flex items-center justify-between text-xs font-bold mb-1">
+                <span className="flex items-center gap-1 text-white/90">
+                  <span>🌊</span> Tingkat Gelombang & Flow Segment Telat:
+                </span>
+                <span className="font-black text-[#00f2fe]">{trailWave.toFixed(2)}×</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailWave(Math.max(0.0, trailWave - 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={2.5}
+                  step={0.05}
+                  value={trailWave}
+                  onChange={(e) => setTrailWave(parseFloat(e.target.value))}
+                  className="h-2 flex-1 cursor-pointer accent-[#00f2fe]"
+                  aria-label="Tingkat Gelombang dan Segment Telat"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailWave(Math.min(2.5, trailWave + 0.1));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 text-xs font-black hover:bg-white/20 active:scale-95"
+                >
+                  +
+                </button>
+              </div>
+              <div className="mt-1.5 flex gap-1.5">
+                {[
+                  { label: "0.0× Lurus", val: 0.0 },
+                  { label: "0.5× Halus", val: 0.5 },
+                  { label: "1.0× Normal", val: 1.0 },
+                  { label: "1.8× Liuk Ekstrem", val: 1.8 },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => {
+                      sfx.click();
+                      setTrailWave(p.val);
+                    }}
+                    className={`flex-1 rounded-lg py-1 text-[10px] font-extrabold transition-all ${
+                      Math.abs(trailWave - p.val) < 0.04
+                        ? "bg-[#00f2fe] text-slate-950 font-black shadow"
+                        : "bg-white/10 text-white/70 hover:bg-white/15"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

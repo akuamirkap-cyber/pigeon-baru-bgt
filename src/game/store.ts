@@ -129,6 +129,17 @@ interface UIState {
   deckOverride: DeckId;
   setDeckOverride: (d: DeckId) => void;
   selectDeck: (d: string) => void;
+  trailEffect: string | null;
+  setTrailEffect: (effect: string | null) => void;
+  cycleTrailEffect: () => void;
+  trailWidth: number;
+  setTrailWidth: (w: number) => void;
+  trailLength: number;
+  setTrailLength: (l: number) => void;
+  /** Tingkat gelombang / segment telat flow motion trail (0.0 = lurus, 1.0 = normal, 2.5 = sangat bergelombang & lambat menyusul) */
+  trailWave: number;
+  setTrailWave: (w: number) => void;
+  resetTrailAdjustments: () => void;
   wheelColor: WheelColor;
   setWheelColor: (c: WheelColor) => void;
   worldCurve: "subway" | "flat";
@@ -485,6 +496,79 @@ export const useUI = create<UIState>((set, get) => ({
     const valid = DECKS.some((k) => k.id === d) ? (d as DeckId) : "default";
     save("pigeon-sk8-deck", valid);
     set({ deckOverride: valid });
+  },
+  trailEffect: (() => {
+    const raw = load<string | null>("pigeon-sk8-trail-effect", "rainbow");
+    return raw;
+  })(),
+  setTrailEffect: (trailEffect) => {
+    save("pigeon-sk8-trail-effect", trailEffect);
+    set({ trailEffect });
+  },
+  cycleTrailEffect: () => {
+    const TRAIL_EFFECT_IDS: (string | null)[] = [
+      null,
+      "rainbow",
+      "water",
+      "smoke",
+      "fire",
+      "lightning",
+      "fireworks",
+      "sakura",
+    ];
+    const TRAIL_EFFECT_NAMES: Record<string, { name: string; emoji: string }> = {
+      rainbow: { name: "PELANGI", emoji: "🌈" },
+      water: { name: "AIR MENGALIR", emoji: "💧" },
+      smoke: { name: "ASAP", emoji: "💨" },
+      fire: { name: "API RIDER", emoji: "🔥" },
+      lightning: { name: "PETIR", emoji: "⚡" },
+      fireworks: { name: "KEMBANG API", emoji: "🎆" },
+      sakura: { name: "BUNGA SAKURA", emoji: "🌸" },
+    };
+    const cur = get().trailEffect;
+    const idx = TRAIL_EFFECT_IDS.indexOf(cur);
+    const nextIdx = (idx + 1) % TRAIL_EFFECT_IDS.length;
+    const next = TRAIL_EFFECT_IDS[nextIdx];
+    save("pigeon-sk8-trail-effect", next);
+    set({ trailEffect: next });
+    if (next && TRAIL_EFFECT_NAMES[next]) {
+      get().addPopup(`${TRAIL_EFFECT_NAMES[next].emoji} EFEK ${TRAIL_EFFECT_NAMES[next].name}`, "#ffd21f");
+    } else {
+      get().addPopup("🚫 EFEK NONAKTIF", "#a0aec0");
+    }
+  },
+  trailWidth: (() => {
+    const raw = load<number>("pigeon-sk8-trail-width", 1.0);
+    return typeof raw === "number" && isFinite(raw) ? Math.max(0.3, Math.min(3.0, raw)) : 1.0;
+  })(),
+  setTrailWidth: (trailWidth) => {
+    const rounded = Math.round(Math.max(0.3, Math.min(3.0, trailWidth)) * 100) / 100;
+    save("pigeon-sk8-trail-width", rounded);
+    set({ trailWidth: rounded });
+  },
+  trailLength: (() => {
+    const raw = load<number>("pigeon-sk8-trail-length", 1.0);
+    return typeof raw === "number" && isFinite(raw) ? Math.max(0.3, Math.min(3.0, raw)) : 1.0;
+  })(),
+  setTrailLength: (trailLength) => {
+    const rounded = Math.round(Math.max(0.3, Math.min(3.0, trailLength)) * 100) / 100;
+    save("pigeon-sk8-trail-length", rounded);
+    set({ trailLength: rounded });
+  },
+  trailWave: (() => {
+    const raw = load<number>("pigeon-sk8-trail-wave", 1.0);
+    return typeof raw === "number" && isFinite(raw) ? Math.max(0.0, Math.min(3.0, raw)) : 1.0;
+  })(),
+  setTrailWave: (trailWave) => {
+    const rounded = Math.round(Math.max(0.0, Math.min(3.0, trailWave)) * 100) / 100;
+    save("pigeon-sk8-trail-wave", rounded);
+    set({ trailWave: rounded });
+  },
+  resetTrailAdjustments: () => {
+    save("pigeon-sk8-trail-width", 1.0);
+    save("pigeon-sk8-trail-length", 1.0);
+    save("pigeon-sk8-trail-wave", 1.0);
+    set({ trailWidth: 1.0, trailLength: 1.0, trailWave: 1.0 });
   },
   wheelColor: (() => {
     const w = load<string>("pigeon-sk8-wheels", "black");

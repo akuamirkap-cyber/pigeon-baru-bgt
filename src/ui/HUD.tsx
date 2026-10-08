@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useUI } from "../game/store";
 import { BreadIcon } from "./BreadIcon";
 import { engine, NOS_MAX } from "../game/engine";
@@ -56,6 +57,33 @@ export function HUD() {
   const deckOverride = useUI((s) => s.deckOverride);
   const setDeckAdjustOpen = useUI((s) => s.setDeckAdjustOpen);
   const setAdjustTargetDeck = useUI((s) => s.setAdjustTargetDeck);
+  const trailEffect = useUI((s) => s.trailEffect);
+  const setTrailEffect = useUI((s) => s.setTrailEffect);
+  const cycleTrailEffect = useUI((s) => s.cycleTrailEffect);
+  const trailWidth = useUI((s) => s.trailWidth);
+  const setTrailWidth = useUI((s) => s.setTrailWidth);
+  const trailLength = useUI((s) => s.trailLength);
+  const setTrailLength = useUI((s) => s.setTrailLength);
+  const trailWave = useUI((s) => s.trailWave);
+  const setTrailWave = useUI((s) => s.setTrailWave);
+  const resetTrailAdjustments = useUI((s) => s.resetTrailAdjustments);
+  const [trailAdjusting, setTrailAdjusting] = useState(false);
+  const trailEffectEmoji =
+    trailEffect === "rainbow"
+      ? "🌈"
+      : trailEffect === "water"
+        ? "💧"
+        : trailEffect === "smoke"
+          ? "💨"
+          : trailEffect === "fire"
+            ? "🔥"
+            : trailEffect === "lightning"
+              ? "⚡"
+              : trailEffect === "fireworks"
+                ? "🎆"
+                : trailEffect === "sakura"
+                  ? "🌸"
+                  : "✨";
   const inRun = phase === "playing" || phase === "crashed";
   const nosReady = nos >= NOS_MAX * 0.99 && !nosActive;
   const sprint = useUI((s) => s.sprint);
@@ -69,7 +97,7 @@ export function HUD() {
 
   return (
     <div
-      className={`pointer-events-none absolute inset-0 select-none ${camAdjusting || pigeonAdjusting ? "z-50" : "z-20"}`}
+      className={`pointer-events-none absolute inset-0 select-none ${camAdjusting || pigeonAdjusting || trailAdjusting ? "z-50" : "z-20"}`}
       style={{ inset: "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)" }}
     >
       {/* bread counter (top-left) in vibrant royal blue pill + optional small speed indicator */}
@@ -194,6 +222,34 @@ export function HUD() {
               >
                 🛹
               </button>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  unlockAudio();
+                  sfx.click();
+                  cycleTrailEffect();
+                }}
+                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-gradient-to-tr from-[#9b5aff] to-[#3fa9f5] text-[4.6cqw] text-white shadow-[0_3px_0_#6c38cc] active:translate-y-[2px] active:shadow-none transition-transform hover:scale-105"
+                aria-label="Ganti efek trail (Pelangi, Air, Asap, Api, Petir, Kembang Api, Sakura)"
+                title="Ganti Efek Trail (Pelangi, Air, Asap, Api, dll)"
+              >
+                {trailEffectEmoji}
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  unlockAudio();
+                  sfx.click();
+                  setTrailAdjusting(true);
+                }}
+                className="flex h-[10cqw] w-[10cqw] min-h-[38px] min-w-[38px] items-center justify-center rounded-full border-2 border-white/20 bg-[#9b5aff] text-[4.4cqw] text-white shadow-[0_3px_0_#6c38cc] active:translate-y-[2px] active:shadow-none transition-transform hover:scale-105"
+                aria-label="Atur lebar & panjang efek trail"
+                title="Atur Lebar & Panjang Efek Trail (Motion)"
+              >
+                📐
+              </button>
             </>
           )}
         </div>
@@ -224,7 +280,7 @@ export function HUD() {
 
       {/* NOS meter + boost button (bottom-right) — SATU-SATUNYA TOMBOL DI BAWAH SEPERTI PERMINTAAN
           (disembunyikan sementara saat panel atur kamera atau atur pigeon terbuka) */}
-      {phase === "playing" && !camAdjusting && !pigeonAdjusting && (
+      {phase === "playing" && !camAdjusting && !pigeonAdjusting && !trailAdjusting && (
         <div className="pointer-events-auto absolute bottom-[4.5%] right-[4%] flex flex-col items-center gap-2">
           {/* NOS vertical capsule */}
           <div className="relative h-[25cqw] w-[6.8cqw] overflow-hidden rounded-full border-[3.5px] border-[#0091ff] bg-[#001838]/90 p-[2px] shadow-[0_0_14px_rgba(0,145,255,0.65)]">
@@ -481,6 +537,145 @@ export function HUD() {
                 onClick={() => {
                   sfx.click();
                   setPigeonAdjusting(false);
+                }}
+                className="flex-[2] rounded-xl bg-[#2ec46b] py-1.5 font-display text-[3cqw] leading-none text-white shadow-[0_3px_0_#1c7a3e] active:translate-y-[2px] active:shadow-none"
+              >
+                ✓ SELESAI
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Panel Atur Lebar & Panjang Efek Trail live in-game */}
+      {phase === "playing" && trailAdjusting && (
+        <>
+          <div
+            className="pointer-events-auto absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => setTrailAdjusting(false)}
+          />
+          <div
+            className="pointer-events-auto absolute bottom-3 left-1/2 flex w-[94%] max-w-[460px] -translate-x-1/2 flex-col gap-2 rounded-3xl border-2 border-[#9b5aff]/60 bg-[#16132b]/95 p-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-md"
+            style={{ touchAction: "none" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+              <div className="flex items-center gap-1.5 font-display text-[3.4cqw] leading-none text-white">
+                <span className="text-[#3fa9f5]">✨</span>
+                <span>ATUR EFEK TRAIL MOTION</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTrailAdjusting(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-white/15 text-[2.8cqw] text-white hover:bg-white/25 active:scale-95"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Effect Switcher */}
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+              {[
+                { id: null, emoji: "🚫", name: "Off" },
+                { id: "rainbow", emoji: "🌈", name: "Pelangi" },
+                { id: "water", emoji: "💧", name: "Air" },
+                { id: "smoke", emoji: "💨", name: "Asap" },
+                { id: "fire", emoji: "🔥", name: "Api" },
+                { id: "lightning", emoji: "⚡", name: "Petir" },
+                { id: "fireworks", emoji: "🎆", name: "Kembang Api" },
+                { id: "sakura", emoji: "🌸", name: "Sakura" },
+              ].map((eff) => (
+                <button
+                  key={eff.id ?? "none"}
+                  type="button"
+                  onClick={() => {
+                    sfx.click();
+                    setTrailEffect(eff.id);
+                  }}
+                  className={`flex shrink-0 items-center gap-1 rounded-xl px-2.5 py-1 text-[2.6cqw] font-display transition-all ${
+                    trailEffect === eff.id
+                      ? "bg-gradient-to-r from-[#9b5aff] to-[#3fa9f5] text-white shadow-md scale-105"
+                      : "bg-white/10 text-white/80 hover:bg-white/20"
+                  }`}
+                >
+                  <span>{eff.emoji}</span>
+                  <span>{eff.name}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Slider 1: Lebar Efek (Width) */}
+            <div className="flex items-center gap-2">
+              <span className="w-[17cqw] shrink-0 font-display text-[2.7cqw] leading-none text-white/95">↔️ LEBAR</span>
+              <input
+                type="range"
+                min={0.4}
+                max={2.5}
+                step={0.05}
+                value={trailWidth}
+                onChange={(e) => setTrailWidth(parseFloat(e.target.value))}
+                className="h-2.5 flex-1 cursor-pointer accent-[#3fa9f5]"
+                aria-label="Lebar efek trail"
+              />
+              <span className="w-[8.5cqw] shrink-0 text-right font-display text-[2.9cqw] leading-none text-[#3fa9f5]">
+                {trailWidth.toFixed(2)}x
+              </span>
+            </div>
+
+            {/* Slider 2: Panjang Jangkauan (Length) */}
+            <div className="flex items-center gap-2">
+              <span className="w-[17cqw] shrink-0 font-display text-[2.7cqw] leading-none text-white/95">↕️ PANJANG</span>
+              <input
+                type="range"
+                min={0.4}
+                max={2.5}
+                step={0.05}
+                value={trailLength}
+                onChange={(e) => setTrailLength(parseFloat(e.target.value))}
+                className="h-2.5 flex-1 cursor-pointer accent-[#9b5aff]"
+                aria-label="Panjang jangkauan efek trail"
+              />
+              <span className="w-[8.5cqw] shrink-0 text-right font-display text-[2.9cqw] leading-none text-[#9b5aff]">
+                {trailLength.toFixed(2)}x
+              </span>
+            </div>
+
+            {/* Slider 3: Tingkat Gelombang & Segment Telat (Wave / Delayed Flow) */}
+            <div className="flex items-center gap-2">
+              <span className="w-[17cqw] shrink-0 font-display text-[2.7cqw] leading-none text-white/95" title="Tingkat gelombang liukan & keterlambatan segmen saat melompat">🌊 GELOMBANG</span>
+              <input
+                type="range"
+                min={0.0}
+                max={2.5}
+                step={0.05}
+                value={trailWave}
+                onChange={(e) => setTrailWave(parseFloat(e.target.value))}
+                className="h-2.5 flex-1 cursor-pointer accent-[#00f2fe]"
+                aria-label="Tingkat gelombang dan segmen telat flow motion"
+              />
+              <span className="w-[8.5cqw] shrink-0 text-right font-display text-[2.9cqw] leading-none text-[#00f2fe]">
+                {trailWave.toFixed(2)}x
+              </span>
+            </div>
+
+            {/* Tombol Reset & Selesai */}
+            <div className="mt-0.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  resetTrailAdjustments();
+                }}
+                className="flex-1 rounded-xl bg-white/15 py-1.5 font-display text-[3cqw] leading-none text-white active:scale-95"
+              >
+                RESET 1.0x
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  sfx.click();
+                  setTrailAdjusting(false);
                 }}
                 className="flex-[2] rounded-xl bg-[#2ec46b] py-1.5 font-display text-[3cqw] leading-none text-white shadow-[0_3px_0_#1c7a3e] active:translate-y-[2px] active:shadow-none"
               >

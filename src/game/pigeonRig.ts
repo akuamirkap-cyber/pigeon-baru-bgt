@@ -91,8 +91,9 @@ export class LegRig {
     this.solve(0.02, -HIP_Y, 0);
   }
 
-  /** Sole target relative to the hip (pigeon axes: +x forward, +y up, +z toward the pushing side). */
-  solve(fx: number, fy: number, fz: number) {
+  /** Sole target relative to the hip (pigeon axes: +x forward, +y up, +z toward the pushing side).
+   * Supports optional anklePitch and ankleRoll for ragdoll dummy limb floppiness. */
+  solve(fx: number, fy: number, fz: number, anklePitch = 0, ankleRoll = 0) {
     const r = Math.max(1e-4, Math.hypot(fy, fz));
     const phi = -Math.atan2(fz, -fy); // abduction about x (positive z target = leg swings out to +z)
     let D = Math.hypot(fx, r);
@@ -106,8 +107,8 @@ export class LegRig {
     this.hipA.rotation.x = phi;
     this.hipS.rotation.z = thighAngle;
     this.knee.rotation.z = kneeAngle;
-    // keep the sole flat: undo the chain rotation (order ZXY => Rz * Rx)
-    this.foot.rotation.set(-phi, 0, -(thighAngle + kneeAngle));
+    // keep the sole flat or let it dangle loosely (ragdoll): undo chain rotation + add ankle flop
+    this.foot.rotation.set(-phi + ankleRoll, 0, -(thighAngle + kneeAngle) + anklePitch);
   }
 
   dispose() {

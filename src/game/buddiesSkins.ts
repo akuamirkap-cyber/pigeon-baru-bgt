@@ -5,8 +5,6 @@ import {
   type Skin as BuddySkin,
   Koi,
   Goldfish,
-  Demekin,
-  ZenStone,
   Bamboo,
   Zabuton,
   MiniJet,
@@ -154,8 +152,6 @@ export function getBuddyGeometry(buddyId: string): THREE.BufferGeometry {
 export const VOXEL_BOARD_IDS = new Set<string>([
   "koi",
   "goldfish",
-  "demekin",
-  "zenstone",
   "bamboo",
   "zabuton",
   "minijet",
@@ -177,8 +173,6 @@ export const VOXEL_BOARD_IDS = new Set<string>([
 const BOARD_COMPS: Record<string, React.FC> = {
   koi: Koi,
   goldfish: Goldfish,
-  demekin: Demekin,
-  zenstone: ZenStone,
   bamboo: Bamboo,
   zabuton: Zabuton,
   minijet: MiniJet,
@@ -509,6 +503,20 @@ export function buildBuddyRig(buddyId: string): BuddyRig {
     });
   };
 
+  const setRagdoll = (
+    armL: { rx: number; ry: number; rz: number },
+    armR: { rx: number; ry: number; rz: number },
+    legL: { rx: number; ry: number; rz: number; dy?: number },
+    legR: { rx: number; ry: number; rz: number; dy?: number },
+  ) => {
+    armLPivot.rotation.set(armL.rx, armL.ry, armL.rz);
+    armRPivot.rotation.set(armR.rx, armR.ry, armR.rz);
+    legLPivot.rotation.set(legL.rx, legL.ry, legL.rz);
+    legRPivot.rotation.set(legR.rx, legR.ry, legR.rz);
+    legLPivot.position.y = initialHipLY + (legL.dy ?? 0);
+    legRPivot.position.y = hipRPos[1] + (legR.dy ?? 0);
+  };
+
   const dispose = () => {
     for (const g of geos) g.dispose();
   };
@@ -525,6 +533,7 @@ export function buildBuddyRig(buddyId: string): BuddyRig {
     isGoldenRatio,
     setPush,
     setArmPose,
+    setRagdoll,
     dispose,
   };
 }
