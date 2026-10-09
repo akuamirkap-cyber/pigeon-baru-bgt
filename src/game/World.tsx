@@ -1671,7 +1671,7 @@ function OverpassCars() {
 }
 
 /* ---------- Sakura / Momiji petals & leaves (instanced) ---------- */
-const MAX_PETALS = 90;
+const MAX_PETALS = 180;
 function Petals() {
   const ref = useRef<THREE.InstancedMesh>(null);
   const trackMode = useUI((s) => s.trackMode);

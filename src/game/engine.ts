@@ -26,7 +26,7 @@ import {
 import { TRICK_MAP, TRICKS, type TrickKind } from "./tricks";
 import { useUI, type Phase } from "./store";
 import { recordRun, recordShibuyaRun } from "./stats";
-import { sfx } from "./audio";
+import { sfx, bgm } from "./audio";
 import { clamp, lerp, pick, rand, randInt } from "./voxel";
 
 /** Haptic feedback HP (getar) — diabaikan otomatis di browser tanpa dukungan. */
@@ -128,7 +128,7 @@ export function railLandClear(speedMult: number) {
   return Math.ceil(-3.6 + 1.126 * MAX_SPEED * speedMult + 14); // 25 m (1×) / 39 m (2×) / 54 m (3×)
 }
 /** Run distance (m) of the first railway crossing; later ones follow every CROSSING_GAP. */
-export const FIRST_CROSSING_M = 50;
+export const FIRST_CROSSING_M = 160;
 export const CROSSING_GAP: [number, number] = [150, 260];
 export const ARM_INNER = GATE_LAT - 0.3 - ARM_LEN; // lateral reach of a lowered arm (from its gate)
 export type CrashCause = "obstacle" | "car" | "oncoming" | "motorcycle" | "chicken" | "train" | "gate" | "pedestrian" | "roadwork" | "cross_traffic";
@@ -341,6 +341,7 @@ export interface SubwayTrain {
   length: number;
   roofBreads?: { offset: number; taken: boolean }[];
   isStopped?: boolean;
+  whooshed?: boolean;
 }
 export function subwayTrainLength(st: SubwayTrain) {
   return st.length;
@@ -423,6 +424,7 @@ export interface Mover {
   motorcycleHelmet?: boolean;
   /** Shibuya Blocks character (salaryman / pekerja kantor, student, chef, yakuza) */
   shibuyaChar?: ShibuyaCharacterId;
+  nearMiss?: boolean;
 }
 
 export type CrossingState = "idle" | "warning" | "clearing" | "done";
@@ -455,6 +457,8 @@ export interface Train {
   line: number;
   horned: boolean;
   rumbleT: number;
+  whooshed?: boolean;
+  whooshTimer?: number;
 }
 export function trainLength(tr: Train) {
   return tr.nCars * TRAIN_CAR_LEN + (tr.nCars - 1) * TRAIN_GAP;
@@ -1131,6 +1135,7 @@ class Engine {
     useUI.getState().setPhase("playing");
     useUI.getState().setHud(0, 0, 0, 0, 0, false);
     sfx.start();
+    bgm.setPhase("playing");
   }
 
   /** Turn the showcase pigeon to face the camera (used when opening menu panels). */
@@ -1186,6 +1191,7 @@ class Engine {
     this.reset();
     useUI.getState().setPhase("menu");
     useUI.getState().setMenuView("main");
+    bgm.setPhase("menu");
   }
 
   /* ---------- Input ---------- */
@@ -1221,6 +1227,7 @@ class Engine {
         if (canMove) {
           p.targetLane = nextLane;
           sfx.swish();
+          if (p.grounded) sfx.carve();
         }
         break;
       }
@@ -1465,8 +1472,11 @@ class Engine {
     this.trickScore += pts;
     this.addNos(NOS_PER_TRICK * mult);
     useUI.getState().addPopup(`${info.name} +${pts}`, info.color, mult > 1 ? `COMBO x${mult}` : undefined);
-    if (mult > 1) sfx.bigTrick();
-    else sfx.trick();
+    if (mult > 1) {
+      sfx.combo(mult);
+    } else {
+      sfx.trick();
+    }
   }
 
   /** Grind height along a rail: flat rails are RAIL_H; kinked rails start higher and slope down in the middle. */
@@ -1717,6 +1727,7 @@ class Engine {
     sfx.bonk();
     sfx.whoosh();
     useUI.getState().setPhase("crashed");
+    bgm.setPhase("crashed");
   }
 
   /* ---------- Main update ---------- */
@@ -1826,6 +1837,7 @@ class Engine {
         recordRun(this.distance, this.rocketTaken); // statistik seumur hidup untuk achievement
         useUI.getState().finishRun(this.score, this.breadCount, this.crashCause);
         sfx.coo();
+        bgm.setPhase("gameover");
       }
       if (this.phase === "gameover") this.overT += dt;
     }
@@ -1855,6 +1867,14 @@ class Engine {
     this.updateSubway(dt);
     if (this.phase === "menu" || this.phase === "playing") this.updatePlayer(dt);
     else this.updateCrash(dt);
+
+    if (this.phase === "playing") {
+      bgm.updateRoll(this.speed, p.grounded, p.grinding);
+      bgm.boost(this.sprintBonus > 0 || this.nosT > 0);
+    } else {
+      bgm.updateRoll(0, false, false);
+      bgm.boost(false);
+    }
 
     this.updateParticles(dt);
     this.updatePulses(dt);
@@ -3081,6 +3101,10 @@ class Engine {
           m.warned = true;
           if (this.phase === "playing") (isBike ? sfx.motor() : sfx.horn());
         }
+        if (!m.nearMiss && this.phase === "playing" && Math.abs(m.s - d) < 1.5 && Math.abs(m.lat - this.player.lat) > 0.6 && Math.abs(m.lat - this.player.lat) < 1.8) {
+          m.nearMiss = true;
+          sfx.nearMiss();
+        }
         // asap knalpot keluar selama kendaraan jalan (di belakang kendaraan)
         this.emitExhaust(m, isBike ? 0.52 : 1.05, isBike ? 0.3 : 0.26, isBike ? 0.05 : 0.08, dt);
         if (m.s < d - 16) remove = true;
@@ -3209,10 +3233,14 @@ class Engine {
   private updateCrossings(dt: number) {
     const d = this.distance;
     for (const cr of this.crossings) {
-      if (cr.placed && !cr.trainScheduled && this.phase === "playing" && d >= cr.s - 68) {
+      // Jaminan keselamatan: bila pemain mendekat dan ramp belum terpasang, pasang ramp di ke-3 lajur segera!
+      if (!cr.placed && d >= cr.s - 65) {
+        this.spawnCrossingPattern(cr, cr.s);
+      }
+      if (cr.placed && !cr.trainScheduled && this.phase === "playing" && d >= cr.s - 45) {
         this.scheduleTrain(cr);
       }
-      const near = Math.abs(cr.s - d) < 55;
+      const near = Math.abs(cr.s - d) < 40;
 
       if (cr.state === "idle") {
         if (cr.trainScheduled) {
@@ -3226,7 +3254,7 @@ class Engine {
         if (cr.bellT <= 0) {
           cr.bellT = 0.38;
           cr.bellAlt = !cr.bellAlt;
-          if (near) sfx.bell(cr.bellAlt, clamp(1 - Math.abs(cr.s - d) / 60, 0.25, 1) * 0.22);
+          if (near) sfx.bell(cr.bellAlt, clamp(1 - Math.abs(cr.s - d) / 45, 0.2, 1) * 0.2);
         }
 
         const tr = cr.train;
@@ -3252,18 +3280,32 @@ class Engine {
     let changed = false;
     for (let i = this.trains.length - 1; i >= 0; i--) {
       const tr = this.trains[i];
-      // Pergerakan murni fisika: posisi ditambah kecepatan x dt (sangat mulus tanpa patah-patah/teleport)
+      // Pergerakan murni fisika: posisi ditambah kecepatan x dt
       tr.head += tr.dir * tr.speed * dt;
       const dist = Math.abs(tr.crossing.s - d);
       if (!tr.horned && Math.abs(tr.head) < 26 && dist < 60) {
         tr.horned = true;
         sfx.trainHorn();
       }
-      if (dist < 30 && trainCovers(tr, 0)) {
+      // Suara whoosh angin saat lokomotif melaju kencang memasuki perlintasan
+      if (!tr.whooshed && Math.abs(tr.head) < 22 && dist < 55) {
+        tr.whooshed = true;
+        sfx.trainWhoosh(0.38);
+      }
+      if (dist < 40 && trainCovers(tr, 0)) {
+        // Sapuan angin berkala saat gerbong-gerbong kereta melintas
+        tr.whooshTimer = (tr.whooshTimer ?? 0.75) - dt;
+        if (tr.whooshTimer <= 0) {
+          tr.whooshTimer = 0.75;
+          sfx.trainWhoosh(0.24);
+        }
+        // Daun berembus kencang ke bawah kolong kereta saat kereta lewat!
+        this.blowLeavesUnderTrain(tr, dt);
+
         tr.rumbleT -= dt;
         if (tr.rumbleT <= 0) {
-          tr.rumbleT = 0.28;
-          sfx.rumble(clamp(1 - dist / 30, 0.2, 1) * 0.22);
+          tr.rumbleT = 0.35;
+          sfx.rumble(clamp(1 - dist / 35, 0.2, 1) * 0.16);
         }
       }
       const tail = tr.head - tr.dir * trainLength(tr);
@@ -3491,6 +3533,11 @@ class Engine {
       // Tandai bus sudah didekati pemain (tanpa suara klakson keras & tanpa popup notif mengganggu)
       if (!st.horned && dist > 0 && dist < 54) {
         st.horned = true;
+      }
+      // Suara whoosh angin saat kereta bawah tanah melaju kencang berlawanan arah
+      if (!st.whooshed && dist > -6 && dist < 18) {
+        st.whooshed = true;
+        sfx.trainWhoosh(0.32);
       }
 
       // Kumpulkan deretan roti di atas atap bus saat pemain berselancar/melompat di atasnya
@@ -4187,7 +4234,6 @@ class Engine {
   /** Ramps + bread guiding into the crossing; clears anything else that was generated in the way. */
   private spawnCrossingPattern(cr: Crossing, x: number) {
     const X = cr.s;
-    const t = clamp((this.speed / this.speedMult - START_SPEED) / (MAX_SPEED - START_SPEED), 0, 1);
     const lo = X - 24;
     const hi = X + 10;
     this.obstacles = this.obstacles.filter((o) => o.s < lo || o.s > hi);
@@ -4195,11 +4241,10 @@ class Engine {
     this.nosCans = this.nosCans.filter((c) => c.s < lo - 8 || c.s > hi + 8);
     this.rockets = this.rockets.filter((r) => r.s < lo - 8 || r.s > hi + 8);
     this.letters = this.letters.filter((l) => l.s < lo - 8 || l.s > hi + 8);
-    this.puddles = this.puddles.filter((pu) => pu.s < lo || pu.s > hi);
-    this.movers = this.movers.filter((m) => m.kind !== "chicken" || m.s < lo || m.s > hi);
-    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
-    const nRamps = t < 0.55 ? 2 : 1;
-    cr.rampLanes = lanes.slice(0, nRamps);
+    this.movers = this.movers.filter((m) => m.s < lo || m.s > hi);
+    // PASTIKAN SEMUA 3 LAJUR (0 = kiri, 1 = tengah, 2 = kanan) SELALU MEMILIKI RAMP!
+    // Pemain di lajur mana pun dijamin 100% selalu menemukan ramp untuk melompati kereta dengan aman.
+    cr.rampLanes = [0, 1, 2];
     const rampS = X + CROSSING_RAMP_S;
     const end = rampS + OBSTACLE_DEFS.ramp.halfLen;
     const v = this.targetSpeed(this.runTime + (X - this.distance) / Math.max(this.speed, START_SPEED)) + 0.3;
@@ -4815,9 +4860,10 @@ class Engine {
     }
     // JANGAN PERNAH menempatkan obstacle di dekat apalagi di belakang item (huruf, roket, kaleng NOS)!
     // Clearance 22m di depan item dan 20m di belakang item agar pemain bebas & aman mengambil item.
-    if (this.isNearCollectibleItem(s, lane, hLen + 22.0, hLen + 20.0)) return;
+    // Pengecualian: ramp darurat (_force === true) wajib selalu terpasang sebagai sarana keselamatan pemain!
+    if (!_force && this.isNearCollectibleItem(s, lane, hLen + 22.0, hLen + 20.0)) return;
     // Bread lines must stay readable and never have obstacles in their path or immediately behind them
-    if (this.isNearBread(s, lane, hLen + 10.0, hLen + 20.0)) return;
+    if (!_force && this.isNearBread(s, lane, hLen + 10.0, hLen + 20.0)) return;
     track.frame(s, LANE_LAT[lane], 0, tmpV);
     track.quat(s, tmpQ);
     const catVariant = kind === "car" && Math.random() < 0.48 ? randInt(0, 3) : undefined;
@@ -5715,7 +5761,76 @@ class Engine {
       // recycle when it lands or falls behind the camera
       const rel = (p.x - c.x) * fx + (p.z - c.z) * fz;
       const groundY = track.sample(this.distance + rel).y;
-      if (p.y < groundY + 0.05 || rel < -8 || rel > 45) this.petals[i] = spawn(rand(6, 40));
+      if (p.y < groundY + 0.05 || rel < -8 || rel > 45) {
+        if (this.petals.length > N) {
+          this.petals.splice(i, 1);
+          i--;
+        } else {
+          this.petals[i] = spawn(rand(6, 40));
+        }
+      }
+    }
+  }
+
+  /**
+   * Mengembuskan daun/kelopak bunga kencang ke bawah kereta saat kereta lewat.
+   * Efek hisapan aerodinamis & pusaran angin kereta berkecepatan tinggi:
+   * Daun berembus kencang ke bawah menuju rel & kolong gerbong kereta.
+   */
+  blowLeavesUnderTrain(tr: Train, dt: number) {
+    const crS = tr.crossing.s;
+    const tail = tr.head - tr.dir * trainLength(tr);
+    const minLat = Math.max(Math.min(tr.head, tail), -11);
+    const maxLat = Math.min(Math.max(tr.head, tail), 11);
+    if (maxLat <= minLat) return;
+
+    // Arah lintasan lateral kereta di perlintasan
+    track.frame(crS, 0, 0, tmpV);
+    const p0x = tmpV.x;
+    const p0z = tmpV.z;
+    track.frame(crS, 1, 0, tmpV);
+    const latDx = tmpV.x - p0x;
+    const latDz = tmpV.z - p0z;
+    const latLen = Math.hypot(latDx, latDz) || 1;
+    const dirX = (latDx / latLen) * tr.dir;
+    const dirZ = (latDz / latLen) * tr.dir;
+
+    // 1. Embuskan daun yang berada di sekitar perlintasan ke bawah kolong kereta
+    const c = this.center;
+    for (let i = 0; i < this.petals.length; i++) {
+      const p = this.petals[i];
+      const groundS = this.distance + (p.x - c.x) * Math.cos(c.th) + (p.z - c.z) * Math.sin(c.th);
+      if (Math.abs(groundS - crS) < 6.0) {
+        // Terhisap dan berembus tajam ke bawah kolong kereta (vy negatif)
+        p.vy = Math.min(p.vy - 18 * dt, -4.5);
+        p.vx += dirX * 12 * dt;
+        p.vz += dirZ * 12 * dt;
+        p.wr += 24 * dt;
+      }
+    }
+
+    // 2. Lahirkan daun-daun baru yang berembus ke bawah kereta (pusaran angin turbulen di kolong)
+    const MAX_PETALS_CAP = 160;
+    const spawnCount = Math.min(4, MAX_PETALS_CAP - this.petals.length);
+    for (let k = 0; k < spawnCount; k++) {
+      const s = crS + rand(-2.2, 2.2);
+      const lat = rand(minLat, maxLat);
+      const startH = rand(1.8, 3.6); // Berawal dari atas/samping badan gerbong kereta
+      track.frame(s, lat, startH, tmpV);
+      this.petals.push({
+        x: tmpV.x,
+        y: tmpV.y,
+        z: tmpV.z,
+        // Berembus tajam KE BAWAH kolong gerbong kereta
+        vy: rand(-5.8, -3.2),
+        vx: dirX * rand(4, 9) + rand(-0.4, 0.4),
+        vz: dirZ * rand(4, 9) + rand(-0.4, 0.4),
+        rx: rand(0, 6.28),
+        ry: rand(0, 6.28),
+        rz: rand(0, 6.28),
+        wr: rand(14, 30),
+        ph: rand(0, 6.28),
+      });
     }
   }
 

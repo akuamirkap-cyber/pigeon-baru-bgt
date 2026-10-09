@@ -51,6 +51,9 @@ interface UIState {
   wallet: number;
   runs: number;
   muted: boolean;
+  soundProfile: "after" | "before";
+  toggleSoundProfile: () => void;
+  setSoundProfile: (p: "after" | "before") => void;
   tutorialSeen: boolean;
   setTutorialSeen: () => void;
   isNewBest: boolean;
@@ -251,6 +254,7 @@ export const useUI = create<UIState>((set, get) => ({
   wallet: load<number>("pigeon-sk8-wallet", 0) || 0,
   runs: 0,
   muted: load<boolean>("pigeon-sk8-muted", false) === true,
+  soundProfile: load<string>("pigeon-sk8-sound-profile", "after") === "before" ? "before" : "after",
   tutorialSeen: load<boolean>("pigeon-sk8-tutor", false) === true,
   isNewBest: false,
   popups: [],
@@ -633,6 +637,15 @@ export const useUI = create<UIState>((set, get) => ({
     const muted = !get().muted;
     save("pigeon-sk8-muted", muted);
     set({ muted });
+  },
+  toggleSoundProfile: () => {
+    const next = get().soundProfile === "after" ? "before" : "after";
+    save("pigeon-sk8-sound-profile", next);
+    set({ soundProfile: next });
+  },
+  setSoundProfile: (p: "after" | "before") => {
+    save("pigeon-sk8-sound-profile", p);
+    set({ soundProfile: p });
   },
   setTutorialSeen: () => {
     save("pigeon-sk8-tutor", true);

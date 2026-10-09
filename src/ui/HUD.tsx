@@ -27,6 +27,8 @@ export function HUD() {
   const popups = useUI((s) => s.popups);
   const muted = useUI((s) => s.muted);
   const toggleMute = useUI((s) => s.toggleMute);
+  const soundProfile = useUI((s) => s.soundProfile);
+  const toggleSoundProfile = useUI((s) => s.toggleSoundProfile);
   const nos = useUI((s) => s.nos);
   const nosActive = useUI((s) => s.nosActive);
   const trackMode = useUI((s) => s.trackMode);
@@ -272,6 +274,29 @@ export function HUD() {
                   <span className="font-bold">Ukuran Skateboard</span>
                   <span className="text-[2.1cqw] text-white/60">Panjang, lebar & tebal deck</span>
                 </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  unlockAudio();
+                  sfx.click();
+                  toggleSoundProfile();
+                }}
+                className="flex items-center justify-between rounded-xl bg-white/10 hover:bg-white/15 px-3 py-2 text-left font-display text-[2.9cqw] text-white transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[3.8cqw]">🔊</span>
+                  <div className="flex flex-col">
+                    <span className="font-bold">Profil Suara</span>
+                    <span className="text-[2.1cqw] text-white/60">
+                      {soundProfile === "after" ? "AFTER (Update ZIP)" : "BEFORE (Klasik)"}
+                    </span>
+                  </div>
+                </div>
+                <span className="rounded bg-black/40 px-2 py-0.5 text-[2.2cqw] font-bold text-[#ffd60a]">
+                  {soundProfile === "after" ? "AFTER" : "BEFORE"}
+                </span>
               </button>
 
               <div className="flex items-center gap-1.5 pt-1 border-t border-white/10">

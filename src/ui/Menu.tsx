@@ -2,12 +2,13 @@ import { useState, useRef } from "react";
 import { useUI, WHEEL_COLORS } from "../game/store";
 import { engine } from "../game/engine";
 import { getSkin, DECKS } from "../game/skins";
-import { sfx, unlockAudio } from "../game/audio";
+import { sfx, unlockAudio, SoundId } from "../game/audio";
 import { BreadIcon } from "./BreadIcon";
 import { SkinsPanel } from "./SkinsPanel";
 import { TricksPanel } from "./TricksPanel";
 import { PigeonIcon } from "./PigeonIcon";
 import { AchievementsPanel } from "./AchievementsPanel";
+import { SoundPanelModal } from "./GameOver";
 
 function ShirtIcon() {
   return (
@@ -158,8 +159,12 @@ function SettingsRow() {
   const cycleNightBright = useUI((s) => s.cycleNightBright);
   const shibuyaTime = useUI((s) => s.shibuyaTime);
   const cycleShibuyaTime = useUI((s) => s.cycleShibuyaTime);
+  const soundProfile = useUI((s) => s.soundProfile);
+  const toggleSoundProfile = useUI((s) => s.toggleSoundProfile);
   const addPopup = useUI((s) => s.addPopup);
   const [tips, setTips] = useState(false);
+  const [soundModalOpen, setSoundModalOpen] = useState(false);
+  const [selectedSound, setSelectedSound] = useState<SoundId>("gameover");
 
   const toggleDeck = () => {
     const order = DECKS.map((d) => d.id);
@@ -262,9 +267,50 @@ function SettingsRow() {
           ?
         </button>
       </div>
+      <div className="flex w-full gap-1.5">
+        <CyclePill
+          label="PROFIL SUARA"
+          value={soundProfile === "after" ? "AFTER (ZIP)" : "BEFORE"}
+          accent={soundProfile === "after" ? "#168879" : undefined}
+          onTap={() => {
+            toggleSoundProfile();
+            sfx.click();
+            addPopup(
+              soundProfile === "before" ? "🔊 SUARA: AFTER (ZIP UPDATE)" : "🔊 SUARA: BEFORE (KLASIK)",
+              soundProfile === "before" ? "#39c1ea" : "#ffd21f",
+              soundProfile === "before" ? "30 Sound FX 8-bit dari zip update aktif" : "Sound FX klasik awal aktif"
+            );
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            sfx.click();
+            setSoundModalOpen(true);
+          }}
+          className="pointer-events-auto flex min-h-[46px] flex-1 items-center justify-center gap-1.5 rounded-2xl bg-white/95 px-2 py-1.5 leading-none shadow-[0_3px_0_rgba(0,0,0,0.12)] transition-transform active:translate-y-[2px] active:shadow-none"
+        >
+          <span className="text-[3.2cqw]">🎵</span>
+          <span className="font-display text-[2.7cqw] font-bold text-[#1f2430]">TES 30 SOUNDS</span>
+        </button>
+      </div>
       {tips && (
         <div className="rounded-2xl bg-white/90 px-3 py-2 text-center font-body text-[2.7cqw] font-extrabold leading-snug text-[#1f2430]/75 backdrop-blur-[2px]">
           Swipe ↔ pindah jalur · tap / ↑ lompat · SPRINT = kayuh cepat · NOS kalau penuh
+        </div>
+      )}
+      {soundModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm pointer-events-auto"
+          onClick={() => setSoundModalOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <SoundPanelModal
+              selected={selectedSound}
+              onSelect={setSelectedSound}
+              onClose={() => setSoundModalOpen(false)}
+            />
+          </div>
         </div>
       )}
     </div>

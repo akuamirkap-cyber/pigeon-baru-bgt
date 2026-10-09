@@ -618,3 +618,136 @@ body,
   will-change: background-position;
   image-rendering: auto;
 }
+
+/* ===== Game Over Pixel UI Formula (from ui-design-with-empty-background) ===== */
+@keyframes pop-in {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-up {
+  0% {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes score-bounce {
+  0% {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.anim-pop {
+  animation: pop-in 0.45s cubic-bezier(0.22, 1.4, 0.36, 1) both;
+}
+
+.anim-slide {
+  animation: slide-up 0.4s ease-out both;
+}
+
+.anim-score {
+  display: inline-block;
+  animation: score-bounce 0.5s cubic-bezier(0.22, 1.6, 0.36, 1) both;
+}
+
+/* Outline teks gaya pixel */
+.pixel-outline {
+  text-shadow:
+    3px 0 0 #3a2404,
+    -3px 0 0 #3a2404,
+    0 3px 0 #3a2404,
+    0 -3px 0 #3a2404,
+    3px 3px 0 #3a2404,
+    -3px 3px 0 #3a2404,
+    3px -3px 0 #3a2404,
+    -3px -3px 0 #3a2404,
+    0 6px 0 #3a2404;
+}
+
+.pixel-outline-sm {
+  text-shadow:
+    2px 0 0 rgba(0, 0, 0, 0.75),
+    -2px 0 0 rgba(0, 0, 0, 0.75),
+    0 2px 0 rgba(0, 0, 0, 0.75),
+    0 -2px 0 rgba(0, 0, 0, 0.75),
+    2px 2px 0 rgba(0, 0, 0, 0.75),
+    -2px -2px 0 rgba(0, 0, 0, 0.75),
+    2px -2px 0 rgba(0, 0, 0, 0.75),
+    -2px 2px 0 rgba(0, 0, 0, 0.75);
+}
+
+/* Ujung pita (ribbon) bergerigi */
+.ribbon-end-left {
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    38% 50%
+  );
+}
+
+.ribbon-end-right {
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    62% 50%,
+    100% 100%,
+    0 100%
+  );
+}
+
+/* Sudut kotak dipapas ala pixel */
+.pixel-corners {
+  clip-path: polygon(
+    0 8px,
+    8px 8px,
+    8px 0,
+    calc(100% - 8px) 0,
+    calc(100% - 8px) 8px,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    8px calc(100% - 8px),
+    0 calc(100% - 8px)
+  );
+}
+
+.pixel-corners-sm {
+  clip-path: polygon(
+    0 6px,
+    6px 6px,
+    6px 0,
+    calc(100% - 6px) 0,
+    calc(100% - 6px) 6px,
+    100% 6px,
+    100% calc(100% - 6px),
+    calc(100% - 6px) calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    6px calc(100% - 6px),
+    0 calc(100% - 6px)
+  );
+}
