@@ -1519,7 +1519,7 @@ class Engine {
     // Vertical jump height is independent of speed mode; 2×/3× only changes forward travel speed.
     p.vh = v;
     p.airT = 0;
-    p.squash = -0.22; // juicy: badan memanjang sesaat saat lepas tanah (stretch)
+    p.squash = -0.34; // juicy: badan memanjang kuat saat lepas tanah (stretch)
     sfx.jump();
   }
 
@@ -1711,7 +1711,7 @@ class Engine {
     p.bigAir = false;
     p.h = SUBWAY_ROOF_H;
     p.vh = 0;
-    p.squash = 0.8; // Pendaratan empuk: kompresi kuat (juicy)
+    p.squash = 1.0; // Pendaratan empuk: kompresi kuat (juicy)
     p.grindPts = 0;
     if (p.trick) {
       p.trick.t = p.trick.dur;
