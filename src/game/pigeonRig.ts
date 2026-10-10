@@ -192,6 +192,7 @@ export function buildPigeonGroup(
     const h = new THREE.Mesh(headGeo, voxelMaterial);
     h.position.set(...RIG.headPos);
     h.rotation.y = RIG.headRotY;
+    h.scale.setScalar(1.1); // kepala 10% lebih besar
     pigeon.add(h);
     const wr = new THREE.Mesh(wingRGeo, voxelMaterial);
     wr.position.set(...RIG.wingRPos);

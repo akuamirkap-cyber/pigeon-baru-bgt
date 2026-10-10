@@ -299,7 +299,7 @@ export const SKINS: Skin[] = [
   {
     id: "classic", name: "Classic Coo", tagline: "The original street bird", cost: 0,
     body: "#C9C4BE", belly: "#A8A29B", head: "#6D70A5", neck1: "#6BC4B4", neck2: "#6BC4B4",
-    wing: "#C9C4BE", wingTip: "#6E6862", tail: "#A8A29B", tailTip: "#6D70A5", beak: "#F08A8A", cere: "#E8A0A8", feet: ORANGE,
+    wing: "#C9C4BE", wingTip: "#6E6862", tail: "#A8A29B", tailTip: "#6D70A5", beak: "#6E6862", cere: "#6E6862", feet: ORANGE,
     deck: "#2ec4b6", wheels: "#fff1d6",
   },
   {
@@ -485,7 +485,7 @@ export function pigeonBodyParts(k: Skin): Part[] {
     // gradasi bawah badan lebih gelap dari Voxel Buddies Pigeon (menempel pas di atas pinggul kaki HIP_Y = 0.3)
     { x: 0.04, y: 0.36, z: 0, w: 0.75, h: 0.12, d: 0.61, color: k.belly ?? k.tail },
     // LEHER teal (cincin leher antara badan & kepala dari Voxel Buddies Pigeon, berdiri jelas di atas badan)
-    { x: 0.22, y: 0.90, z: 0, w: 0.40, h: 0.20, d: 0.40, color: k.neck1 },
+    { x: 0.22, y: 0.91, z: 0, w: 0.40, h: 0.18, d: 0.40, color: k.neck1 }, // leher 10% lebih pendek
   ];
 
   if (k.accessory === "mailbag") {
@@ -648,8 +648,8 @@ export function pigeonHeadParts(k: Skin): Part[] {
     { x: 0.06, y: 0.22, z: 0.215, w: 0.22, h: 0.22, d: 0.04, color: "#ffffff" },
     { x: 0.06, y: 0.22, z: -0.215, w: 0.22, h: 0.22, d: 0.04, color: "#ffffff" },
     // MATA: pupil hitam kotak di tengah patch dari Voxel Buddies Pigeon
-    { x: 0.1, y: 0.22, z: 0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
-    { x: 0.1, y: 0.22, z: -0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
+    { x: 0.06, y: 0.22, z: 0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
+    { x: 0.06, y: 0.22, z: -0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
     // PARUH: paruh pink 2 tingkat menonjol di depan dari Voxel Buddies Pigeon
     // tingkat atas (paruh utama)
     { x: 0.32, y: 0.19, z: 0, w: 0.24, h: 0.12, d: 0.20, color: k.beak },
