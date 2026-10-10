@@ -287,33 +287,6 @@ export function carParts(variant: number): Part[] {
 }
 
 /**
- * Menambahkan knalpot (2 pipa krom gelap) di bagian belakang kendaraan yang hadap +x.
- * Posisi dihitung dari bounding box part yang ada, jadi berlaku untuk semua model mobil/bus.
- * Asap keluar dari sini lewat emitExhaust di engine.
- */
-export function withExhaust(parts: Part[]): Part[] {
-  let minX = Infinity;
-  let zHalf = 0;
-  for (const p of parts) {
-    minX = Math.min(minX, p.x - p.w / 2);
-    zHalf = Math.max(zHalf, Math.abs(p.z) + p.d / 2);
-  }
-  if (!Number.isFinite(minX)) return parts;
-  const pipeZ = Math.min(zHalf * 0.5, 0.55);
-  const pipeColor = "#8c929c";
-  const pipes: Part[] = [-1, 1].map((sz) => ({
-    x: minX - 0.05,
-    y: 0.24,
-    z: sz * pipeZ,
-    w: 0.14,
-    h: 0.12,
-    d: 0.12,
-    color: pipeColor,
-  }));
-  return [...parts, ...pipes];
-}
-
-/**
  * Motor gede + pengendaranya, hadap +x, roda menyentuh y = 0.
  * Dipakai sebagai `MoverKind = "motorcycle"` (lalu lintas dari arah depan).
  */
@@ -1730,10 +1703,8 @@ export function kamenRiderTorsoParts(): Part[] {
     { x: 0.225, y: 0.2, z: 0, w: 0.02, h: 0.045, d: 0.045, color: "#ffe89a" },
     // SYAL MERAH CERAH mengalir ke belakang (ciri khas!)
     { x: 0, y: 0.36, z: 0, w: 0.44, h: 0.1, d: 0.5, color: KR.scarf },
-    // Syal dirapikan: tanpa potongan miring (rz) yang lepas. Jatuh lurus dari lilitan leher,
-    // menempel di punggung, dan ujungnya menyambung ke bagian bawah.
-    { x: -0.245, y: 0.27, z: 0, w: 0.1, h: 0.2, d: 0.46, color: KR.scarf },   // jatuh dari leher ke punggung
-    { x: -0.29, y: 0.12, z: 0, w: 0.09, h: 0.2, d: 0.44, color: "#c22a20" }, // ujung syal (sedikit lebih gelap)
+    { x: -0.26, y: 0.3, z: 0.04, w: 0.26, h: 0.09, d: 0.2, rz: 0.28, color: KR.scarf },
+    { x: -0.44, y: 0.22, z: 0.02, w: 0.26, h: 0.08, d: 0.16, rz: 0.42, color: "#c22a20" }, // ujung syal
   ];
 }
 
@@ -3828,33 +3799,34 @@ export function avenueLampParts(): Part[] {
  */
 export function scrambleRoadParts(): Part[] {
   const asphalt = "#3b4152";
+  const asphaltDark = "#343a4a";
   const zebra = "#e4e8ef";
   const parts: Part[] = [];
   const avenueW = 13.4;
 
   // A single, level intersection apron: two carriageways and a paved-over median.
-  // Apron dibatasi di antara tepi curb jalur (z -4.0 .. 12.3) agar sejajar dengan trotoar.
-  parts.push({ x: 0, y: 0.016, z: 0.5, w: avenueW, h: 0.024, d: 4.5, color: asphalt });
+  parts.push({ x: 0, y: 0.016, z: 0, w: avenueW, h: 0.024, d: 8.0, color: asphalt });
   parts.push({ x: 0, y: 0.016, z: 8.65, w: avenueW, h: 0.024, d: 7.35, color: asphalt });
-  // Median tengah dirapikan: rata dengan aspal, warna sama dengan pembatas jalur (hijau + garis putih).
-  parts.push({ x: 0, y: 0.02, z: 4.35, w: avenueW, h: 0.03, d: 1.6, color: "#4f6b48" });
-  parts.push({ x: 0, y: 0.03, z: 3.55, w: avenueW, h: 0.03, d: 0.15, color: "#e9ecf2" });
-  parts.push({ x: 0, y: 0.03, z: 5.15, w: avenueW, h: 0.03, d: 0.15, color: "#e9ecf2" });
+  parts.push({ x: 0, y: 0.09, z: 4.35, w: avenueW, h: 0.175, d: 1.6, color: asphaltDark });
 
   // Cross streets on all four corners; keep the curb edges straight and uncluttered.
-  // Tidak ada dek jalan lintas yang dinaikkan di atas trotoar; trotoar dirender oleh ground.ts.
+  for (const [z0, z1] of [[-30, -4.0], [12.3, 30]] as const) {
+    const mid = (z0 + z1) / 2;
+    parts.push({ x: 0, y: 0.145, z: mid, w: avenueW, h: 0.06, d: z1 - z0, color: asphalt });
+  }
 
   // Two crisp, evenly spaced zebra bands across the six-lane avenue.
   for (const x of [-5.0, 5.0]) {
     for (let z = -3.4; z <= 12.1; z += 0.95) {
-      parts.push({ x, y: 0.04, z, w: 2.25, h: 0.022, d: 0.46, color: zebra });
+      const onMedian = z > 3.4 && z < 5.3;
+      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 2.25, h: 0.022, d: 0.46, color: zebra });
     }
   }
 
   // Matching zebra crossings on the north/south side streets.
-  for (const z of [-2.9, 11.1]) {
+  for (const z of [-5.4, 13.7]) {
     for (let x = -5.5; x <= 5.5; x += 0.9) {
-      parts.push({ x, y: 0.04, z, w: 0.44, h: 0.022, d: 1.6, color: zebra });
+      parts.push({ x, y: 0.19, z, w: 0.44, h: 0.022, d: 2.0, color: zebra });
     }
   }
 
@@ -3875,7 +3847,8 @@ export function scrambleRoadParts(): Part[] {
       if (t > 0.44 && t < 0.56) continue;
       const x = line.x0 + t * dx;
       const z = line.z0 + t * dz;
-      const y = 0.04 + d * 0.003;
+      const onMedian = z > 3.4 && z < 5.3;
+      const y = (onMedian ? 0.19 : 0.04) + d * 0.003;
       parts.push({ x, y, z, w: 1.7, h: 0.022, d: 0.42, ry, color: zebra });
     }
   }
@@ -3883,7 +3856,8 @@ export function scrambleRoadParts(): Part[] {
   // Bold stop bars frame the junction and make the approach geometry easy to read.
   for (const x of [-6.45, 6.45]) {
     for (const [z, width] of [[0, 7.0], [8.65, 7.0]] as const) {
-      parts.push({ x, y: 0.04, z, w: 0.16, h: 0.022, d: width, color: zebra });
+      const onMedian = z > 3.4 && z < 5.3;
+      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 0.16, h: 0.022, d: width, color: zebra });
     }
   }
 
