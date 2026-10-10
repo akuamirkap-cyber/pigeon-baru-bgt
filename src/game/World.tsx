@@ -2035,7 +2035,7 @@ function Breads() {
   const haloRef = useRef<THREE.InstancedMesh>(null);
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
-  const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.5, 1.5), []);
+  const haloGeo = useMemo(() => new THREE.PlaneGeometry(0.85, 0.85), []);
   const haloMat = useMemo(
     () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
