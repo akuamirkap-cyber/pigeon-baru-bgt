@@ -2075,7 +2075,7 @@ function SparkleFx() {
       m.setMatrixAt(i, tmpObj.matrix);
       // warna kuning-emas sampai putih-hangat
       sparkleCol.setHSL(0.11 + s.hue * 0.04, 1, 0.82 + (1 - k) * 0.12);
-      sparkleCol.multiplyScalar(0.7); // kecerahan sparkle dikurangi 30%
+      sparkleCol.multiplyScalar(0.45); // kecerahan sparkle dikurangi lagi (masih silau)
       m.setColorAt(i, sparkleCol);
       i++;
     }
