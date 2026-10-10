@@ -297,6 +297,17 @@ export function getShibuyaAnimalPlayerScale(id: ShibuyaAnimalId) {
   return (SHIBUYA_PLAYABLE_HEIGHT * displayMultiplier) / ANIMAL_HEIGHT_TARGETS[id];
 }
 
+/** Tinggi tampilan hewan PENYEBERANG di dunia (m) — SENGAJA disamakan dengan ukuran hewan pada
+ *  skin karakter (playable Friends): SHIBUYA_PLAYABLE_HEIGHT × RIG.rootScale (pigeonRig.ts = 0.5635).
+ *  (Kalau RIG.rootScale di pigeonRig.ts berubah, ikut ubah angka 0.5635 di sini.) */
+export const SHIBUYA_WORLD_ANIMAL_H = SHIBUYA_PLAYABLE_HEIGHT * 0.5635; // ≈ 0.832 m
+
+/** Tinggi tampilan satu hewan penyeberang — sama persis seperti ukuran hewan di skin karakter
+ *  (termasuk multiplier crane 2x seperti tampilan skin). */
+export function getShibuyaAnimalWorldHeight(id: ShibuyaAnimalId): number {
+  return SHIBUYA_WORLD_ANIMAL_H * (id === "crane" ? SHIBUYA_CRANE_DISPLAY_MULTIPLIER : 1);
+}
+
 export function getShibuyaAnimalParts(id: ShibuyaAnimalId): Part[] {
   const data = buildAnimals(id);
   // Rotated by Math.PI / 2 so animal faces +x along the crossing / travel line
@@ -310,11 +321,13 @@ export function getShibuyaAnimalGeo(id: ShibuyaAnimalId) {
 
 /** World pedestrians keep the source activity posture; the playable/preview
  * geometry above uses the standing Friend posture. Setting boxes remain
- * filtered, so Capybara's bath is supplied separately by getShibuyaBathGeo. */
+ * filtered, so Capybara's bath is supplied separately by getShibuyaBathGeo.
+ * Ukuran hewan penyeberang sengaja disamakan dengan ukuran di skin karakter
+ * (lihat getShibuyaAnimalWorldHeight). */
 export function getShibuyaAnimalWorldGeo(id: ShibuyaAnimalId) {
   return getGeometry(`shibuya-world-animal-${id}`, () => {
     const data = buildAnimals(id);
-    return convertRiggedToParts(data, { rotateY: Math.PI / 2, targetHeight: ANIMAL_HEIGHT_TARGETS[id] });
+    return convertRiggedToParts(data, { rotateY: Math.PI / 2, targetHeight: getShibuyaAnimalWorldHeight(id) });
   });
 }
 

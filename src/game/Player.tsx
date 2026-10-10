@@ -974,7 +974,8 @@ export function Player() {
       if (nm) {
         // NEW: the OUTER wing (opposite the lean) lifts a little on hard carves: |lean| * 0.5 on the ground, * 0.35 in the air.
         // wr is the +z wing (screen right), wl the -z wing; leaning right (lean > 0) => the left wing is the outer one.
-        const lv2 = engine.turn.leanVis;
+        // Saat nge-grind, tangan ikut berotasi mengikuti bentuk rel (grindRoll) — sayap luar terangkat ke arah tikungan.
+        const lv2 = engine.turn.leanVis + (p.grinding ? p.grindRoll : 0);
         const amt = grabbing ? 0 : Math.abs(lv2) * (0.5 + (0.35 - 0.5) * p.airBlend);
         wr.rotation.x = -a - (lv2 < 0 ? amt : 0);
         wl.rotation.x = a + (lv2 > 0 ? amt : 0);

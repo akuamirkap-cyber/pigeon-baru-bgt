@@ -71,6 +71,10 @@ export interface TurnInput {
   fwd: number;
   air: boolean;
   grind: boolean;
+  /** rel ULAR: posisi lateral garis tengah rel — board dikunci kinematik ke sini (ikut ayunan snake) */
+  grindLat?: number;
+  /** rel ULAR: heading garis tengah rel — yaw papan mengikuti belokan snake */
+  grindHeading?: number;
   minLat: number;
   maxLat: number;
   dt: number;
@@ -103,13 +107,26 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
   if (i.grind) {
     // rails: lock to the rail lane, straighten everything, never go diagonal on the rail
     const k = 1 - Math.exp(-dt * 22);
-    s.lat += (i.target - s.lat) * k;
-    s.refX = s.lat;
-    s.refV = 0;
-    s.heading *= Math.exp(-dt * 16);
-    s.lean *= Math.exp(-dt * 16);
-    s.sF *= Math.exp(-dt * 20);
-    s.latVel = (s.lat - prevLat) / dt;
+    if (i.grindLat !== undefined) {
+      // REL ULAR: board dikunci ke garis tengah rel yang MELIKU — ikut ayunan, dan yaw papan
+      // mengikuti arah belokan (k * dt cukup kaku untuk menjejaki gelombang yang bergerak).
+      s.lat = i.grindLat;
+      s.latVel = (s.lat - prevLat) / dt;
+      const gh = i.grindHeading ?? 0;
+      s.heading += (gh - s.heading) * k;
+      s.lean += (gh * 0.18 - s.lean) * k; // sedikit condong ke arah belokan
+      s.sF *= Math.exp(-dt * 20);
+      s.refX = s.lat;
+      s.refV = 0;
+    } else {
+      s.lat += (i.target - s.lat) * k;
+      s.refX = s.lat;
+      s.refV = 0;
+      s.heading *= Math.exp(-dt * 16);
+      s.lean *= Math.exp(-dt * 16);
+      s.sF *= Math.exp(-dt * 20);
+      s.latVel = (s.lat - prevLat) / dt;
+    }
   } else {
     // 1) smooth reference to the lane centre: critically damped spring, exact integration
     {
@@ -186,12 +203,15 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
     }
   }
   // stay inside the road: pushing against the edge kills the heading that points outward
-  if (s.lat < i.minLat) {
-    s.lat = i.minLat;
-    if (s.heading < 0) s.heading *= 0.5;
-  } else if (s.lat > i.maxLat) {
-    s.lat = i.maxLat;
-    if (s.heading > 0) s.heading *= 0.5;
+  // (rel ular sengaja dikecualikan: garis tengahnya sendiri yang memandu, dan ia memang masih di badan jalan)
+  if (i.grindLat === undefined) {
+    if (s.lat < i.minLat) {
+      s.lat = i.minLat;
+      if (s.heading < 0) s.heading *= 0.5;
+    } else if (s.lat > i.maxLat) {
+      s.lat = i.maxLat;
+      if (s.heading > 0) s.heading *= 0.5;
+    }
   }
   s.headingVis += (s.heading - s.headingVis) * (1 - Math.exp(-dt * T.YAW_DAMP));
   s.leanVis += (s.lean - s.leanVis) * (1 - Math.exp(-dt * T.LEAN_VIS_DAMP));
