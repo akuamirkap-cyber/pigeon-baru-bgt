@@ -28,9 +28,12 @@ export function buildVoxelGeometry(parts: Part[]): THREE.BufferGeometry {
   const geos: THREE.BufferGeometry[] = [];
   for (const p of parts) {
     const g = new THREE.BoxGeometry(p.w, p.h, p.d);
-    if (p.rx) g.rotateX(p.rx);
-    if (p.ry) g.rotateY(p.ry);
-    if (p.rz) g.rotateZ(p.rz);
+    // Rotasi dibangun sebagai SATU matriks Euler "XYZ" (sama dengan konvensi converter model
+    // Shibuya). Memanggil rotateX → rotateY → rotateZ berurutan memakai urutan terbalik dan
+    // membuat kotak yang punya lebih dari satu sumbu rotasi (mis. motor & pengendara) miring/serong.
+    if (p.rx || p.ry || p.rz) {
+      g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(p.rx ?? 0, p.ry ?? 0, p.rz ?? 0, "XYZ")));
+    }
     g.translate(p.x, p.y, p.z);
     tmpColor.set(p.color);
     const count = g.attributes.position.count;

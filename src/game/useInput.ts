@@ -1,9 +1,7 @@
 import { useEffect, type RefObject } from "react";
 import { engine, type InputAction } from "./engine";
 import { unlockAudio } from "./audio";
-import { useUI } from "./store";
-
-const SWIPE_PX = 15;
+import { useUI, SWIPE_PX_BY_PRESET } from "./store";
 
 /** Swipe / tap / keyboard → engine actions. Menu buttons are handled by the UI layer. */
 export function useInput(ref: RefObject<HTMLElement | null>) {
@@ -50,7 +48,7 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
       if (!active || swiped || e.pointerId !== pointerId) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
-      if (Math.hypot(dx, dy) < SWIPE_PX) return;
+      if (Math.hypot(dx, dy) < SWIPE_PX_BY_PRESET[useUI.getState().swipeSens]) return;
       swiped = true;
       if (holdTimer) clearTimeout(holdTimer);
       if (holding) {

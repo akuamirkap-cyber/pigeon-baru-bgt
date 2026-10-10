@@ -1,8 +1,8 @@
+import { motorcycleParts, motoLightParts } from "./models";
 import * as THREE from "three";
 import { buildCharacters } from "../shibuya/voxel/characters";
 import { buildAnimals } from "../shibuya/voxel/animals";
 import { buildRigAnimations } from "../shibuya/voxel/rig";
-import { buildVehicles } from "../shibuya/voxel/vehicles";
 import { citizenActivityModel } from "../shibuya/voxel/citizenActivities";
 import { buildVoxelGeometry, type Part, getGeometry, getGeometryPair, voxelMaterial } from "./voxel";
 import type { AssetData, RigNode, Vec3 } from "../shibuya/voxel/types";
@@ -586,30 +586,13 @@ export function getShibuyaBathGeo() {
 // Honda is represented by the source Super Cub and Harley by the source custom/cruiser
 // silhouette. The aliases keep the route vocabulary explicit without duplicating the
 // underlying Shibuya Blocks geometry.
-const MOTORCYCLE_SOURCE_IDS: Record<ShibuyaMotorcycleId, string> = {
-  honda: "cub",
-  harley: "custom",
-  cub: "cub",
-  custom: "custom",
-  sport: "sport",
-  delivery: "delivery",
-  retro: "retro",
-  cafe: "cafe",
-  trail: "trail",
-  police: "police",
-};
-
 export function getShibuyaMotorcycleParts(id: ShibuyaMotorcycleId, helmet = true): Part[] {
-  const data = buildVehicles(MOTORCYCLE_SOURCE_IDS[id]);
-  // Rotated by Math.PI / 2 so motorcycle and rider face +x (oncoming traffic).
-  // Target height ~1.52m (standard motorcycle + rider height, below MOTOR_CLEAR_H = 1.55).
-  // No-helmet variants keep the source face/head, but remove only boxes explicitly
-  // tagged as helmet geometry; the rider and bike remain one connected silhouette.
-  return convertRiggedToParts(data, {
-    rotateY: Math.PI / 2,
-    targetHeight: helmet ? 1.52 : 1.42,
-    omitHelmet: !helmet,
-  });
+  // Model motor Shibuya (hasil konversi rig sumber) tampak miring/serong karena rig sumbernya
+  // tidak tegak. Supaya semua motor tegak lurus dan menghadap pemain, motor Shibuya memakai
+  // model motor tegak yang sama dengan mode lain. Varian warna tetap dibedakan dengan indeks.
+  const variant = Math.max(0, SHIBUYA_MOTORCYCLES.indexOf(id));
+  void helmet; // model tegak selalu memakai helm
+  return motorcycleParts(variant);
 }
 
 export function getShibuyaMotorcycleGeo(id: ShibuyaMotorcycleId, helmet = true) {
@@ -627,5 +610,5 @@ export function getShibuyaMotorcycleLightsParts(): Part[] {
 }
 
 export function getShibuyaMotorcycleLightsGeo() {
-  return getGeometry("shibuya-moto-lights", getShibuyaMotorcycleLightsParts);
+  return getGeometry("moto-lights", motoLightParts);
 }
