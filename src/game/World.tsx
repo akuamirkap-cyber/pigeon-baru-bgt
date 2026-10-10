@@ -2123,26 +2123,6 @@ function getDotTex(): THREE.CanvasTexture {
   return dotTex;
 }
 
-let rewardTex: THREE.CanvasTexture | null = null;
-function getRewardTex(): THREE.CanvasTexture {
-  if (!rewardTex) {
-    const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 128;
-    const g = c.getContext("2d")!;
-    g.font = "bold 92px sans-serif";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.lineWidth = 14;
-    g.strokeStyle = "#6b3f00";
-    g.strokeText("+10", 128, 66);
-    g.fillStyle = "#ffd55a";
-    g.fillText("+10", 128, 66);
-    rewardTex = new THREE.CanvasTexture(c);
-  }
-  return rewardTex;
-}
-
 const BURST_POOL = 6;
 const BURST_PART_CAP = 60;
 const burstCol = new THREE.Color();
@@ -2158,10 +2138,7 @@ function BurstFx() {
     const slots = Array.from({ length: BURST_POOL }, () => {
       const ring = new THREE.Mesh(geo, add(getRingTex()));
       const flash = new THREE.Mesh(geo, add(getDotTex()));
-      const text = new THREE.Mesh(
-        geo,
-        new THREE.MeshBasicMaterial({ map: getRewardTex(), transparent: true, depthWrite: false, toneMapped: false })
-      );
+      const text = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
       for (const o of [ring, flash, text]) {
         o.frustumCulled = false;
         o.visible = false;
@@ -2196,13 +2173,7 @@ function BurstFx() {
       slot.flash.scale.setScalar(0.45 * (1 - kf) + 0.15);
       (slot.flash.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - kf);
       // teks reward naik pelan lalu memudar
-      slot.text.visible = bu.reward;
-      if (bu.reward) {
-        slot.text.position.set(bu.x, bu.y + 0.35 + 0.9 * e, bu.z);
-        slot.text.quaternion.copy(camera.quaternion);
-        slot.text.scale.set(0.9, 0.45, 1);
-        (slot.text.material as THREE.MeshBasicMaterial).opacity = k < 0.6 ? 1 : Math.max(0, (1 - k) / 0.4);
-      }
+      slot.text.visible = false; // teks angka reward dinonaktifkan
       // partikel: bintang & bulat, menyebar lalu mengecil dan memudar (additive: warna = fade)
       for (const p of bu.parts) {
         const useStar = p.star ? si < BURST_PART_CAP : di < BURST_PART_CAP;
