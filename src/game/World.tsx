@@ -710,13 +710,13 @@ const ShibuyaPedestrianMover = memo(function ShibuyaPedestrianMover({ m }: { m: 
       inner.position.set(0, m.rag.radius, 0);
       inner.rotation.set(
         m.rag.rx,
-        m.rag.ry + (m.dir > 0 ? -Math.PI / 2 : Math.PI / 2),
+        m.rag.ry + (m.dir > 0 ? 0 : Math.PI),
         m.rag.rz
       );
       inner.scale.setScalar(1);
     } else {
       inner.position.set(0, 0, 0);
-      inner.rotation.set(0, m.dir > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
+      inner.rotation.set(0, m.dir > 0 ? 0 : Math.PI, 0); // rig Shibuya menghadap +z: 0 = ke kanan (+lat), PI = ke kiri
       inner.scale.setScalar(1);
       if (m.phase === "hop") {
         const strideFreq = (m.speed / 0.88) * Math.PI;
