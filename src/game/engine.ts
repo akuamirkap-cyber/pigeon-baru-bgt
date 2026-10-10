@@ -1501,6 +1501,11 @@ class Engine {
       if (kf && hf) pickT = TRICK_MAP[this.flipToggle ? "heelflip" : "kickflip"];
       else pickT = TRICK_MAP[kf ? "kickflip" : "heelflip"];
     }
+    if (pickT.kind === "salto") {
+      // salto acak: depan atau belakang (50:50)
+      this.startTrick("salto", pickT.dur, Math.random() < 0.5 ? 1 : -1);
+      return true;
+    }
     if (pickT.kind === "coo540" && input === "swipeR") this.startTrick("coo540", pickT.dur, -1);
     else this.startTrick(pickT.kind, pickT.dur);
     return true;
@@ -1549,7 +1554,7 @@ class Engine {
     this.trickDir = dir;
     if (kind === "wingflap") sfx.whoosh();
   }
-  private trickDir = 1;
+  trickDir = 1;
 
   private completeTrick() {
     const p = this.player;
@@ -2440,6 +2445,10 @@ class Engine {
           break;
         case "heelflip":
           flip = -e * Math.PI * 2;
+          break;
+        case "salto":
+          // papan tetap freestyle: ikut berputar (kickflip-style) searah salto
+          flip = this.trickDir * e * Math.PI * 2;
           break;
         case "spinL":
           yaw = e * Math.PI * 2;
