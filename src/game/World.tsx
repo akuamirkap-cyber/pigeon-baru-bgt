@@ -2011,22 +2011,59 @@ function RareFlash() {
 const MAX_BREAD = 140;
 const tmpObj = new THREE.Object3D();
 
+/* Halo emas radial (additive, selalu menghadap kamera) untuk glow roti. */
+let breadHaloTex: THREE.CanvasTexture | null = null;
+function getBreadHaloTex(): THREE.CanvasTexture {
+  if (!breadHaloTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d")!;
+    const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grd.addColorStop(0, "rgba(255,236,170,1)");
+    grd.addColorStop(0.35, "rgba(255,200,90,0.55)");
+    grd.addColorStop(1, "rgba(255,170,40,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 128, 128);
+    breadHaloTex = new THREE.CanvasTexture(c);
+  }
+  return breadHaloTex;
+}
+
 function Breads() {
   const ref = useRef<THREE.InstancedMesh>(null);
   const glowRef = useRef<THREE.InstancedMesh>(null);
+  const haloRef = useRef<THREE.InstancedMesh>(null);
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
+  const { camera } = useThree();
+  const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.5, 1.5), []);
+  const haloMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    []
+  );
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
     let i = 0;
     const t = engine.time;
+    const hm = haloRef.current;
     for (const b of engine.breads) {
       if (b.taken || i >= MAX_BREAD) continue;
-      tmpObj.position.set(b.wx, b.wy + Math.sin(t * 3 + b.phase) * 0.08, b.wz);
+      const bob = Math.sin(t * 3 + b.phase) * 0.08;
+      tmpObj.position.set(b.wx, b.wy + bob, b.wz);
       tmpObj.rotation.set(0, t * 2.2 + b.phase, 0);
       tmpObj.scale.setScalar(1);
       tmpObj.updateMatrix();
-      m.setMatrixAt(i++, tmpObj.matrix);
+      m.setMatrixAt(i, tmpObj.matrix);
+      if (hm) {
+        // halo: billboard menghadap kamera, berdenyut pelan
+        const pulse = 1 + 0.12 * Math.sin(t * 5 + b.phase);
+        tmpObj.position.set(b.wx, b.wy + bob + 0.35, b.wz);
+        tmpObj.quaternion.copy(camera.quaternion);
+        tmpObj.scale.setScalar(pulse);
+        tmpObj.updateMatrix();
+        hm.setMatrixAt(i, tmpObj.matrix);
+      }
+      i++;
     }
     m.count = i;
     m.instanceMatrix.needsUpdate = true;
@@ -2036,11 +2073,16 @@ function Breads() {
       g.instanceMatrix.copy(m.instanceMatrix);
       g.instanceMatrix.needsUpdate = true;
     }
+    if (hm) {
+      hm.count = i;
+      hm.instanceMatrix.needsUpdate = true;
+    }
   });
   return (
     <>
       <instancedMesh ref={ref} args={[pair.lit, voxelMaterial, MAX_BREAD]} frustumCulled={false} castShadow />
       {pair.glow && <instancedMesh ref={glowRef} args={[pair.glow, glowMaterial, MAX_BREAD]} frustumCulled={false} />}
+      <instancedMesh ref={haloRef} args={[haloGeo, haloMat, MAX_BREAD]} frustumCulled={false} renderOrder={5} />
     </>
   );
 }
