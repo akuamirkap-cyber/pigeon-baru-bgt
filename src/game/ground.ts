@@ -104,7 +104,10 @@ export function buildGroundGeometry(
     return { x: t.x, y: t.y, z: t.z, sn, cs, ux: ux / l, uy: uy / l, uz: uz / l, kappa: t.kappa };
   };
   const smp: S[] = [];
-  for (let i = 0; i <= steps; i++) smp.push(sampleAt(s0 + i));
+  // Strip tanah (trotoar, median, curb) disampel lebih rapat supaya ikut kontur tikungan tanpa patah.
+  const SUB = 4;
+  const subSteps = steps * SUB;
+  for (let i = 0; i <= subSteps; i++) smp.push(sampleAt(s0 + i / SUB));
 
   const shade = (hex: string, k: number): P => {
     color.set(hex);
@@ -139,10 +142,10 @@ export function buildGroundGeometry(
   };
 
   for (const st of stripsFor(kind)) {
-    for (let i = 0; i < steps; i++) {
+    for (let i = 0; i < subSteps; i++) {
       const a = smp[i];
       const b = smp[i + 1];
-      const hex = st.colors.length > 1 ? st.colors[Math.round(s0 + i) & 1] : st.colors[0];
+      const hex = st.colors.length > 1 ? st.colors[Math.round(s0 + Math.floor(i / SUB)) & 1] : st.colors[0];
       const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
       quad(a, b, st.lat0, st.lat1, st.top, n, shade(hex, 1.05));
       if (st.skirt) {
