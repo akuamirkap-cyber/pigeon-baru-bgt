@@ -28,9 +28,9 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
       { lat0: -24, lat1: -8.2, top: 0, colors: ["#3d4257", "#444a61"], skirt: true },
       // raised centre median (street trees & lamps live here)
       // pembatas 3 jalur kiri & kanan: median rata (tanpa tinggi) dengan warna hijau gelap + garis putih di kedua tepi
-      { lat0: 3.55, lat1: 3.7, top: 0, colors: ["#e9ecf2"], skirt: false },
-      { lat0: 3.7, lat1: 5.0, top: 0, colors: ["#4f6b48", "#466040"], skirt: false },
-      { lat0: 5.0, lat1: 5.15, top: 0, colors: ["#e9ecf2"], skirt: false },
+      { lat0: 3.55, lat1: 3.7, top: 0.012, colors: ["#e9ecf2"], skirt: false },
+      { lat0: 3.7, lat1: 5.0, top: 0.01, colors: ["#4f6b48", "#466040"], skirt: false },
+      { lat0: 5.0, lat1: 5.15, top: 0.012, colors: ["#e9ecf2"], skirt: false },
       // opposite carriageway (3 more lanes)
       { lat0: 5.0, lat1: 12.3, top: 0, colors: ["#31374a"], skirt: false },
       // far curb + sidewalk + plaza
