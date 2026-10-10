@@ -30,7 +30,8 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
       // pembatas 3 jalur: median abu-abu yang dinaikkan 0.16 = tempat berpijak pohon & lampu
       { lat0: 3.7, lat1: 5.0, top: 0.16, colors: ["#5b6178", "#525871"], skirt: true },
       // opposite carriageway (3 more lanes)
-      { lat0: 5.0, lat1: 12.3, top: 0, colors: ["#31374a"], skirt: false },
+      // jalur 3 kanan: aspal biasa, tanpa strip abu-abu (hanya median yang abu-abu)
+      { lat0: 5.0, lat1: 12.3, top: 0, colors: ["#343a4c"], skirt: false },
       // far curb + sidewalk + plaza
       { lat0: 12.6, lat1: 16.1, top: 0, colors: ["#5b6178", "#525871"], skirt: true },
       { lat0: 16.1, lat1: 26, top: 0, colors: ["#3d4257", "#444a61"], skirt: true },
