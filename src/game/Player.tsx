@@ -408,7 +408,9 @@ export function Player() {
       const s = p.squash;
       // Move rider together with the board so feet stay planted instead of clipping through it.
       pg.position.set(0, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift, -0.03 * out);
-      pg.rotation.set(0, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0));
+      // salto: badan pigeon berputar penuh 360° ke depan selama trik SALTO
+      const saltoZ = tr && tr.kind === "salto" ? -Math.PI * 2 * smooth(Math.min(1, tr.t / tr.dur)) : 0;
+      pg.rotation.set(0, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ);
       pg.scale.set(PS * (1 + 0.26 * s), PS * (1 - 0.42 * s + idle), PS * (1 + 0.26 * s));
 
       if (friendModel.current && friendRig) {

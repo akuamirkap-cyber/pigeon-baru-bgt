@@ -117,6 +117,7 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
         Space: "tap",
         Enter: "tap",
         KeyF: "double",
+        KeyE: "salto",
         KeyS: "cycle",
         KeyN: "nos",
         ShiftLeft: "boost",

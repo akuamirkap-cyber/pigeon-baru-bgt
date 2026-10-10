@@ -1,6 +1,7 @@
 /** Freestyle trick catalog. Air tricks are triggered by tap / swipe / double-tap while airborne. */
 export type TrickKind =
   | "kickflip"
+  | "salto"
   | "heelflip"
   | "spinL"
   | "spinR"
@@ -51,6 +52,7 @@ export interface TrickDef {
 }
 
 export const TRICKS: TrickDef[] = [
+  { kind: "salto", name: "SALTO", short: "Salto", pts: 220, color: "#ff6ad5", dur: 0.7, input: "tapUp", desc: "Tap + ↑ di udara: pigeon salto badan penuh", emoji: "🤸" },
   { kind: "kickflip", name: "KICKFLIP", short: "Kickflip", pts: 50, color: "#ffd60a", dur: 0.42, input: "tap", desc: "Tap in the air", emoji: "🛹" },
   { kind: "heelflip", name: "HEELFLIP", short: "Heelflip", pts: 50, color: "#ffd60a", dur: 0.42, input: "tap", desc: "Alternates with kickflip", emoji: "🛹" },
   { kind: "shuvit", name: "POP SHUV-IT", short: "Shuv-it", pts: 70, color: "#f4a261", dur: 0.4, input: "swipeDown", desc: "Swipe down in the air", emoji: "🔄" },

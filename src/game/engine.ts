@@ -767,7 +767,7 @@ export interface Pulse {
   cb: number;
 }
 
-export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
+export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
 
 const TRICK_INFO = TRICK_MAP;
 
@@ -1341,6 +1341,9 @@ class Engine {
       case "double":
         if (airborne) this.tryTrick("double");
         break;
+      case "salto":
+        if (airborne) this.tryTrick("tapUp");
+        break;
       case "holdStart":
         this.holdT = 0;
         break;
@@ -1484,7 +1487,7 @@ class Engine {
   }
 
   /** Pick the enabled trick bound to this input (big-air variants take priority off a ramp). */
-  private tryTrick(input: "tap" | "swipeL" | "swipeR" | "swipeUp" | "swipeDown" | "double" | "hold"): boolean {
+  private tryTrick(input: "tap" | "swipeL" | "swipeR" | "swipeUp" | "swipeDown" | "double" | "hold" | "tapUp"): boolean {
     const p = this.player;
     if (p.trick) return false;
     const on = useUI.getState().tricksOn;
