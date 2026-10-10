@@ -655,6 +655,8 @@ export function pigeonHeadParts(k: Skin): Part[] {
     { x: 0.32, y: 0.19, z: 0, w: 0.24, h: 0.12, d: 0.20, color: k.beak },
     // tingkat bawah (paruh bawah)
     { x: 0.26, y: 0.11, z: 0, w: 0.14, h: 0.06, d: 0.14, color: k.cere ?? k.beak },
+    // kotak putih 1 di atas paruh (sesuai permintaan)
+    { x: 0.32, y: 0.29, z: 0, w: 0.08, h: 0.08, d: 0.08, color: "#ffffff" },
     ...hatParts(k),
   ];
 }
