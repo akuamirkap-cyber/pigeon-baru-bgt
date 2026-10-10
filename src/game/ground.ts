@@ -186,8 +186,8 @@ export function buildGroundGeometry(
     // Drift tire skid marks baked into hairpin turns
     const skidColor = shade("#1f2227", 0.95);
     for (let i = 0; i < steps; i++) {
-      const a = smp[i];
-      const b = smp[i + 1];
+      const a = smp[i * SUB];
+      const b = smp[(i + 1) * SUB];
       const kappa = Math.abs(a.kappa);
       if (kappa > 0.005) {
         const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
@@ -224,8 +224,8 @@ export function buildGroundGeometry(
     const refCol = shade("#ef4444", 1.25);
 
     for (let i = 0; i < steps; i++) {
-      const a = smp[i];
-      const b = smp[i + 1];
+      const a = smp[i * SUB];
+      const b = smp[(i + 1) * SUB];
       const sc = s0 + i;
 
       for (const side of [-1, 1]) {
@@ -354,8 +354,8 @@ export function buildGroundGeometry(
       for (let i = 0; i < steps; i++) {
         const sc = s0 + i;
         if (skipRailing && (skipRailing(sc + 0.2) || skipRailing(sc + 0.8))) continue;
-        const a = smp[i];
-        const b = smp[i + 1];
+        const a = smp[i * SUB];
+        const b = smp[(i + 1) * SUB];
 
         // Pipa atas (top rail, 7cm x 7cm 3D box)
         sweptBox(a, b, lat - 0.035, lat + 0.035, 0.67, 0.74, whitePipe, whiteTop, whiteBack, whiteBottom);
