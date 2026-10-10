@@ -2929,7 +2929,7 @@ class Engine {
       this.breadFx.push({ rel: b.s - d, lat: LANE_LAT[b.lane], h: b.h, age: 0 });
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
-      this.spawnPulse(b.wx, b.wy, b.wz, { max: 0.5, r0: 0.5, r1: 3.2, color: [0.98, 0.78, 0.42] }); // riak ripple roti
+      this.spawnPulse(b.wx, b.wy, b.wz, { max: 0.4, r0: 0.35, r1: 1.5, color: [0.98, 0.78, 0.42] }); // riak ripple roti
       sfx.bread();
     }
   }
@@ -3829,7 +3829,7 @@ class Engine {
             this.breadFx.push({ rel: breadS - d, lat: LANE_LAT[st.lane], h: SUBWAY_ROOF_H + 0.35, age: 0 });
             if (this.breadFx.length > 8) this.breadFx.shift();
             this.emitWorld("crumb", tmpV.x, tmpV.y, tmpV.z, tmpV.y - 0.5, 5, 0, 0);
-            this.spawnPulse(tmpV.x, tmpV.y, tmpV.z, { max: 0.5, r0: 0.5, r1: 3.2, color: [0.98, 0.78, 0.42] }); // riak ripple roti
+            this.spawnPulse(tmpV.x, tmpV.y, tmpV.z, { max: 0.4, r0: 0.35, r1: 1.5, color: [0.98, 0.78, 0.42] }); // riak ripple roti
             sfx.bread();
           }
         }
