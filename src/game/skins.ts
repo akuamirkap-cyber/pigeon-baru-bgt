@@ -648,8 +648,8 @@ export function pigeonHeadParts(k: Skin): Part[] {
     { x: 0.06, y: 0.22, z: 0.215, w: 0.22, h: 0.22, d: 0.04, color: "#ffffff" },
     { x: 0.06, y: 0.22, z: -0.215, w: 0.22, h: 0.22, d: 0.04, color: "#ffffff" },
     // MATA: pupil hitam kotak di tengah patch dari Voxel Buddies Pigeon
-    { x: 0.06, y: 0.22, z: 0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
-    { x: 0.06, y: 0.22, z: -0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
+    { x: 0.1, y: 0.22, z: 0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
+    { x: 0.1, y: 0.22, z: -0.235, w: 0.09, h: 0.09, d: 0.02, color: "#1d1d1f" },
     // PARUH: paruh pink 2 tingkat menonjol di depan dari Voxel Buddies Pigeon
     // tingkat atas (paruh utama)
     { x: 0.32, y: 0.19, z: 0, w: 0.24, h: 0.12, d: 0.20, color: k.beak },
