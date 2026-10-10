@@ -298,8 +298,8 @@ import { BUDDY_SKIN_OPTIONS, VOXEL_BOARD_IDS, getBuddyBoardParts } from "./buddi
 export const SKINS: Skin[] = [
   {
     id: "classic", name: "Classic Coo", tagline: "The original street bird", cost: 0,
-    body: "#C9C4BE", belly: "#A8A29B", head: "#8A847D", neck1: "#6BC4B4", neck2: "#6BC4B4",
-    wing: "#C9C4BE", wingTip: "#7F93C8", tail: "#A8A29B", tailTip: "#7F93C8", beak: "#F08A8A", cere: "#E8A0A8", feet: ORANGE,
+    body: "#C9C4BE", belly: "#A8A29B", head: "#6175B3", neck1: "#6BC4B4", neck2: "#6BC4B4",
+    wing: "#C9C4BE", wingTip: "#6175B3", tail: "#A8A29B", tailTip: "#6175B3", beak: "#F08A8A", cere: "#E8A0A8", feet: ORANGE,
     deck: "#2ec4b6", wheels: "#fff1d6",
   },
   {
