@@ -3828,7 +3828,6 @@ export function avenueLampParts(): Part[] {
  */
 export function scrambleRoadParts(): Part[] {
   const asphalt = "#3b4152";
-  const asphaltDark = "#343a4a";
   const zebra = "#e4e8ef";
   const parts: Part[] = [];
   const avenueW = 13.4;
@@ -3837,7 +3836,10 @@ export function scrambleRoadParts(): Part[] {
   // Apron dibatasi di antara tepi curb jalur (z -4.0 .. 12.3) agar sejajar dengan trotoar.
   parts.push({ x: 0, y: 0.016, z: 0.5, w: avenueW, h: 0.024, d: 4.5, color: asphalt });
   parts.push({ x: 0, y: 0.016, z: 8.65, w: avenueW, h: 0.024, d: 7.35, color: asphalt });
-  parts.push({ x: 0, y: 0.09, z: 4.35, w: avenueW, h: 0.175, d: 1.6, color: asphaltDark });
+  // Median tengah dirapikan: rata dengan aspal, warna sama dengan pembatas jalur (hijau + garis putih).
+  parts.push({ x: 0, y: 0.02, z: 4.35, w: avenueW, h: 0.03, d: 1.6, color: "#4f6b48" });
+  parts.push({ x: 0, y: 0.03, z: 3.55, w: avenueW, h: 0.03, d: 0.15, color: "#e9ecf2" });
+  parts.push({ x: 0, y: 0.03, z: 5.15, w: avenueW, h: 0.03, d: 0.15, color: "#e9ecf2" });
 
   // Cross streets on all four corners; keep the curb edges straight and uncluttered.
   // Tidak ada dek jalan lintas yang dinaikkan di atas trotoar; trotoar dirender oleh ground.ts.
@@ -3845,8 +3847,7 @@ export function scrambleRoadParts(): Part[] {
   // Two crisp, evenly spaced zebra bands across the six-lane avenue.
   for (const x of [-5.0, 5.0]) {
     for (let z = -3.4; z <= 12.1; z += 0.95) {
-      const onMedian = z > 3.4 && z < 5.3;
-      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 2.25, h: 0.022, d: 0.46, color: zebra });
+      parts.push({ x, y: 0.04, z, w: 2.25, h: 0.022, d: 0.46, color: zebra });
     }
   }
 
@@ -3874,8 +3875,7 @@ export function scrambleRoadParts(): Part[] {
       if (t > 0.44 && t < 0.56) continue;
       const x = line.x0 + t * dx;
       const z = line.z0 + t * dz;
-      const onMedian = z > 3.4 && z < 5.3;
-      const y = (onMedian ? 0.19 : 0.04) + d * 0.003;
+      const y = 0.04 + d * 0.003;
       parts.push({ x, y, z, w: 1.7, h: 0.022, d: 0.42, ry, color: zebra });
     }
   }
@@ -3883,8 +3883,7 @@ export function scrambleRoadParts(): Part[] {
   // Bold stop bars frame the junction and make the approach geometry easy to read.
   for (const x of [-6.45, 6.45]) {
     for (const [z, width] of [[0, 7.0], [8.65, 7.0]] as const) {
-      const onMedian = z > 3.4 && z < 5.3;
-      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 0.16, h: 0.022, d: width, color: zebra });
+      parts.push({ x, y: 0.04, z, w: 0.16, h: 0.022, d: width, color: zebra });
     }
   }
 

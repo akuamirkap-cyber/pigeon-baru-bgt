@@ -558,7 +558,7 @@ export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): n
 /** Permukaan scramble crossing: apron datar, median di-aspal (0.18), jalan lintas naik 0.175. */
 export function scramblePedH(lat: number): number {
   if (lat < -4.0) return 0.175;
-  if (lat >= 3.5 && lat <= 5.3) return 0.18; // median yang di-pave
+  if (lat >= 3.5 && lat <= 5.3) return 0.04; // median rata dengan aspal
   if (lat > 12.3) return 0.175;
   return 0.03; // apron persimpangan
 }
