@@ -2035,7 +2035,7 @@ function Breads() {
   const haloRef = useRef<THREE.InstancedMesh>(null);
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
-  const haloGeo = useMemo(() => new THREE.PlaneGeometry(0.85, 0.85), []);
+  const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.0, 1.0), []);
   const haloMat = useMemo(
     () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
@@ -2051,7 +2051,7 @@ function Breads() {
       const bob = Math.sin(t * 3 + b.phase) * 0.08;
       tmpObj.position.set(b.wx, b.wy + bob, b.wz);
       tmpObj.rotation.set(0, t * 2.2 + b.phase, 0);
-      tmpObj.scale.setScalar(1);
+      tmpObj.scale.setScalar(0.9);
       tmpObj.updateMatrix();
       m.setMatrixAt(i, tmpObj.matrix);
       if (hm) {
