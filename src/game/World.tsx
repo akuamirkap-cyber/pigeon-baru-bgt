@@ -2011,6 +2011,80 @@ function RareFlash() {
 const MAX_BREAD = 140;
 const tmpObj = new THREE.Object3D();
 
+/* Bintang kilau (sparkle) bergaya Subway Surfers: sprite bintang 4 sudut, additive,
+ * membesar lalu memudar sambil berputar. Menghadap kamera. */
+let sparkleTex: THREE.CanvasTexture | null = null;
+function getSparkleTex(): THREE.CanvasTexture {
+  if (!sparkleTex) {
+    const N = 128;
+    const c = document.createElement("canvas");
+    c.width = c.height = N;
+    const g = c.getContext("2d")!;
+    const cx = N / 2;
+    // glow lembut di tengah
+    const grd = g.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    grd.addColorStop(0, "rgba(255,255,255,1)");
+    grd.addColorStop(0.2, "rgba(255,250,210,0.9)");
+    grd.addColorStop(1, "rgba(255,240,160,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, N, N);
+    // 4 sinar tipis (bintang)
+    g.globalCompositeOperation = "lighter";
+    for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+      const lg = g.createLinearGradient(cx - dx * cx, cx - dy * cx, cx + dx * cx, cx + dy * cx);
+      lg.addColorStop(0, "rgba(255,255,255,0)");
+      lg.addColorStop(0.5, "rgba(255,255,255,1)");
+      lg.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = lg;
+      const w = dx ? N : 6;
+      const h = dy ? N : 6;
+      g.fillRect(cx - w / 2, cx - h / 2, w, h);
+    }
+    sparkleTex = new THREE.CanvasTexture(c);
+  }
+  return sparkleTex;
+}
+
+const SPARKLE_POOL = 40;
+const sparkleCol = new THREE.Color();
+
+function SparkleFx() {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const { camera } = useThree();
+  const geo = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  const mat = useMemo(
+    () => new THREE.MeshBasicMaterial({ map: getSparkleTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    []
+  );
+  useFrame(() => {
+    const m = ref.current;
+    if (!m) return;
+    let i = 0;
+    for (const s of engine.sparkles) {
+      if (i >= SPARKLE_POOL) break;
+      if (s.t < 0) continue; // jitter spawn: tunggu sebentar
+      const k = Math.min(1, s.t / s.max);
+      // membesar cepat, lalu menyusut dan hilang
+      const grow = 1 - Math.pow(1 - Math.min(1, k * 2.5), 3);
+      const size = s.size * (0.2 + 0.8 * grow) * (1 - k * k);
+      tmpObj.position.set(s.x, s.y, s.z);
+      tmpObj.quaternion.copy(camera.quaternion);
+      tmpObj.rotateZ(s.rot + k * 1.6); // berputar pelan
+      tmpObj.scale.setScalar(Math.max(0.001, size));
+      tmpObj.updateMatrix();
+      m.setMatrixAt(i, tmpObj.matrix);
+      // warna kuning-emas sampai putih-hangat
+      sparkleCol.setHSL(0.11 + s.hue * 0.04, 1, 0.82 + (1 - k) * 0.12);
+      m.setColorAt(i, sparkleCol);
+      i++;
+    }
+    m.count = i;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[geo, mat, SPARKLE_POOL]} frustumCulled={false} renderOrder={6} />;
+}
+
 /* Halo emas radial (additive, selalu menghadap kamera) untuk glow roti. */
 let breadHaloTex: THREE.CanvasTexture | null = null;
 function getBreadHaloTex(): THREE.CanvasTexture {
@@ -2486,6 +2560,7 @@ export function World() {
       <BreadFx />
       <Particles />
       <Pulses />
+      <SparkleFx />
     </group>
   );
 }

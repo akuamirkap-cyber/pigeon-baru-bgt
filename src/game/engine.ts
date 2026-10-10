@@ -926,6 +926,8 @@ class Engine {
   particles: Particle[] = [];
   /** gelombang "denyut" yang sedang aktif (lihat Pulse) */
   pulses: Pulse[] = [];
+  /** Kilau bintang (sparkle) saat ambil item: seperti efek pickup Subway Surfers. */
+  sparkles: { x: number; y: number; z: number; t: number; max: number; size: number; rot: number; hue: number }[] = [];
   reserved: { lane: number; from: number; until: number }[] = [];
   listVersion = 0;
   moverVersion = 0;
@@ -1167,6 +1169,7 @@ class Engine {
     this.slowMo = 1;
     this.punch = 0;
     this.pulses = [];
+    this.sparkles = [];
     this.downhillFlag = false;
     while (this.nextChunkS < this.distance + 90) this.spawnChunk();
     this.seedShibuyaAnimalRoster();
@@ -2885,6 +2888,7 @@ class Engine {
       c.taken = true;
       this.addNos(NOS_MAX * 0.5);
       this.emitWorld("spark", c.wx, c.wy + 0.4, c.wz, c.wy, 10, 0, 0);
+      this.spawnSparkle(c.wx, c.wy + 0.4, c.wz);
       sfx.nosPickup();
     }
 
@@ -2930,6 +2934,7 @@ class Engine {
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
       this.emitWorld("spark", b.wx, b.wy, b.wz, b.wy - b.h, 12, 0, 0); // partikel berkilau roti
+      this.spawnSparkle(b.wx, b.wy + 0.2, b.wz);
       sfx.bread();
     }
   }
@@ -3830,6 +3835,7 @@ class Engine {
             if (this.breadFx.length > 8) this.breadFx.shift();
             this.emitWorld("crumb", tmpV.x, tmpV.y, tmpV.z, tmpV.y - 0.5, 5, 0, 0);
             this.emitWorld("spark", tmpV.x, tmpV.y, tmpV.z, tmpV.y - 0.5, 12, 0, 0); // partikel berkilau roti
+            this.spawnSparkle(tmpV.x, tmpV.y, tmpV.z);
             sfx.bread();
           }
         }
@@ -6380,6 +6386,7 @@ class Engine {
     this.spawnPulse(r.wx, r.wy + 0.5, r.wz, { max: 0.55, r0: 0.6, r1: 4.2, color: [rgb[0], rgb[1], rgb[2]] });
     this.emitWorld("pow", r.wx, r.wy + 0.6, r.wz, r.wy, 14, 0, 0);
     this.emitWorld("spark", r.wx, r.wy + 0.5, r.wz, r.wy, 18, 0, 0);
+    this.spawnSparkle(r.wx, r.wy + 0.5, r.wz);
     useUI.getState().addPopup(reward.title, r.kind === "diamond" ? "#4fd8ff" : "#ffc93c", reward.sub);
     sfx.rare();
   }
@@ -6406,11 +6413,37 @@ class Engine {
       this.spawnPulse(l.wx, l.wy + 0.6, l.wz, { max: 0.45, r0: 0.4, r1: 2.2, color: [1, 0.85, 0.2] });
       this.emitWorld("pow", l.wx, l.wy + 0.6, l.wz, l.wy, 12, 0, 0);
       this.emitWorld("spark", l.wx, l.wy + 0.5, l.wz, l.wy, 14, 0, 0);
+      this.spawnSparkle(l.wx, l.wy + 0.5, l.wz);
       useUI.getState().addPopup(`HURUF [${l.char}]! 🔤`, "#ffd21f", `SISA ${res.remaining} HURUF LAGI`);
     }
   }
 
+  /** Spawn ledakan sparkle bintang berkilau di titik pickup. */
+  spawnSparkle(x: number, y: number, z: number) {
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = i === 0 ? 0 : 0.25 + Math.random() * 0.35;
+      this.sparkles.push({
+        x: x + Math.cos(a) * r,
+        y: y + Math.sin(a) * r * 0.8,
+        z,
+        t: -Math.random() * 0.06,
+        max: 0.4 + Math.random() * 0.25,
+        size: i === 0 ? 1.1 : 0.4 + Math.random() * 0.45,
+        rot: Math.random() * Math.PI,
+        hue: Math.random(),
+      });
+    }
+    if (this.sparkles.length > 40) this.sparkles.splice(0, this.sparkles.length - 40);
+  }
+
   private updatePulses(dt: number) {
+    for (let i = this.sparkles.length - 1; i >= 0; i--) {
+      const s = this.sparkles[i];
+      s.t += dt;
+      if (s.t >= s.max) this.sparkles.splice(i, 1);
+    }
     for (let i = this.pulses.length - 1; i >= 0; i--) {
       const q = this.pulses[i];
       q.t += dt;
