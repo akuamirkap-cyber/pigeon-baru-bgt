@@ -109,6 +109,7 @@ import {
   SUBWAY_CAR_LEN,
   SUBWAY_GAP,
 } from "./models";
+import { railPhase, WAVE_VARIANT } from "./railMath";
 import { useUI, type TrackMode } from "./store";
 import { getRayTexture } from "./rays";
 import { getAssetData } from "../shibuya/voxel/models";
@@ -434,6 +435,12 @@ function obstacleGeometry(o: Obstacle) {
       return getGeometry("ramp", rampParts);
     case "rail": {
       const L = (o.half ?? OBSTACLE_DEFS.rail.halfLen) * 2;
+      if (o.variant === WAVE_VARIANT) {
+        // rel ULAR: fase gelombang ikut jadi bagian cache key (di-bucket supaya cache tetap kecil)
+        const ph = railPhase(o.s);
+        const bucket = Math.floor((ph / (Math.PI * 2)) * 12);
+        return getGeometry(`rail-${L}-2-${bucket}`, () => railParts(L, WAVE_VARIANT, ph));
+      }
       return getGeometry(`rail-${L}-${o.variant}`, () => railParts(L, o.variant));
     }
     case "fence":

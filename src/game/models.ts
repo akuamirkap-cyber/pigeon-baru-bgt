@@ -1,6 +1,13 @@
 import type { Part } from "./voxel";
 import { bustGeometryCache } from "./voxel";
 import {
+  COASTER_VARIANT,
+  RAIL_THICK,
+  WAVE_VARIANT,
+  railGrindHeight,
+  railLatOffset,
+} from "./railMath";
+import {
   type ShibuyaBuildingId,
   getShibuyaBuildingParts,
 } from "./shibuyaBuildingModels";
@@ -397,9 +404,14 @@ export function rampParts(): Part[] {
 /**
  * Grind rail of arbitrary length. variant 0 = flat round rail on posts; variant 1 = "kinked" rail: the first
  * 40% sits 0.55 higher, then a sloped section brings it down to the standard height (a classic skatepark down-rail).
+ * variant 2 = "ULAR": rel besi yang MELIKU kiri-kanan (kek garis kuning di jalan) + hop kecil — pemain yang
+ *  nge-grind TERBAWA ayunan snake-nya. variant 3 = "ROLLERCOASTER": tanjakan besar, puncak, turunan, bukit
+ *  kecil; tiang dipasang di KEDUA SISI (kek struktur rollercoaster) sehingga bisa dilewati dari bawahnya.
  * Top of the rail is at RAIL_H (0.6) — the extra height of the kink matches engine.railHeightAt.
+ * `phase` (hanya variant 2) = fase gelombang dari railMath.railPhase — geometri & fisika harus sama persis.
  */
-export function railParts(length = 7, variant = 0): Part[] {
+export function railParts(length = 7, variant = 0, phase = 0): Part[] {
+  if (variant === WAVE_VARIANT || variant === COASTER_VARIANT) return curvedRailParts(length, variant, phase);
   const parts: Part[] = [];
   const steel = "#dfe3e8";
   const post = "#8d949c";
@@ -435,6 +447,102 @@ export function railParts(length = 7, variant = 0): Part[] {
   }
   // long rails get a couple of yellow safety tape wraps so their length reads from afar
   if (length >= 12) for (let x = -half + 3; x < half - 1; x += 6) parts.push({ x, y: topY, z: 0, w: 0.3, h: 0.16, d: 0.16, color: "#ffd21f" });
+  return parts;
+}
+
+/**
+ * Rel dengan kurva (ULAR / ROLLERCOASTER): dibangun dari rantai segmen pendek yang mengikuti profil
+ * railMath, sehingga bentuknya sama persis dengan tinggi grind di fisika. Ruang lokal: +x = maju,
+ * +y = atas, +z = ke samping (arah kamera), pusat rel di x = 0.
+ */
+function curvedRailParts(length: number, variant: number, phase: number): Part[] {
+  const parts: Part[] = [];
+  const steel = "#e8ecf1";
+  const steelDark = "#b7bec8";
+  const post = "#8d949c";
+  const base = "#6e747c";
+  const tape = "#ffd21f";
+  const half = length / 2;
+  const th = RAIL_THICK;
+  // profil dalam ruang lokal rel (sCenter = 0, sRel = x lokal)
+  const profTop = (x: number) => railGrindHeight(variant, half, x, phase); // tinggi permukaan atas
+  const profY = (x: number) => profTop(x) - th / 2; // tinggi PUSAT kotak rel
+  const profZ = (x: number) => railLatOffset(variant, x, phase); // ayunan lateral (ular)
+
+  // --- badan rel: rantai segmen yang mengikuti kurva ---
+  const seg = 0.5;
+  const n = Math.max(8, Math.ceil(length / seg));
+  let px = -half;
+  let py = profY(px);
+  let pz = profZ(px);
+  for (let i = 1; i <= n; i++) {
+    const x = -half + (i * length) / n;
+    const y = profY(x);
+    const z = profZ(x);
+    const dx = x - px;
+    const dy = y - py;
+    const dz = z - pz;
+    const len = Math.hypot(dx, dy, dz) + 0.08; // overlap kecil supaya tidak ada celah
+    // rotasi yang membawa sumbu +x lokal segmen ke arah (dx, dy, dz): total = Rz * Ry
+    const ry = Math.atan2(-dz, Math.hypot(dx, dy));
+    const rz = Math.atan2(dy, dx);
+    parts.push({
+      x: (px + x) / 2,
+      y: (py + y) / 2,
+      z: (pz + z) / 2,
+      w: len,
+      h: th,
+      d: variant === COASTER_VARIANT ? 0.2 : th,
+      ry,
+      rz,
+      // belang kuning ala garis jalan di rel ular — penanda "rel spesial skate"
+      color: variant === WAVE_VARIANT && i % 3 === 0 ? tape : steel,
+    });
+    px = x;
+    py = y;
+    pz = z;
+  }
+  // end caps di kedua ujung
+  for (const endX of [-half, half]) {
+    parts.push({
+      x: endX + (endX < 0 ? 0.06 : -0.06),
+      y: profY(endX),
+      z: profZ(endX),
+      w: 0.12,
+      h: 0.2,
+      d: 0.2,
+      color: steelDark,
+    });
+  }
+  // --- tiang penyangga ---
+  if (variant === COASTER_VARIANT) {
+    // ROLLERCOASTER: tiang GANDA di kedua sisi rel (kek struktur rollercoaster) + balok silang
+    // di bawah rel. Pemain bisa lewat DI BAWAH bagian yang tinggi (fisika mengizinkan, lihat engine).
+    const m = Math.max(2, Math.round(length / 2.4));
+    for (let i = 0; i <= m; i++) {
+      const x = -half + (i * length) / m;
+      const railBot = profTop(x) - th / 2 - 0.04;
+      for (const side of [-1, 1]) {
+        const zc = side * 0.85;
+        const h = Math.max(0.25, railBot);
+        parts.push({ x, y: h / 2, z: zc, w: 0.14, h, d: 0.14, color: post });
+        parts.push({ x, y: 0.03, z: zc, w: 0.34, h: 0.06, d: 0.34, color: base });
+      }
+      // balok silang menghubungkan kedua tiang tepat di bawah rel
+      parts.push({ x, y: Math.max(0.09, railBot - 0.03), z: 0, w: 0.12, h: 0.1, d: 1.7, color: post });
+    }
+  } else {
+    // ULAR: tiang di tengah mengikuti ayunan rel
+    const m = Math.max(2, Math.round(length / 1.5));
+    for (let i = 0; i <= m; i++) {
+      const x = -half + (i * length) / m;
+      const y = profY(x);
+      const z = profZ(x);
+      const h = Math.max(0.25, y - 0.04);
+      parts.push({ x, y: h / 2 - 0.01, z, w: 0.12, h: h - 0.02, d: 0.12, color: post });
+      parts.push({ x, y: 0.03, z, w: 0.3, h: 0.06, d: 0.3, color: base });
+    }
+  }
   return parts;
 }
 

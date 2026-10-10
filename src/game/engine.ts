@@ -19,6 +19,7 @@ import {
   PIGEON_SHIBUYA_ANIMALS,
   SHIBUYA_CHARACTERS,
   SHIBUYA_MOTORCYCLES,
+  SHIBUYA_WORLD_ANIMAL_H,
   type ShibuyaAnimalId,
   type ShibuyaCharacterId,
   type ShibuyaMotorcycleId,
@@ -38,6 +39,15 @@ function buzz(pattern: number | number[]) {
   }
 }
 import { Track, type TrackSample } from "./track";
+import {
+  COASTER_VARIANT,
+  WAVE_VARIANT,
+  railGrindHeight,
+  railHeading,
+  railLatOffset,
+  railPhase,
+  railSlope,
+} from "./railMath";
 import { TURN, makeTurnState, resetTurnState, stepTurn, rearOf } from "./turnModel";
 import {
   ALL_SHIBUYA_BUILDING_IDS,
@@ -51,6 +61,24 @@ export const track = new Track();
 export const LANE_LAT = [-2.4, 0, 2.4]; // lane 0 = left, 1 = middle, 2 = right (chase camera)
 export const GRAVITY = 30;
 export const JUMP_V = 10.5;
+/** AUTO-RAIL: pemain di tanah otomatis lompat saat sebuah rel sudah dekat di jalurnya,
+ *  supaya tidak pernah nabrak rel (rel biasa, ULAR, maupun ROLLERCOASTER). */
+const AUTO_RAIL_FRAC = 0.55; // jarak pemicu auto-lompat = speed * frac (mendekati jarak pendaratan ollie)
+const RAIL_THREAT_LAT = 1.15; // ambang lateral: rel dianggap mengancam pemain yang berjalan di tanah
+const RAIL_SAFE_UNDER_H = 1.85; // di bawah rel setinggi ini boleh dilewati (underpass rollercoaster)
+const AUTO_RAIL_PULL_K = 6; // kekuatan "magnet" lateral saat auto-lompat menuju rel
+const AUTO_RAIL_PULL_V = 4.5; // batas kecepatan magnet lateral (m/detik)
+const AUTO_RAIL_MAX_T = 1.6; // auto-lompat melayang maksimal sekian detik
+/** GRIND DODGE: lompat samping keluar dari rel — pemain tetap bisa lompat ke kanan/kiri saat nge-grind. */
+const GRIND_DODGE_V = JUMP_V * 0.72; // tinggi lompat dodge (lebih rendah dari ollie penuh)
+const GRIND_DODGE_LAT_V = 4.5; // kecepatan lateral lompat samping (m/detik)
+const GRIND_DODGE_T = 0.5; // durasi gerak samping kinematik (detik)
+/** GRIND ROLL: saat nge-grind, seluruh rider (badan, tangan, kaki, skate) miring sedikit
+ *  ke kiri/kanan sesuai bentuk rel — badan & skate tampak "serong", tidak lurus. */
+const GRIND_ROLL_GAIN = 0.9; // rad roll per rad heading rel ULAR (rel ULAR max ~0.38 rad → roll ~0.34 rad ≈ 19°)
+const GRIND_CURVE_MAX = 0.15; // batas roll dari tikungan jalan saat nge-grind (~8.6°)
+const GRIND_SWAY = 0.12; // goyangan seimbang di rel datar/coaster (~6.9° — selalu jelas "serong", bukan goyang)
+const GRIND_ROLL_MAX = 0.38; // batas total roll saat nge-grind (~21.8°)
 /** Fixed ramp launch speed: ramps stay equally high at NORMAL, 2×, and 3× game speed. */
 export const RAMP_V = 16;
 export const START_SPEED = 7;
@@ -67,24 +95,27 @@ export const START_S = 14;
 export const CAR_HALF = 1.7;
 export const CAR_HIT = 1.6;
 export const CAR_ROOF_H = 1.52;
-/* ---------- Ukuran hewan (BESARIN): kucing 1.7x, ayam 1.2x ----------
+/* ---------- Ukuran hewan (BESARIN): semua hewan penyeberang ukurannya SAMA dengan skin karakter ----------
  * Semua angka ukuran hewan ada di blok ini supaya skala model di World.tsx,
  * hitbox tabrakan, dan radius ragdoll tidak pernah beda. Yang diubah kalau mau
- * retune cukup CAT_SIZE_BOOST / CHICKEN_SIZE_BOOST.
+ * retune cukup ANIMAL_DISPLAY_H (tinggi tampilan = tinggi hewan pada skin karakter).
  */
 /** Tinggi model pada skala 1 (unit `models.ts`: catWalkParts(), chickenParts()). */
 export const CAT_MODEL_H = 0.775;
 export const CHICKEN_MODEL_H = 1.25;
 export const CAT_MODEL_SCALE = 0.63; // ukuran dasar kucing (dikecilkan 10%)
 export const CHICKEN_MODEL_SCALE = 0.522; // ukuran dasar ayam (dikecilkan 10%)
-export const CAT_SIZE_BOOST = 1.7; // BESARIN kucing 1.7x
-export const CHICKEN_SIZE_BOOST = 1.2; // BESARIN ayam 1.2x
+/** Tinggi tampilan SEMUA hewan penyeberang (m) — disamakan dengan ukuran hewan pada skin karakter
+ *  (playable Friends, lihat SHIBUYA_WORLD_ANIMAL_H di shibuyaPacks.ts) ≈ 0.832 m. */
+export const ANIMAL_DISPLAY_H = SHIBUYA_WORLD_ANIMAL_H;
+export const CAT_SIZE_BOOST = ANIMAL_DISPLAY_H / (CAT_MODEL_H * CAT_MODEL_SCALE); // ≈ 1.70 (BESARIN kucing)
+export const CHICKEN_SIZE_BOOST = ANIMAL_DISPLAY_H / (CHICKEN_MODEL_H * CHICKEN_MODEL_SCALE); // ≈ 1.28 (BESARIN ayam)
 /** Skala akhir yang dipakai World.tsx untuk menggambar hewannya. */
-export const CAT_SCALE = CAT_MODEL_SCALE * CAT_SIZE_BOOST; // = 1.071
-export const CHICKEN_SCALE = CHICKEN_MODEL_SCALE * CHICKEN_SIZE_BOOST; // = 0.626
+export const CAT_SCALE = CAT_MODEL_SCALE * CAT_SIZE_BOOST; // ≈ 1.073
+export const CHICKEN_SCALE = CHICKEN_MODEL_SCALE * CHICKEN_SIZE_BOOST; // ≈ 0.666
 /** Tinggi akhir model (m), dipakai untuk clearance lompatan & radius ragdoll. */
-export const CAT_HEIGHT = CAT_MODEL_H * CAT_SCALE; // ~0.92 m
-export const CHICKEN_HEIGHT = CHICKEN_MODEL_H * CHICKEN_SCALE; // ~0.87 m
+export const CAT_HEIGHT = CAT_MODEL_H * CAT_SCALE; // ≈ 0.83 m (sama dengan skin karakter)
+export const CHICKEN_HEIGHT = CHICKEN_MODEL_H * CHICKEN_SCALE; // ≈ 0.83 m (sama dengan skin karakter)
 /** Ayam: tingginya naik bareng ukuran, hitbox clearance ikut naik (dulu 0.72). */
 export const CHICKEN_HIT = CHICKEN_HEIGHT;
 /** Kucing: 1.2 masih di atas kucing 1.7x (0.92) dan di bawah puncak lompatan (~1.84). */
@@ -237,6 +268,9 @@ export interface Obstacle {
   quat: Quat;
   /** per-instance half length (rails come in several lengths) */
   half?: number;
+  /** Rel penolong lompat (perempatan) & rel spesial (ular/rollercoaster): jangan dihapus
+   *  oleh koridor item (kaleng NOS / roket / huruf) — rel ini sengaja dipasang untuk pemain. */
+  keepRail?: boolean;
   /** Sleeping cat on car roof: variant 0=oren, 1=hitam, 2=putih, 3=hitam-putih. undefined if no cat. */
   catVariant?: number;
   catHit?: boolean;
@@ -848,6 +882,12 @@ class Engine {
   targetSprintBonus = 0;
   /** Responsive jump buffer (seconds) to jump the exact millisecond wheels touch the asphalt */
   jumpBuffer = 0;
+  /** Rel yang sedang dikejar auto-lompat (null = tidak aktif). */
+  private autoRail: Obstacle | null = null;
+  private autoRailT = 0;
+  /** Lompat samping keluar dari rel: arah & sisa waktu gerak kinematik. */
+  private grindDodgeDir = 0;
+  private grindDodgeT = 0;
   nosCans: { id: number; s: number; lane: number; taken: boolean; wx: number; wy: number; wz: number; phase: number }[] = [];
   /** Item LANGKA: roket NOS berkilau sinar. Jarang muncul, sekali ambil NOS penuh. */
   rockets: { id: number; s: number; lane: number; taken: boolean; kind: RareKind; wx: number; wy: number; wz: number; phase: number }[] = [];
@@ -871,6 +911,10 @@ class Engine {
   wet = 0;
   nextCrossingS = 0;
   nextIntersectionS = 0;
+  /** Jadwal rel spesial (ULAR lalu ROLLERCOASTER) yang sengaja muncul lebih awal di awal game. */
+  nextSpecialRailS = 0;
+  /** 0 = berikutnya ULAR, 1 = berikutnya ROLLERCOASTER, 2 = sudah lewat (kembali ke pola acak biasa). */
+  specialRailStage = 0;
   /** Terowongan subway bawah tanah & kereta metro yang melaju kencang berlawanan arah */
   subwayTrains: SubwayTrain[] = [];
   subwayTunnels: SubwayTunnel[] = [];
@@ -928,6 +972,8 @@ class Engine {
     airBlend: 0,
     /** lean angle (rad) for body+board: + = leaning toward -z (left), derived from lateral acceleration */
     carve: 0,
+    /** roll (rad) tambahan saat nge-grind: seluruh rider miring mengikuti bentuk rel ULAR (+ = miring ke kanan) */
+    grindRoll: 0,
     /** yaw twist of the board toward the movement direction (air carve / ground carve) */
     boardTwist: 0,
     /** heading of the whole rig relative to the road (rad): the board really turns toward where it is going */
@@ -1014,6 +1060,10 @@ class Engine {
     this.sprintStage = 0;
     this.targetSprintBonus = 0;
     this.jumpBuffer = 0;
+    this.autoRail = null;
+    this.autoRailT = 0;
+    this.grindDodgeDir = 0;
+    this.grindDodgeT = 0;
     this.nos = 0;
     this.nosT = 0;
     this.nosFlame = 0;
@@ -1031,6 +1081,9 @@ class Engine {
     this.wet = 0;
     this.nextCrossingS = START_S + FIRST_CROSSING_M;
     this.nextIntersectionS = START_S + 68;
+    // Rel spesial (ULAR lalu ROLLERCOASTER) sengaja dijadwalkan lebih awal di awal game
+    this.nextSpecialRailS = START_S + 150;
+    this.specialRailStage = 0;
     this.nextRocketS = START_S + ROCKET_FIRST_S; // roket pertama muncul agak awal biar pemain lihat itemnya
     this.letters = [];
     this.nextLetterS = START_S + 50; // Daily Word Hunt letter appears early in run
@@ -1071,6 +1124,7 @@ class Engine {
     p.latAcc = 0;
     p.heading = 0;
     p.lean = 0;
+    p.grindRoll = 0;
     p.truckF = 0;
     p.truckR = 0;
     p.airBlend = 0;
@@ -1210,11 +1264,15 @@ class Engine {
       case "left":
       case "right": {
         const dir = a === "left" ? -1 : 1;
+        // GRIND DODGE: saat nge-grind REL, swipe kiri/kanan = lompat samping KELUAR dari rel —
+        // pemain tetap bisa "lompat mau ke kanan atau ke kiri" sambil bermain di atas rel.
+        // (Saat nge-grind mobil/atap kereta, pemain tetap bisa pindah jalur seperti biasa.)
+        if (p.grinding && p.rail) {
+          this.grindDodge(dir);
+          break;
+        }
         // Swipe ↔ = lane change (also in the air: a smooth carve/drift). The 360 spin is a deliberate move:
         // a second swipe in the same direction within 0.3 s, or a swipe toward the edge when no lane is left.
-        // NEW turn mode: while grinding a rail the board is locked to the rail lane (no diagonal moves on a rail);
-        // jump off first, then steer. On cars, player can steer/dismount to adjacent lanes.
-        if (this.newTurn && p.grinding && p.rail) break;
         const now = this.time;
         const repeat = this.lastSwipeDir === dir && now - this.lastSwipeT < 0.3;
         this.lastSwipeDir = dir;
@@ -1445,6 +1503,21 @@ class Engine {
     sfx.jump();
   }
 
+  /** Lompat samping keluar dari rel (grind dodge): pemain tetap bisa lompat ke kanan/kiri saat nge-grind. */
+  private grindDodge(dir: number) {
+    const p = this.player;
+    if (!p.grinding || !p.rail) return;
+    this.autoRail = null;
+    this.autoRailT = 0;
+    this.grindDodgeDir = dir;
+    this.grindDodgeT = GRIND_DODGE_T;
+    this.jump(GRIND_DODGE_V); // jump() otomatis mengakhiri grind rel
+    // arahkan target lane ke arah dodge supaya pendaratan halus
+    p.targetLane = clamp(p.targetLane + dir, 0, 2);
+    if (this.newTurn) p.heading = dir * 0.3; // papan langsung menunjuk ke samping
+    else p.latVel = dir * GRIND_DODGE_LAT_V;
+  }
+
   private startTrick(kind: TrickKind, dur = TRICK_INFO[kind].dur, dir = 1) {
     const p = this.player;
     if (p.trick) return;
@@ -1479,8 +1552,12 @@ class Engine {
     }
   }
 
-  /** Grind height along a rail: flat rails are RAIL_H; kinked rails start higher and slope down in the middle. */
+  /** Grind height along a rail: flat rails are RAIL_H; kinked rails start higher and slope down in the
+   *  middle; wave rails ("ular") hop gently; rollercoaster rails follow big hills & dips. */
   railHeightAt(o: Obstacle, s: number) {
+    if (o.variant === WAVE_VARIANT || o.variant === COASTER_VARIANT) {
+      return railGrindHeight(o.variant, obstacleHalf(o), s - o.s, railPhase(o.s));
+    }
     if (o.variant !== 1) return RAIL_H;
     const half = obstacleHalf(o);
     const rel = (s - o.s) / half; // -1..1
@@ -1488,6 +1565,15 @@ class Engine {
     if (rel < -0.2) return RAIL_H + extra;
     if (rel < 0.2) return RAIL_H + (extra * (0.2 - rel)) / 0.4;
     return RAIL_H;
+  }
+
+  /** Lateral garis tengah obstacle pada arc-length s. Rel ULAR bergeser mengikuti gelombang;
+   *  semua obstacle lain tetap di tengah lajur. */
+  railLat(o: Obstacle, s: number): number {
+    if (o.kind === "rail" && o.variant === WAVE_VARIANT) {
+      return LANE_LAT[o.lane] + railLatOffset(o.variant, s - o.s, railPhase(o.s));
+    }
+    return LANE_LAT[o.lane];
   }
 
   private startGrind(rail: Obstacle) {
@@ -1498,6 +1584,9 @@ class Engine {
     p.h = this.railHeightAt(rail, this.distance);
     p.vh = 0;
     p.grindPts = 0;
+    // Lock-on: sekajarkan badan dengan garis tengah rel (magnet menarik pemain tepat ke atas rel,
+    // termasuk rel ULAR yang sedang meliku di posisi pemain).
+    p.lat = this.railLat(rail, this.distance);
     if (p.trick) {
       p.trick.t = p.trick.dur;
       this.completeTrick();
@@ -1971,6 +2060,8 @@ class Engine {
       p.truckF = 0;
       p.truckR = 0;
     }
+    // rel ULAR: saat nge-grind, board TERKUNCI ke garis tengah rel yang meliku (bukan ke pusat lajur)
+    const waveRail = p.grinding && p.rail !== null && p.rail.variant === WAVE_VARIANT ? p.rail : null;
     if (newTurn) {
       // ---- NEW: lateral motion is a CONSEQUENCE of the board's heading (wheel steering) ----
       // lane target -> reference -> desired heading -> bicycle-model inversion -> lean -> trucks -> yaw -> heading
@@ -1983,6 +2074,10 @@ class Engine {
         fwd: this.speed,
         air: airborneNow,
         grind: p.rail !== null,
+        grindLat: waveRail ? this.railLat(waveRail, this.distance) : undefined,
+        grindHeading: waveRail
+          ? railHeading(WAVE_VARIANT, this.distance - waveRail.s, railPhase(waveRail.s))
+          : undefined,
         minLat: LANE_LAT[0] - 0.35,
         maxLat: LANE_LAT[2] + 0.35,
         dt,
@@ -1995,6 +2090,11 @@ class Engine {
       // truck yaws for the renderer (three.js: +yaw turns the nose to -z, so right = negative). The rear counter-steers.
       p.truckF = -T.sF;
       p.truckR = -rearOf(T.sF);
+    } else if (waveRail) {
+      // ---- OLD + REL ULAR: board dikunci kinematik ke garis tengah rel (spring dilewati) ----
+      const wl = this.railLat(waveRail, this.distance);
+      p.latVel = (wl - p.lat) / Math.max(dt, 1e-4);
+      p.lat = wl;
     } else {
       // ---- OLD: critically damped spring => smooth ease-in / ease-out with no snap,
       // slightly softer in the air (the pigeon "drifts" across) than on the ground (a quick carve)
@@ -2066,7 +2166,8 @@ class Engine {
     if (p.grinding && p.rail) {
       const r = p.rail;
       const rel = d - r.s;
-      if (Math.abs(rel) > obstacleHalf(r) || Math.abs(LANE_LAT[r.lane] - p.lat) > 0.7) {
+      // rel ular: garis tengahnya yang diikuti, bukan pusat lajur
+      if (Math.abs(rel) > obstacleHalf(r) || Math.abs(this.railLat(r, d) - p.lat) > 0.7) {
         this.endGrind();
         p.grounded = false;
         p.vh = 0;
@@ -2077,7 +2178,7 @@ class Engine {
         this.sparkT += dt;
         if (this.sparkT > 0.05) {
           this.sparkT = 0;
-          this.emit("spark", -0.5, 0.55, p.lat, 2);
+          this.emit("spark", -0.5, p.h - 0.05, p.lat, 2);
         }
       }
     }
@@ -2177,8 +2278,10 @@ class Engine {
           for (const o of this.obstacles) {
             if (o.kind !== "rail") continue;
             const rel = d - o.s;
-            if (Math.abs(rel) > obstacleHalf(o) - 0.2) continue;
-            if (Math.abs(LANE_LAT[o.lane] - p.lat) > 0.6) continue;
+            if (Math.abs(rel) > obstacleHalf(o) + 0.2) continue;
+            // Lock-on ("nempel") hanya kalau pemain sudah DEKAT dengan garis tengah rel —
+            // jangan "nyedot" pemain dari jauh saat melompat menyeberangi rel.
+            if (Math.abs(this.railLat(o, d) - p.lat) > 0.6) continue;
             const rh = this.railHeightAt(o, d);
             // "magnet" grind: lock on when the board passes near the rail top, going up or coming down
             const falling = prevH > p.h;
@@ -2421,12 +2524,37 @@ class Engine {
     let pitch = 0;
     if (!p.grounded && !p.grinding) pitch = clamp(p.vh / JUMP_V, -0.5, 1) * 0.45;
     else if (p.onRamp) pitch = 0.39;
+    else if (p.grinding && p.rail && (p.rail.variant === WAVE_VARIANT || p.rail.variant === COASTER_VARIANT)) {
+      // rel meliku / rollercoaster: papan menunduk sesuai kemiringan rel
+      pitch = clamp(railSlope(p.rail.variant, obstacleHalf(p.rail), this.distance - p.rail.s, railPhase(p.rail.s)) * 1.35, -0.4, 0.55);
+    }
     p.pitch = lerp(p.pitch, pitch, 1 - Math.exp(-dt * 12));
     // ---- lean ("carve") ----
     // A skater leans into the direction of travel for the whole move and straightens up as the board
     // settles into the new lane. We model it as a first-order response to the lane offset (the "intent"),
     // blended with a little acceleration so the initial snap feels weighty: lean(t) ≈ how far we still have
     // to go, peaking early and easing back to 0 exactly when the lane is reached — no overshoot, no double-swing.
+    // ---- GRIND ROLL: saat nge-grind, seluruh rider (badan, tangan, kaki, skate) miring sedikit
+    // ke kiri/kanan sesuai bentuk rel — badan & skate tampak "serong", tidak lurus.
+    //  - Rel ULAR: roll ke dalam tikungan gelombang.
+    //  - Semua rel dipasang MENGIKUTI JALAN: saat jalan menekuk, rider ikut miring ke dalam
+    //    tikungan (gaya sentripetal, sama seperti carve) — jadi di rel datar/coaster pun
+    //    badan & skate selalu tampak serong mengikuti bentuk jalan/rel.
+    let grindRollTarget = 0;
+    if (p.grinding && p.rail) {
+      if (p.rail.variant === WAVE_VARIANT) {
+        const gh = railHeading(WAVE_VARIANT, this.distance - p.rail.s, railPhase(p.rail.s));
+        grindRollTarget += gh * GRIND_ROLL_GAIN; // + = miring ke kanan (searah belokan rel)
+      } else {
+        // Rel datar/rollercoaster: goyangan seimbang seperti menapak di atas rel —
+        // rider selalu JELAS "serong" (miring pelan, bukan kaku lurus), bernafas alami.
+        grindRollTarget += Math.sin(this.time * 2.6 + p.rail.s * 0.7) * GRIND_SWAY;
+      }
+      // kappa > 0 = jalan menekuk ke kanan (+z) → rider miring ke kanan (roll > 0)
+      grindRollTarget += clamp((this.speed * this.speed * this.center.kappa) / GRAVITY, -GRIND_CURVE_MAX, GRIND_CURVE_MAX);
+      grindRollTarget = clamp(grindRollTarget, -GRIND_ROLL_MAX, GRIND_ROLL_MAX);
+    }
+    p.grindRoll = lerp(p.grindRoll, grindRollTarget, 1 - Math.exp(-dt * 30));
     if (newTurn) {
       // NEW: everything visual follows the physics state. Yaw = -heading (damped), roll = +lean * ROLL
       // (right-hand rule: positive rotation.x tips the top toward +z = into a right turn). The board yaw comes from
@@ -2435,7 +2563,8 @@ class Engine {
       p.steer = -T.headingVis;
       p.boardTwist = 0;
       const rollMax = TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend;
-      p.roll = T.leanVis * rollMax;
+      // Saat nge-grind, roll mengikuti BENTUK REL (grindRoll), bukan sisa carve pindah lajur.
+      p.roll = p.grinding && p.rail ? p.grindRoll : T.leanVis * rollMax;
       p.carve = -T.leanVis; // legacy convention (+ = left); only the old-mode poses read it
     } else {
       const remaining = clamp((tl - p.lat) / 2.4, -1, 1); // + = still moving toward +z (screen right)
@@ -2448,7 +2577,8 @@ class Engine {
       p.carve = lerp(p.carve, leanTarget, 1 - Math.exp(-dt * 16));
       // The bank group rotates about +x. Right-hand rule: a POSITIVE rotation.x tips the top toward +z and dips the
       // +z side. Leaning INTO a right turn (top toward +z, right edge down) therefore needs roll > 0, i.e. roll = -carve.
-      p.roll = -p.carve;
+      // Saat nge-grind, roll mengikuti BENTUK REL (grindRoll), bukan sisa carve pindah lajur.
+      p.roll = p.grinding && p.rail ? p.grindRoll : -p.carve;
       // Real turning: the rig's heading follows the velocity vector (forward speed vs lateral speed), so a
       // lane change is a genuine S-shaped carve — nose turns toward the new lane, straightens as it arrives.
       // In our frame +z is screen-right and yaw about +y turns +x toward -z, hence the minus sign.
@@ -2467,6 +2597,67 @@ class Engine {
     p.squash = Math.max(0, p.squash - dt * 5);
     this.updatePush(dt);
 
+    // GRIND DODGE: gerak samping kinematik selama lompat keluar dari rel
+    if (this.grindDodgeT > 0) {
+      this.grindDodgeT = Math.max(0, this.grindDodgeT - dt);
+      if (p.grinding || p.grounded) {
+        this.grindDodgeT = 0;
+        this.grindDodgeDir = 0;
+      } else {
+        p.lat = clamp(p.lat + this.grindDodgeDir * GRIND_DODGE_LAT_V * dt, LANE_LAT[0] - 0.35, LANE_LAT[2] + 0.35);
+      }
+    }
+
+    // AUTO-RAIL: pemain tidak bisa nabrak rel — kalau sebuah rel (biasa/ULAR/ROLLERCOASTER) sudah dekat
+    // di jalurnya, pemain otomatis lompat dan "magnet" rel mendaratkan pemain di atas rel untuk nge-grind.
+    // (Sengaja dicek setelah fisika vertikal & sebelum tabrakan statis: pemain yang baru mendarat di
+    // dalam rentang rel langsung terangkat — rel tidak bisa menabrak di frame yang sama.)
+    if (this.autoRail !== null) {
+      const ar = this.autoRail;
+      if (
+        p.grinding || p.grounded || this.phase !== "playing" ||
+        d > ar.s + obstacleHalf(ar) + 3 || this.autoRailT > AUTO_RAIL_MAX_T
+      ) {
+        this.autoRail = null;
+        this.autoRailT = 0;
+      } else {
+        this.autoRailT += dt;
+        // magnet lateral: tarik perlahan ke garis tengah rel (rel ULAR meliku, jadi garis tengahnya yang diikuti)
+        const pull = clamp((this.railLat(ar, d) - p.lat) * AUTO_RAIL_PULL_K, -AUTO_RAIL_PULL_V, AUTO_RAIL_PULL_V);
+        p.lat = clamp(p.lat + pull * dt, LANE_LAT[0] - 0.35, LANE_LAT[2] + 0.35);
+      }
+    } else if (
+      this.phase === "playing" && p.grounded && !p.grinding &&
+      p.railGrace <= 0 && this.jumpBuffer <= 0 && !ground.ramp
+    ) {
+      for (const o of this.obstacles) {
+        if (o.kind !== "rail") continue;
+        const half = obstacleHalf(o);
+        const edgeAhead = o.s - half - d; // jarak pemain ke ujung dekat rel
+        if (edgeAhead > this.speed * AUTO_RAIL_FRAC) continue; // terlalu jauh untuk mendarat di atas rel
+        if (d > o.s + half + PLAYER_HALF + 0.05) continue; // pemain sudah melewati rel (di luar zona tabrak)
+        // Ancaman: ada titik pada rentang rel — termasuk posisi pemain sekarang — yang akan
+        // menabrak pemain yang berjalan di tanah. (Memeriksa posisi sekarang juga penting: pemain
+        // yang baru mendarat di dalam rentang rel langsung terangkat sebelum tabrakan statis.)
+        let threat = false;
+        const sEnd = Math.max(o.s + half, d);
+        for (let s = Math.max(d, o.s - half); s <= sEnd; s += 1.5) {
+          if (Math.abs(this.railLat(o, s) - p.lat) > RAIL_THREAT_LAT) continue;
+          if (this.railHeightAt(o, s) >= RAIL_SAFE_UNDER_H) continue; // underpass rollercoaster: aman
+          threat = true;
+          break;
+        }
+        if (!threat) continue;
+        this.autoRail = o;
+        this.autoRailT = 0;
+        // Kalau pemain sudah berada di dalam rentang rel, angkat kakinya ke atas rel
+        // (magnet langsung mengunci di frame berikutnya).
+        if (edgeAhead < 0) p.h = this.railHeightAt(o, d);
+        this.jump();
+        break;
+      }
+    }
+
     if (this.phase !== "playing") return;
 
     // static collisions
@@ -2476,11 +2667,17 @@ class Engine {
       const def = OBSTACLE_DEFS[o.kind];
       const rel = d - o.s;
       if (Math.abs(rel) > obstacleHalf(o) + PLAYER_HALF) continue;
-      if (Math.abs(LANE_LAT[o.lane] - p.lat) > 1.05) continue;
+      if (Math.abs(this.railLat(o, d) - p.lat) > 1.05) continue;
       if (o.kind === "rail") {
         if (p.grinding || p.railGrace > 0) continue;
-        if (p.h >= this.railHeightAt(o, d) - 0.5) continue;
-        this.crash();
+        const rh = this.railHeightAt(o, d);
+        if (p.h >= rh - 0.5) continue;
+        // ROLLERCOASTER: bagian rel yang tinggi boleh dilewati DI BAWAHNYA (kek underpass),
+        // tapi tabrak kalau badan pemain (±1.75 m) masuk ke band rel
+        if (o.variant === COASTER_VARIANT && p.h + 1.75 <= rh - 0.1) continue;
+        // REL TIDAK PERNAH BIKIN CRASH: pemain yang nabrak rel (biasa/ULAR/ROLLERCOASTER)
+        // langsung nge-grind — auto lock-on ke atas rel, sama seperti mendarat di rel.
+        this.startGrind(o);
         return;
       }
       if (o.kind === "car") {
@@ -3669,6 +3866,12 @@ class Engine {
     if (this.rockets.some((r) => (!r.taken || this.distance < r.s + 50) && r.lane === lane && r.s >= minS - 15 && r.s <= maxS + 35)) return false;
     if (this.nosCans.some((c) => (!c.taken || this.distance < c.s + 45) && c.lane === lane && c.s >= minS - 15 && c.s <= maxS + 30)) return false;
     if (this.reserved.some((r) => r.lane === lane && !(maxS < r.from || minS > r.until))) return false;
+    // BIS JANGAN NEMBUS REL: lajur yang ada rel apa pun di rentang ini tidak boleh dipakai bus.
+    if (this.obstacles.some((o) => {
+      if (o.kind !== "rail" || o.lane !== lane) return false;
+      const half = o.half ?? OBSTACLE_DEFS.rail.halfLen;
+      return o.s + half > minS && o.s - half < maxS;
+    })) return false;
     return !this.subwayTrains.some((st) => {
       if (st.lane !== lane) return false;
       const stMin = st.s - buffer;
@@ -3803,8 +4006,10 @@ class Engine {
       const freeParked = [0, 2].filter((l) => this.isSubwayLaneClear(l, startS - 14, startS + 35, 14));
       if (freeParked.length === 0) return;
       const parkedLane = pick(freeParked);
+      // Rentang cek bus melaju diperpanjang sampai belakang pemain & batas rel terpasang
+      // (ia menyapu seluruh jalur itu — lihat juga koridor reserved di bawah).
       const candidateOncoming = [0, 1, 2].filter(
-        (l) => l !== parkedLane && this.isSubwayLaneClear(l, startS - 8, startS + 55, 14) && !this.hasStoppedBusAhead(l, startS + 55),
+        (l) => l !== parkedLane && this.isSubwayLaneClear(l, Math.min(startS - 8, this.distance - 40), Math.max(startS + 55, this.distance + 75), 14) && !this.hasStoppedBusAhead(l, startS + 55),
       );
       if (candidateOncoming.length === 0) return;
       const oncomingLane = pick(candidateOncoming);
@@ -3859,7 +4064,8 @@ class Engine {
         roofBreads: createRoofBreads(SUBWAY_CAR_LEN),
       };
       this.subwayTrains.push(onBus);
-      this.reserved.push({ lane: oncomingLane, from: meetS - 6, until: s0 + SUBWAY_CAR_LEN + 6 });
+      // Koridor diperpanjang sampai belakang pemain: rel tidak boleh terpasang di jalur yang akan disapu bus.
+      this.reserved.push({ lane: oncomingLane, from: this.distance - 40, until: s0 + SUBWAY_CAR_LEN + 6 });
     }
 
     this.moverVersion++;
@@ -3876,13 +4082,17 @@ class Engine {
     const est = Math.max(this.speed, START_SPEED);
     const speed = 19;
 
-    // Pastikan lajur-lajur untuk bus A, B, C tidak menabrak bus yang sudah ada
+    // Pastikan lajur-lajur untuk bus A, B, C tidak menabrak bus yang sudah ada.
+    // Rentang cek diperpanjang sampai belakang pemain & batas rel terpasang (bus menyapu
+    // seluruh jalurnya — lihat juga koridor reserved di bawah).
+    const laneFrom = (x: number) => Math.min(x, this.distance - 40);
+    const laneTo = (x: number) => Math.max(x, this.distance + 75);
     const startCandidates = [0, 2].filter((l) => {
       const other = l === 0 ? 2 : 0;
       return (
-        this.isSubwayLaneClear(l, meetS - 18, meetS + 45, 14) &&
-        this.isSubwayLaneClear(1, meetS - 10, meetS + 55, 14) &&
-        this.isSubwayLaneClear(other, meetS, meetS + 65, 14) &&
+        this.isSubwayLaneClear(l, laneFrom(meetS - 18), laneTo(meetS + 45), 14) &&
+        this.isSubwayLaneClear(1, laneFrom(meetS - 10), laneTo(meetS + 55), 14) &&
+        this.isSubwayLaneClear(other, laneFrom(meetS), laneTo(meetS + 65), 14) &&
         !this.hasStoppedBusAhead(l, meetS + 45) &&
         !this.hasStoppedBusAhead(1, meetS + 55) &&
         !this.hasStoppedBusAhead(other, meetS + 65)
@@ -3915,7 +4125,7 @@ class Engine {
       roofBreads: createRoofBreads(len_A),
     };
     this.subwayTrains.push(busA);
-    this.reserved.push({ lane: startLane, from: meetA - 6, until: s0_A + len_A + 6 });
+    this.reserved.push({ lane: startLane, from: this.distance - 40, until: s0_A + len_A + 6 });
 
     // Ramp tepat sebelum Bus A untuk melompat ke atas atap Bus A (force = true agar selalu ada)
     this.addObstacle("ramp", meetA - 16, startLane, true);
@@ -3944,7 +4154,7 @@ class Engine {
       roofBreads: createRoofBreads(len_B),
     };
     this.subwayTrains.push(busB);
-    this.reserved.push({ lane: midLane, from: meetB - 6, until: s0_B + len_B + 6 });
+    this.reserved.push({ lane: midLane, from: this.distance - 40, until: s0_B + len_B + 6 });
 
     // Deretan roti memandu lompatan dari atap Bus A ke atap Bus B
     for (let i = 0; i < 5; i++) {
@@ -3972,7 +4182,7 @@ class Engine {
       roofBreads: createRoofBreads(len_C),
     };
     this.subwayTrains.push(busC);
-    this.reserved.push({ lane: endLane, from: meetC - 6, until: s0_C + len_C + 6 });
+    this.reserved.push({ lane: endLane, from: this.distance - 40, until: s0_C + len_C + 6 });
 
     // Deretan roti & tabung NOS di atap Bus C sebagai hadiah komplit transfer A -> B -> C
     for (let i = 0; i < 5; i++) {
@@ -3989,10 +4199,15 @@ class Engine {
     const est = Math.max(this.speed, START_SPEED);
     const type = forceType ?? randInt(0, 2); // 0: Toei City Bus, 1: Highway Express Coach, 2: Articulated / Twin Buses
 
-    // Ambil lajur yang benar-benar bersih dan tidak ada bus berhenti di depannya
+    // Ambil lajur yang benar-benar bersih dan tidak ada bus berhenti di depannya.
+    // Rentang cek diperpanjang: sampai belakang pemain (d - 40) sampai batas rel yang sudah
+    // terpasang (d + 75) — bus akan melaju menyapu seluruh jalur itu, jadi rel yang sudah ada
+    // di sana harus ikut dihindari. Rel yang BELUM terpasang di sana diblokir koridor reserved.
+    const laneFrom = Math.min(meetS - 16, this.distance - 40);
+    const laneTo = Math.max(meetS + 55, this.distance + 75);
     const availableLanes = [0, 1, 2].filter((l) => {
       return (
-        this.isSubwayLaneClear(l, meetS - 16, meetS + 55, 14) &&
+        this.isSubwayLaneClear(l, laneFrom, laneTo, 14) &&
         !this.hasStoppedBusAhead(l, meetS + 55)
       );
     });
@@ -4026,7 +4241,7 @@ class Engine {
           roofBreads: createRoofBreads(trainLen),
         };
         this.subwayTrains.push(st);
-        this.reserved.push({ lane, from: meetS - 6, until: s0 + trainLen + 8 });
+        this.reserved.push({ lane, from: this.distance - 40, until: s0 + trainLen + 8 });
 
         // Ramp menuju atap bus ekspres
         this.addObstacle("ramp", meetS - 18, lane, true);
@@ -4056,7 +4271,7 @@ class Engine {
           roofBreads: createRoofBreads(trainLen),
         };
         this.subwayTrains.push(st);
-        this.reserved.push({ lane, from: meetS - 6, until: s0 + trainLen + 8 });
+        this.reserved.push({ lane, from: this.distance - 40, until: s0 + trainLen + 8 });
 
         this.addObstacle("ramp", meetS - 16, lane, true);
         for (let i = 0; i < 6; i++) {
@@ -4084,7 +4299,7 @@ class Engine {
           roofBreads: createRoofBreads(trainLen),
         };
         this.subwayTrains.push(st);
-        this.reserved.push({ lane, from: meetS - 6, until: s0 + trainLen + 8 });
+        this.reserved.push({ lane, from: this.distance - 40, until: s0 + trainLen + 8 });
 
         // Tanjakan (ramp) tepat sebelum bus kota di jalurnya
         this.addObstacle("ramp", meetS - 16, lane, true);
@@ -4196,8 +4411,58 @@ class Engine {
     this.rockets = this.rockets.filter((r) => r.s < s - half - 8 || r.s > s + half + 8);
     this.letters = this.letters.filter((l) => l.s < s - half - 8 || l.s > s + half + 8);
     this.puddles = this.puddles.filter((pu) => pu.s < s - half || pu.s > s + half);
+    // REL PENOLONG LOMPAT di awal penyeberangan (fallback — biasanya koridor sudah diamankan
+    // lewat clearLaneNear saat item dijadwalkan, jadi pemasangan di sini hampir selalu berhasil;
+    // kalau semua lajur penuh di posisi pertama, coba sedikit lebih jauh dari zona)
+    if (!this.placeApproachRail(inter, 4)) this.placeApproachRail(inter, 10);
     this.listVersion++;
     return inter;
+  }
+
+  /**
+   * Pasang REL PENOLONG LOMPAT di awal zona penyeberangan (ujung rel 4 m sebelum zebra).
+   * Pemain nge-grind rel ini lalu lompat (jump saat nge-grind = papan lepas landas dari 0.6 m
+   * + lompatan) sehingga bisa terbang di atas rombongan penyeberang & mobil lintas —
+   * mengurangi tabrakan di perempatan. Rel datar (varian 0): paling mudah ditebak untuk
+   * timing lompatan. Diletakkan di lajur yang bebas & tenang (roti dibersihkan).
+   */
+  private placeApproachRail(it: Intersection, back = 4): boolean {
+    const zoneHalf = it.scramble ? 11 : it.wide ? 10.5 : 8.5;
+    const railLen = it.scramble ? 18 : 12;
+    const railHalf = railLen / 2;
+    const railEnd = it.s - zoneHalf - back; // ujung rel `back` meter sebelum zona zebra
+    const railCx = railEnd - railHalf;
+    if (railCx <= this.distance + 45) return false; // terlalu dekat dengan pemain
+    if (this.isInSubwayTunnel(railCx, railHalf + 10)) return false;
+    // sudah ada rel di posisi ini (dari penempatan sebelumnya / pola lain)?
+    if (this.obstacles.some((o) => o.kind === "rail" && Math.abs(o.s + (o.half ?? OBSTACLE_DEFS.rail.halfLen) - railEnd) < 8)) return false;
+    const from = railCx - railHalf - 6;
+    const until = railEnd + 6;
+    const laneOk = (lane: number) =>
+      !this.obstacles.some((o) => o.lane === lane && o.s > from && o.s < until) &&
+      // buffer item disamakan dengan addObstacle supaya lajur terpilih pasti bisa dipasang
+      !this.isNearCollectibleItem(railCx, lane, railHalf + 22, railHalf + 20) &&
+      !this.subwayTrains.some((st) => st.lane === lane && until > st.s - 6 && from < st.s + st.length + 6);
+    const lanes = [1, 0, 2].filter(laneOk); // tengah dulu (paling gampang dijangkau)
+    for (const lane of lanes) {
+      // jalur pendekatan perempatan sengaja dibuat tenang: bersihkan roti di koridor rel
+      // (kalau tidak, addObstacle menolak karena aturan jarak roti)
+      this.breads = this.breads.filter(
+        (b) => !(b.lane === lane && b.s > railCx - (railHalf + 24) && b.s < railCx + (railHalf + 14)),
+      );
+      // roti di lajur sebelah yang menempel titik rel juga ikut dibersihkan (aturan jarak addObstacle)
+      this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - railCx) < 5));
+      if (!this.addObstacle("rail", railCx, lane, false, railHalf, 0, true)) continue;
+      this.reserved.push({ lane, from: railCx - railHalf - 4, until: railEnd + 4 });
+      // buang rintangan kecil lama yang kebetulan ada di jalur rel (ramp darurat jangan dibuang)
+      const added = this.obstacles[this.obstacles.length - 1];
+      added.keepRail = true; // lindungi dari koridor item (NOS/roket/huruf)
+      this.obstacles = this.obstacles.filter((o) => o === added || !(o.lane === lane && o.kind !== "ramp" && o.s > from && o.s < until));
+      // halangi spawn obstacle berikutnya menumpuk di atas rel
+      this.nextObstacleS = Math.max(this.nextObstacleS, railEnd + 9);
+      return true;
+    }
+    return false;
   }
 
   private addCrossing(s: number): Crossing | null {
@@ -4735,6 +5000,54 @@ class Engine {
     return false;
   }
 
+  /**
+   * Apakah lajur ini memiliki REL ULAR / ROLLERCOASTER di sekitar titik temu kendaraan?
+   * Mobil, motor, dan bis harus pindah ke lajur tanpa rel (jangan "nembus" rel).
+   * Kendaraan bergerak dari s0 (di depan) turun melewati titik temu sampai belakang pemain,
+   * jadi cek rel pada rentang [meetS - 90, meetS + 75] sudah mencakup seluruh perjalanan.
+   */
+  private laneHasSpecialRail(lane: number, meetS: number): boolean {
+    return this.obstacles.some(
+      (o) =>
+        o.kind === "rail" &&
+        (o.variant === WAVE_VARIANT || o.variant === COASTER_VARIANT) &&
+        o.lane === lane &&
+        o.s - (o.half ?? OBSTACLE_DEFS.rail.halfLen) < meetS + 75 &&
+        o.s + (o.half ?? OBSTACLE_DEFS.rail.halfLen) > meetS - 90,
+    );
+  }
+
+  /**
+   * Pindahkan kendaraan (mobil/motor) yang saat ini berada di lajur ber-rel spesial ke
+   * lajur bebas terdekat — supaya tidak menabrak rel yang baru dipasang. Kendaraan yang
+   * sudah dekat dengan pemain (di belakang rentang bahaya) dibiarkan saja.
+   */
+  private rerouteVehiclesAroundSpecialRail(lane: number, fromS: number, toS: number) {
+    let moved = false;
+    for (const m of this.movers) {
+      if (m.lane !== lane || (m.kind !== "car" && m.kind !== "motorcycle")) continue;
+      if (m.s <= fromS - 2 || m.s >= toS + 60) continue; // di belakang bahaya: jalan terus menjauh
+      // cari lajur bebas terdekat yang tidak punya rel spesial di jalur kendaraan ini
+      const order = lane === 1 ? [0, 2, 1] : lane === 0 ? [1, 2, 0] : [1, 0, 2];
+      let target = -1;
+      for (const t of order) {
+        if (t === lane || this.laneHasSpecialRail(t, m.s)) continue;
+        if (this.movers.some((o) => o !== m && o.lane === t && Math.abs(o.s - m.s) < 6)) continue;
+        target = t;
+        break;
+      }
+      if (target >= 0) {
+        m.lane = target;
+        m.lat = LANE_LAT[target];
+        moved = true;
+      } else {
+        m.hitT = 99; // tidak ada lajur aman: langsung hilangkan (lebih baik daripada tabrakan)
+        moved = true;
+      }
+    }
+    if (moved) this.moverVersion++;
+  }
+
   private isNearObstacle(s: number, lane: number, bufferBefore = 10.0, bufferAfter = 24.0): boolean {
     for (const o of this.obstacles) {
       if (o.kind === "ramp" || o.kind === "rail") continue; // tanjakan & rel boleh dilewati
@@ -4812,11 +5125,17 @@ class Engine {
     return this.isNearCollectibleItem(s, lane, buffer, Math.max(buffer, 20.0));
   }
 
-  private addObstacle(kind: ObstacleKind, s: number, lane: number, _force = false, half?: number, variant?: number) {
+  private addObstacle(kind: ObstacleKind, s: number, lane: number, _force = false, half?: number, variant?: number, ignoreReserved = false): boolean {
+    // TIDAK ADA POT (planter) DI LAJUR TENGAH (lane 1): pemain bermain di tengah jalan dan pot di
+    // tengah mengganggu. Kalau sebuah pola memilih planter untuk lajur tengah, dipasang cone saja
+    // (tetap jadi rintangan kecil yang bisa dilompati, tidak mengurangi keseruan).
+    if (kind === "planter" && lane === 1) kind = "cone";
     // Jaring pengaman per-item: pattern panjang tidak boleh menjulurkan obstacle
     // ke dalam zona perempatan (apalagi scramble crossing yang penuh penyeberang)
-    if (this.intersections.some((it) => Math.abs(it.s - s) < (it.scramble ? 11 : it.wide ? 10.5 : 8.5))) return;
-    if (this.laneReserved(lane, s)) return;
+    if (this.intersections.some((it) => Math.abs(it.s - s) < (it.scramble ? 11 : it.wide ? 10.5 : 8.5))) return false;
+    // ignoreReserved: dipakai rel sengaja dipasang (spesial & penolong lompat) — koridor reserved
+    // dari pola lalu-lintas tidak menghalangi; item tetap dijaga lewat isNearCollectibleItem.
+    if (!ignoreReserved && this.laneReserved(lane, s)) return false;
     const hLen = half ?? OBSTACLE_DEFS[kind].halfLen;
     // Ramp & rel besi (grind rail) tidak boleh terlalu dekat apalagi ketembus satu sama lain
     // di lajur yang sama: jaga jarak sisi minimal supaya kombo ramp -> rel tetap nyaman dimainkan.
@@ -4824,7 +5143,7 @@ class Engine {
       for (const o of this.obstacles) {
         if (o.kind !== "ramp" || o.lane !== lane) continue;
         const oHalf = o.half ?? OBSTACLE_DEFS[o.kind].halfLen;
-        if (Math.abs(o.s - s) < oHalf + hLen + RAMP_RAIL_MIN_GAP) return; // rel: batalkan saja
+        if (Math.abs(o.s - s) < oHalf + hLen + RAMP_RAIL_MIN_GAP) return false; // rel: batalkan saja
       }
     } else if (kind === "ramp") {
       for (let i = this.obstacles.length - 1; i >= 0; i--) {
@@ -4833,7 +5152,7 @@ class Engine {
         const oHalf = o.half ?? OBSTACLE_DEFS[o.kind].halfLen;
         if (o.kind === "rail") {
           if (Math.abs(o.s - s) >= oHalf + hLen + RAMP_RAIL_MIN_GAP) continue;
-          if (!_force) return; // ramp biasa: batalkan, jangan potong rel yang sudah ada
+          if (!_force) return false; // ramp biasa: batalkan, jangan potong rel yang sudah ada
           // Ramp darurat (runway bus / perlintasan): PANGKAS ujung rel yang bentrok supaya
           // kedua ujungnya tetap berjarak RAMP_RAIL_MIN_GAP dari badan ramp.
           const railStart = o.s - oHalf;
@@ -4852,7 +5171,7 @@ class Engine {
             o.quat = [tmpQ.x, tmpQ.y, tmpQ.z, tmpQ.w];
           }
         } else if (o.kind === "ramp") {
-          if (!_force && Math.abs(o.s - s) < oHalf + hLen + 0.6) return; // jangan tumpuk dua ramp
+          if (!_force && Math.abs(o.s - s) < oHalf + hLen + 0.6) return false; // jangan tumpuk dua ramp
         } else if (_force && Math.abs(o.s - s) < oHalf + hLen + 0.35) {
           this.obstacles.splice(i, 1); // ramp darurat menyingkirkan rintangan kecil yang menabrak badannya
         }
@@ -4861,9 +5180,9 @@ class Engine {
     // JANGAN PERNAH menempatkan obstacle di dekat apalagi di belakang item (huruf, roket, kaleng NOS)!
     // Clearance 22m di depan item dan 20m di belakang item agar pemain bebas & aman mengambil item.
     // Pengecualian: ramp darurat (_force === true) wajib selalu terpasang sebagai sarana keselamatan pemain!
-    if (!_force && this.isNearCollectibleItem(s, lane, hLen + 22.0, hLen + 20.0)) return;
+    if (!_force && this.isNearCollectibleItem(s, lane, hLen + 22.0, hLen + 20.0)) return false;
     // Bread lines must stay readable and never have obstacles in their path or immediately behind them
-    if (!_force && this.isNearBread(s, lane, hLen + 10.0, hLen + 20.0)) return;
+    if (!_force && this.isNearBread(s, lane, hLen + 10.0, hLen + 20.0)) return false;
     track.frame(s, LANE_LAT[lane], 0, tmpV);
     track.quat(s, tmpQ);
     const catVariant = kind === "car" && Math.random() < 0.48 ? randInt(0, 3) : undefined;
@@ -4882,6 +5201,7 @@ class Engine {
     // Remove any bread that might somehow collide or be within the safety buffer of this obstacle
     this.breads = this.breads.filter((b) => !(b.lane === lane && b.s >= s - (hLen + 20.0) && b.s <= s + (hLen + 10.0)));
     this.listVersion++;
+    return true;
   }
   private addBread(s: number, lane: number, h: number) {
     // Roti tidak pernah diletakkan di dekat atau di belakang rintangan: collectible harus terbaca dan punya ruang mendarat.
@@ -4954,13 +5274,21 @@ class Engine {
     if (this.laneReserved(lane, meetS) || this.isNearCollectibleItem(meetS, lane, 22, 20)) {
       return;
     }
+    // Jangan menembus REL ULAR / ROLLERCOASTER: kendaraan hanya boleh di lajur bebas
+    if (this.laneHasSpecialRail(lane, meetS)) {
+      return;
+    }
     // High motorcycle presence in Shibuya with companion riders
     if (isMotorcycle) {
       this.spawnMotorcycle(s0, lane, baseSpeed, motorcycleFactor);
       this.reserved.push({ lane, from: meetS - 7, until: s0 + 6 });
       if (allowCompanion && (track.mode === "shibuya" ? Math.random() < 0.60 : (t > 0.35 && Math.random() < 0.35))) {
         const companionLane = this.otherLane([lane]);
-        if (!this.laneReserved(companionLane, meetS) && !this.isNearCollectibleItem(meetS, companionLane, 22, 20)) {
+        if (
+          !this.laneReserved(companionLane, meetS) &&
+          !this.isNearCollectibleItem(meetS, companionLane, 22, 20) &&
+          !this.laneHasSpecialRail(companionLane, meetS)
+        ) {
           const companionS = s0 + 3.0;
           this.spawnMotorcycle(companionS, companionLane, baseSpeed * rand(0.95, 1.05));
           this.reserved.push({ lane: companionLane, from: meetS - 5, until: companionS + 6 });
@@ -4986,7 +5314,8 @@ class Engine {
     for (let i = 0; i < lanes.length; i++) {
       const s = meetS + i * headway;
       const lane = lanes[i];
-      if (this.isNearCollectibleItem(s, lane, 22, 20) || this.laneReserved(lane, s)) continue;
+      // lewati lajur yang ada REL ULAR/ROLLERCOASTER — traffic mengisi lajur bebas
+      if (this.isNearCollectibleItem(s, lane, 22, 20) || this.laneReserved(lane, s) || this.laneHasSpecialRail(lane, s)) continue;
       this.spawnOncoming(s, lane, t, false);
     }
     return headway * (lanes.length - 1) + 8;
@@ -5158,7 +5487,13 @@ class Engine {
    */
   private clearLaneNear(s: number, bufferBefore = 22, bufferAfter = 20): number {
     const lanes = [1, 0, 2]; // tengah dulu (paling gampang diambil), lalu pinggir
-    const inIntersection = this.intersections.some((it) => Math.abs(it.s - s) < 22);
+    const inIntersection =
+      this.intersections.some((it) => Math.abs(it.s - s) < 22) ||
+      // Hindari juga koridor PENDEKATAN perempatan berikutnya (yang sudah dijadwalkan), supaya
+      // rel penolong lompat selalu punya lajur kosong saat perempatan itu dibuat. Koridor item
+      // menjangkau 22 m sebelum & 20 m sesudah item, dan jadwal perempatan bisa maju beberapa
+      // meter — amankan 70 m sebelum s/d 6 m sesudah jadwal.
+      (track.mode !== "haruna" && s > this.nextIntersectionS - 70 && s < this.nextIntersectionS + 6);
     const atRailCrossing = this.crossings.some((cr) => Math.abs(cr.s - s) < 22);
     const inTunnelPortal = this.subwayTunnels.some((st) => Math.abs(st.startS - s) < 22 || Math.abs(st.endS - s) < 22);
     if (inIntersection || atRailCrossing || inTunnelPortal) return -1;
@@ -5189,7 +5524,9 @@ class Engine {
         // Koridor bebas rintangan di sekeliling kaleng NOS: 22m sebelum s/d 20m sesudah
         this.reserved.push({ lane, from: x - 22, until: x + 20 });
         this.obstacles = this.obstacles.filter(
-          (o) => !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20) && !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 8)
+          (o) =>
+            (!o.keepRail || !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20)) &&
+            (!o.keepRail || !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 8))
         );
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
@@ -5223,7 +5560,9 @@ class Engine {
         // Koridor bebas rintangan di sekeliling roket langka: 22m sebelum s/d 20m sesudah
         this.reserved.push({ lane, from: x - 22, until: x + 20 });
         this.obstacles = this.obstacles.filter(
-          (o) => !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20) && !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 10)
+          (o) =>
+            (!o.keepRail || !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20)) &&
+            (!o.keepRail || !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 10))
         );
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
@@ -5277,8 +5616,11 @@ class Engine {
           // Ini menjamin TIDAK ADA obstacle, mobil, motor, atau bus yang bisa muncul di belakang huruf!
           this.reserved.push({ lane, from: x - 22, until: x + 20 });
           // Bersihkan obstacle apa pun yang berpotensi overlap di lajur ini dan lajur samping
+          // (rel penolong lompat & rel spesial yang sengaja dipasang JANGAN dihapus)
           this.obstacles = this.obstacles.filter(
-            (o) => !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20) && !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 12)
+            (o) =>
+              (!o.keepRail || !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20)) &&
+              (!o.keepRail || !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 12))
           );
           // Bersihkan kendaraan/hewan yang melintas di sekitar huruf
           this.movers = this.movers.filter(
@@ -5304,11 +5646,83 @@ class Engine {
         this.nextLetterS = x + 250;
       }
     }
+    // ---- REL SPESIAL LEBIH AWAL: ULAR lalu ROLLERCOASTER dijadwalkan muncul di awal game ----
+    // Tetap nyaman: tidak di dekat perlintasan/perempatan/portal terowongan, lajur bebas
+    // rintangan & item. Rel ULAR boleh di dalam terowongan (rendah & muat di badan jalan);
+    // ROLLERCOASTER hanya di jalan terbuka (butuh ruang tinggi). Rel dipasang dengan panjang
+    // penuh — paling enak di-grind saat kecepatan awal game masih rendah.
+    if (x >= this.nextSpecialRailS) {
+      const isWave = this.specialRailStage === 0;
+      const L = isWave ? 18 : 24;
+      const half = L / 2;
+      const cx = x + half;
+      const nearSpecial =
+        this.crossings.some((c) => Math.abs(c.s - x) < 36) ||
+        this.intersections.some((it) => Math.abs(it.s - x) < 36) ||
+        this.subwayTunnels.some((st) => Math.abs(st.startS - x) < 36 || Math.abs(st.endS - x) < 36);
+      // ROLLERCOASTER menunggu jalan terbuka (di dalam terowongan ada kereta & ruang terbatas)
+      const tunnelBlock = !isWave && this.isInSubwayTunnel(x, L + 14);
+      if (this.specialRailStage < 2 && !nearSpecial && !tunnelBlock) {
+        const spanFrom = x - 4;
+        const spanUntil = cx + half + 6;
+        // Cek lajur ala pola rel biasa: hindari item & kereta metro. Koridor reserved dari pola
+        // lalu-lintas sengaja tidak menghalangi (rel tetap bisa dipasang di lajur sibuk — sama
+        // seperti rel pola biasa). Tumpang-tindih rintangan dijaga oleh jarak kursor spawn.
+        // BIS JANGAN NEMBUS REL: bus yang sedang melaju (ke arah -s) akan menyapu seluruh rel di
+        // depannya — kalau ekor bus masih di atas awal rentang rel, bus pasti menembus rel ini.
+        const laneOk = (l: number) =>
+          !this.isNearCollectibleItem(cx, l, half + 10, half + 10) &&
+          !this.subwayTrains.some((st) => {
+            if (st.lane !== l) return false;
+            if (st.speed === 0 || st.isStopped) {
+              // bus parkir: cukup cek tumpang-tindih badan bus dengan rentang rel
+              return spanUntil > st.s - 6 && spanFrom < st.s + st.length + 6;
+            }
+            // bus jalan: ia akan melewati/menyapu rentang ini — cek apakah ekornya masih di atas awal rel
+            return st.s + st.length > spanFrom - 6;
+          });
+        const lanes = [0, 1, 2].filter(laneOk);
+        for (const lane of lanes) {
+          // koridor rel dibersihkan dari roti (addObstacle menolak bila ada roti di dekatnya)
+          this.breads = this.breads.filter((b) => !(b.lane === lane && b.s > cx - (half + 24) && b.s < cx + (half + 14)));
+          this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - cx) < 5));
+          if (!this.addObstacle("rail", cx, lane, false, half, isWave ? WAVE_VARIANT : COASTER_VARIANT, true)) continue;
+          // koridor bebas: lajur ini di-reserve & rintangan kecil lama di jalur rel dibuang
+          // (ramp darurat sengaja TIDAK dibuang — ia sarana keselamatan)
+          this.reserved.push({ lane, from: spanFrom - 2, until: spanUntil + 2 });
+          const added = this.obstacles[this.obstacles.length - 1];
+          added.keepRail = true; // lindungi dari koridor item (NOS/roket/huruf)
+          this.obstacles = this.obstacles.filter(
+            (o) => o === added || !(o.lane === lane && o.kind !== "ramp" && o.s > spanFrom - 2 && o.s < spanUntil + 2),
+          );
+          // mobil/motor yang sudah ada di lajur ini pindah jalur supaya tidak menabrak rel baru
+          this.rerouteVehiclesAroundSpecialRail(lane, spanFrom, spanUntil);
+          this.specialRailStage++;
+          // setelah ROLLERCOASTER: kembali ke pola acak biasa
+          this.nextSpecialRailS = this.specialRailStage >= 2 ? Number.MAX_SAFE_INTEGER : cx + half + rand(120, 170);
+          this.nextObstacleS = spanUntil + lerp(8.5, 5.5, t) + rand(0, 2.5);
+          return;
+        }
+      }
+      // tidak muat di sini — coba lagi; kalau terowongan yang menghalangi, lompat ke ujungnya
+      if (!isWave) {
+        const tun = this.subwayTunnels.find((st) => x >= st.startS - (L + 14) && x <= st.endS + (L + 14));
+        this.nextSpecialRailS = tun ? Math.max(x + 18, tun.endS + 24) : x + 18;
+      } else {
+        this.nextSpecialRailS = x + 18;
+      }
+    }
     const inTunnel = this.isInSubwayTunnel(x, 12);
     if (inTunnel && x >= this.nextRoadworkS) {
       this.nextRoadworkS = x + 60;
     }
-    if (!inTunnel && x >= this.nextRoadworkS && !this.crossings.some((c) => Math.abs(c.s - x) < 40)) {
+    if (
+      !inTunnel &&
+      x >= this.nextRoadworkS &&
+      !this.crossings.some((c) => Math.abs(c.s - x) < 40) &&
+      // jangan menimbun site roadwork di zona pendekatan perempatan (tempat rel penolong lompat)
+      !(track.mode !== "haruna" && x > this.nextIntersectionS - 75 && x < this.nextIntersectionS + 5)
+    ) {
       const itemAroundRoadwork = [0, 1, 2].some((l) => this.isNearCollectibleItem(x, l, 22, 20));
       if (!itemAroundRoadwork) {
         const len = this.spawnRoadworks(x, t);
@@ -5497,7 +5911,14 @@ class Engine {
           const L = RAIL_LENGTHS[li];
           const half = L / 2;
           const cx = x + half;
-          const variant = L >= 18 && Math.random() < 0.4 ? 1 : 0;
+          // Varian rel: 0 = datar, 1 = kinked (turun), 2 = ULAR (meliku kiri-kanan + hop kecil),
+          // 3 = ROLLERCOASTER (tanjakan besar & turunan). Rel spesial butuh panjang supaya bentuknya
+          // terbaca; di dalam terowongan rel tetap yang biasa ( ruang terbatas).
+          const roll = Math.random();
+          let variant = 0;
+          if (!inTunnel && L >= 18 && roll < 0.3) variant = 1;
+          else if (!inTunnel && L >= 12 && roll < 0.52) variant = WAVE_VARIANT;
+          else if (!inTunnel && L >= 18 && roll < 0.66) variant = COASTER_VARIANT;
           this.addObstacle("rail", cx, lane, false, half, variant);
           if (L >= 12 && t > 0.3 && Math.random() < 0.6) {
             const l2 = this.otherLane([lane]);
@@ -5528,12 +5949,17 @@ class Engine {
           len = this.spawnShibuyaTrafficWave(x, t);
           break;
         }
-        const candidateLanes = [0, 1, 2].filter((l) => !this.isNearCollectibleItem(x, l, 22, 20));
+        // hindari lajur ber-REL ULAR/ROLLERCOASTER: kendaraan pindah ke lajur bebas
+        const candidateLanes = [0, 1, 2].filter(
+          (l) => !this.isNearCollectibleItem(x, l, 22, 20) && !this.laneHasSpecialRail(l, x),
+        );
         const lane = candidateLanes.length > 0 ? pick(candidateLanes) : -1;
         if (lane >= 0) {
           this.spawnOncoming(x, lane, t);
           if (t > 0.5 && Math.random() < 0.4) {
-            const otherCandidates = [0, 1, 2].filter((l) => l !== lane && !this.isNearCollectibleItem(x + 10, l, 22, 20));
+            const otherCandidates = [0, 1, 2].filter(
+              (l) => l !== lane && !this.isNearCollectibleItem(x + 10, l, 22, 20) && !this.laneHasSpecialRail(l, x + 10),
+            );
             if (otherCandidates.length > 0) {
               const l2 = pick(otherCandidates);
               this.spawnOncoming(x + 10, l2, t);
@@ -5554,7 +5980,10 @@ class Engine {
         break;
       }
       case "motorcycles": {
-        const candidateLanes = [0, 1, 2].filter((l) => !this.isNearCollectibleItem(x, l, 22, 20));
+        // hindari lajur ber-REL ULAR/ROLLERCOASTER: motor pindah ke lajur bebas
+        const candidateLanes = [0, 1, 2].filter(
+          (l) => !this.isNearCollectibleItem(x, l, 22, 20) && !this.laneHasSpecialRail(l, x),
+        );
         if (candidateLanes.length === 0) break;
         const lane1 = pick(candidateLanes);
         const remLanes = candidateLanes.filter((l) => l !== lane1);

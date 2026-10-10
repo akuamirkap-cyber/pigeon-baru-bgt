@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Scene } from "./game/Scene";
 import { useInput } from "./game/useInput";
 import { HUD } from "./ui/HUD";
@@ -11,7 +11,9 @@ import { suspendAudioForHiddenPage, resumeAudioFromHiddenPage } from "./game/aud
 import { engine, track } from "./game/engine";
 import { useUI } from "./game/store";
 import { ensureThumbs, ensureDeckThumbs } from "./game/thumbs";
-import BuddiesApp from "./buddies/BuddiesApp";
+// BuddiesApp (drei + three-stdlib, ~8 MB) sengaja LAZY: baru diunduh saat pemain membuka
+// layar buddies/skins — mempercepat loading awal game secara drastis.
+const BuddiesApp = lazy(() => import("./buddies/BuddiesApp"));
 
 // debug handle (harmless in production)
 if (typeof window !== "undefined") {
@@ -134,7 +136,9 @@ export default function App() {
 
 
       {isSelectingSkinOrSkate ? (
-        <BuddiesApp onBackToPigeon={() => switchGameMode("pigeon")} />
+        <Suspense fallback={null}>
+          <BuddiesApp onBackToPigeon={() => switchGameMode("pigeon")} />
+        </Suspense>
       ) : (
         <div
           className="flex h-[100dvh] w-full flex-col items-center justify-center overflow-hidden"
