@@ -3805,15 +3805,13 @@ export function scrambleRoadParts(): Part[] {
   const avenueW = 13.4;
 
   // A single, level intersection apron: two carriageways and a paved-over median.
-  parts.push({ x: 0, y: 0.016, z: 0, w: avenueW, h: 0.024, d: 8.0, color: asphalt });
+  // Apron dibatasi di antara tepi curb jalur (z -4.0 .. 12.3) agar sejajar dengan trotoar.
+  parts.push({ x: 0, y: 0.016, z: 0.5, w: avenueW, h: 0.024, d: 4.5, color: asphalt });
   parts.push({ x: 0, y: 0.016, z: 8.65, w: avenueW, h: 0.024, d: 7.35, color: asphalt });
   parts.push({ x: 0, y: 0.09, z: 4.35, w: avenueW, h: 0.175, d: 1.6, color: asphaltDark });
 
   // Cross streets on all four corners; keep the curb edges straight and uncluttered.
-  for (const [z0, z1] of [[-30, -4.0], [12.3, 30]] as const) {
-    const mid = (z0 + z1) / 2;
-    parts.push({ x: 0, y: 0.145, z: mid, w: avenueW, h: 0.06, d: z1 - z0, color: asphalt });
-  }
+  // Tidak ada dek jalan lintas yang dinaikkan di atas trotoar; trotoar dirender oleh ground.ts.
 
   // Two crisp, evenly spaced zebra bands across the six-lane avenue.
   for (const x of [-5.0, 5.0]) {
@@ -3824,9 +3822,9 @@ export function scrambleRoadParts(): Part[] {
   }
 
   // Matching zebra crossings on the north/south side streets.
-  for (const z of [-5.4, 13.7]) {
+  for (const z of [-2.9, 11.1]) {
     for (let x = -5.5; x <= 5.5; x += 0.9) {
-      parts.push({ x, y: 0.19, z, w: 0.44, h: 0.022, d: 2.0, color: zebra });
+      parts.push({ x, y: 0.04, z, w: 0.44, h: 0.022, d: 1.6, color: zebra });
     }
   }
 
