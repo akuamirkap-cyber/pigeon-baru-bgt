@@ -669,7 +669,7 @@ export function wingParts(k: Skin, side: 1 | -1): Part[] {
     { x: -0.12, y: -0.04, z: z + 0.015 * side, w: 0.22, h: 0.26, d: 0.09, color: k.neck1 },
     // Ujung gelap bertingkat ke belakang (dark)
     { x: -0.32, y: -0.08, z, w: 0.18, h: 0.30, d: 0.09, color: k.wingTip },
-    { x: -0.41, y: 0.02, z, w: 0.16, h: 0.18, d: 0.09, color: k.tailTip ?? k.wingTip },
+    { x: -0.41, y: 0.02, z, w: 0.16, h: 0.18, d: 0.09, color: k.wingTip },
   ];
 }
 
