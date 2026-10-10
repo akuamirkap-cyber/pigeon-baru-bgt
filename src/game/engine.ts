@@ -225,6 +225,8 @@ export interface Puddle {
   rotY: number;
   splashT: number;
 }
+const OVERPASS_H_ENGINE = 5.2; // sama dengan OVERPASS_H di models.ts
+
 export interface OverpassCar {
   id: number;
   s: number;
@@ -232,6 +234,7 @@ export interface OverpassCar {
   dir: number;
   speed: number;
   variant: number;
+  smokeT?: number;
 }
 
 export type ObstacleKind = "cone" | "trash" | "barrier" | "bench" | "boxes" | "planter" | "car" | "ramp" | "rail" | "fence" | "dirt" | "jackhammer" | "worker";
@@ -543,21 +546,12 @@ export const SHIBUYA_MEDIAN_LAT = 4.72;
  * tenggelam ke trotoar atau tampak melayang di atas jalan.
  */
 export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): number {
-  if (mode === "shibuya") {
-    if (lat <= -4.0 && lat >= -8.2) return 0.12; // trotoar dekat
-    // curb & median kini rata dengan aspal (strip abu-abu dihapus)
-    if (lat >= 3.7 && lat <= 5.0) return 0;     // median tengah (tempat menunggu)
-    if (lat >= 12.6 && lat <= 16.1) return 0.12; // trotoar jauh
-    if (lat < -8.2 || lat > 16.1) return 0.1;   // plaza
-    return 0; // aspal
-  }
-  if (lat < 0) {
-    if (lat <= -4.0 && lat >= -7.0) return 0.12;
-    if (lat < -7.0) return 0.1;
+  // Trotoar, curb, dan median sudah rata dengan aspal (strip abu-abu dihapus).
+  if (mode === "haruna") {
+    if (lat <= -4.1 && lat >= -6.4) return 0.1;
+    if (lat >= 4.1 && lat <= 6.4) return 0.1;
     return 0;
   }
-  if (lat >= 4.0 && lat <= 6.3) return 0.12;
-  if (lat > 6.3) return 0.1;
   return 0;
 }
 
@@ -3359,7 +3353,7 @@ class Engine {
           sfx.nearMiss();
         }
         // asap knalpot keluar selama kendaraan jalan (di belakang kendaraan)
-        this.emitExhaust(m, isBike ? 0.52 : 1.05, isBike ? 0.3 : 0.26, isBike ? 0.05 : 0.08, dt);
+        this.emitExhaust(m, isBike ? 0.52 : 1.05, isBike ? 0.3 : 0.26, isBike ? 0.022 : 0.03, dt);
         if (m.s < d - 16) remove = true;
       } else {
         if (m.phase === "wait") {
@@ -3475,6 +3469,13 @@ class Engine {
     for (let i = this.overpassCars.length - 1; i >= 0; i--) {
       const c = this.overpassCars[i];
       c.lat += c.dir * c.speed * dt;
+      // asap knalpot mobil jalan layang (ikut tinggi jalan)
+      c.smokeT = (c.smokeT ?? 0) - dt;
+      if (c.smokeT <= 0 && this.phase === "playing") {
+        c.smokeT = 0.03;
+        const pl = this.place(c.s, c.lat - c.dir * 1.5, 0.26 + OVERPASS_H_ENGINE);
+        this.emitWorld("smoke", pl.pos[0], pl.pos[1], pl.pos[2], pl.pos[1] - OVERPASS_H_ENGINE - 0.4, 1, Math.cos(pl.rotY), Math.sin(pl.rotY));
+      }
       if (Math.abs(c.lat) > 20 || c.s < d - 30) {
         this.overpassCars.splice(i, 1);
         changed = true;
@@ -3704,7 +3705,7 @@ class Engine {
       // asap knalpot mobil yang menyeberang di perempatan
       cc.smokeT = (cc.smokeT ?? 0) - dt;
       if (cc.smokeT <= 0) {
-        cc.smokeT = 0.09;
+        cc.smokeT = 0.03;
         const pl = this.place(cc.s, cc.lat - cc.dir * 1.5, 0.26);
         this.emitWorld("smoke", pl.pos[0], pl.pos[1], pl.pos[2], pl.pos[1] - 0.4, 1, Math.cos(pl.rotY), Math.sin(pl.rotY));
       }
@@ -6417,13 +6418,15 @@ class Engine {
     m.smokeT = (m.smokeT ?? 0) - dt;
     if (m.smokeT > 0) return;
     m.smokeT = interval;
-    // posisi knalpot: di belakang kendaraan yang sedang melaju mendekat (+s)
+    // posisi knalpot: di belakang kendaraan yang sedang melaju mendekat (+s), kiri & kanan
     const sPos = m.s + back;
     const c = track.sample(sPos, tmpS);
-    const lat = m.lat + rand(-0.16, 0.16);
-    const x = c.x - Math.sin(c.th) * lat;
-    const z = c.z + Math.cos(c.th) * lat;
-    this.emitWorld("smoke", x, c.y + h, z, c.y - 0.4, 1, Math.cos(c.th), Math.sin(c.th));
+    for (const side of [-0.22, 0.22]) {
+      const lat = m.lat + side + rand(-0.04, 0.04);
+      const x = c.x - Math.sin(c.th) * lat;
+      const z = c.z + Math.cos(c.th) * lat;
+      this.emitWorld("smoke", x, c.y + h, z, c.y - 0.4, 1, Math.cos(c.th), Math.sin(c.th));
+    }
   }
 
   /* ---------- Particles ---------- */
@@ -6445,7 +6448,7 @@ class Engine {
           vx: -tx * rand(0.5, 1.6) + rand(-0.35, 0.35),
           vy: rand(0.5, 1.15),
           vz: -tz * rand(0.5, 1.6) + rand(-0.35, 0.35),
-          life: 0, max: rand(0.45, 0.8), size: rand(0.07, 0.12),
+          life: 0, max: rand(0.7, 1.1), size: rand(0.1, 0.16),
           r: g, g: g, b: g + 0.03,
           rx: rand(0, 6), ry: rand(0, 6), spin: rand(-2, 2),
           gravity: -0.35, floor, grow: 2.6,
@@ -6508,7 +6511,7 @@ class Engine {
       }
       this.particles.push(pt);
     }
-    if (this.particles.length > 150) this.particles.splice(0, this.particles.length - 150);
+    if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
   }
 
   private updateParticles(dt: number) {
