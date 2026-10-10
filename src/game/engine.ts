@@ -545,21 +545,18 @@ export const SHIBUYA_MEDIAN_LAT = 4.72;
 export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): number {
   if (mode === "shibuya") {
     if (lat <= -4.0 && lat >= -8.2) return 0.12; // trotoar dekat
-    if (lat < -3.7 && lat > -4.0) return 0.14;  // curb dekat
-    if (lat >= 3.7 && lat <= 5.0) return 0.16;  // median tengah (tempat menunggu)
-    if (lat > 12.3 && lat < 12.6) return 0.14;  // curb jauh
+    // curb & median kini rata dengan aspal (strip abu-abu dihapus)
+    if (lat >= 3.7 && lat <= 5.0) return 0;     // median tengah (tempat menunggu)
     if (lat >= 12.6 && lat <= 16.1) return 0.12; // trotoar jauh
     if (lat < -8.2 || lat > 16.1) return 0.1;   // plaza
     return 0; // aspal
   }
   if (lat < 0) {
     if (lat <= -4.0 && lat >= -7.0) return 0.12;
-    if (lat < -3.7 && lat > -4.0) return 0.14;
     if (lat < -7.0) return 0.1;
     return 0;
   }
   if (lat >= 4.0 && lat <= 6.3) return 0.12;
-  if (lat > 3.7 && lat < 4.0) return 0.14;
   if (lat > 6.3) return 0.1;
   return 0;
 }
