@@ -1148,7 +1148,7 @@ export function InGameTrailEffect({
     const sp = engine?.speed ? engine.speed : 14;
     trailHistory.update(now, h, vh, lat, latVel, sp);
     // Jatuh / nabrak / game over: trail auto mengecil ke 0, lalu kembali saat main lagi
-    const down = engine.phase === "crashed" || engine.phase === "gameover";
+    const down = engine.phase === "crashed" || engine.phase === "gameover" || engine.trailDown;
     fadeVal.current += ((down ? 0 : 1) - fadeVal.current) * Math.min(1, dt * (down ? 14 : 4));
     const g = fadeRef.current;
     if (g) {

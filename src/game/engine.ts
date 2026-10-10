@@ -931,6 +931,13 @@ class Engine {
     x: number; y: number; z: number; t: number; max: number; reward: boolean;
     parts: { px: number; py: number; pz: number; vx: number; vy: number; vz: number; size: number; rot: number; spin: number; hue: number; star: boolean }[];
   }[] = [];
+  /** Ragdoll saat mendarat: roll/tumble visual (dibaca Player.tsx). */
+  landRollT = 99;
+  landRollDir = 1;
+  landRollFull = false;
+  landRollAmp = 0.5;
+  /** Trail skate ikut mengecil ke 0 setelah trik gagal (SKETCHY) sampai mendarat normal lagi. */
+  trailDown = false;
   /** Kilau bintang (sparkle) saat ambil item: seperti efek pickup Subway Surfers. */
   sparkles: { x: number; y: number; z: number; t: number; max: number; size: number; rot: number; hue: number }[] = [];
   reserved: { lane: number; from: number; until: number }[] = [];
@@ -1176,6 +1183,8 @@ class Engine {
     this.pulses = [];
     this.sparkles = [];
     this.bursts = [];
+    this.landRollT = 99;
+    this.trailDown = false;
     this.downhillFlag = false;
     while (this.nextChunkS < this.distance + 90) this.spawnChunk();
     this.seedShibuyaAnimalRoster();
@@ -1769,14 +1778,24 @@ class Engine {
 
   private land() {
     const p = this.player;
+    const impact = -p.vh;
+    if (impact > 2) {
+      // ragdoll style: terguling saat mendarat keras (full roll), tapi ringan untuk pendaratan kecil
+      this.landRollT = 0;
+      this.landRollDir = Math.random() < 0.5 ? 1 : -1;
+      this.landRollFull = impact >= 8;
+      this.landRollAmp = Math.min(1, impact / 10);
+    }
     p.grounded = true;
     p.vh = 0;
     p.squash = 1;
     p.subwayLastId = null;
+    this.trailDown = false;
     if (p.trick) {
       const tr = p.trick;
       const prog = tr.t / tr.dur;
       if (prog < 0.72) {
+        this.trailDown = true; // gagal atraksi: trail mengecil ke 0
         p.trick = null;
         p.flip = 0;
         if (this.phase === "playing") {
@@ -6467,6 +6486,7 @@ class Engine {
   }
 
   private updatePulses(dt: number) {
+    this.landRollT += dt;
     for (let i = this.bursts.length - 1; i >= 0; i--) {
       const bu = this.bursts[i];
       bu.t += dt;
