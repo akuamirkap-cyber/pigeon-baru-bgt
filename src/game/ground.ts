@@ -10,7 +10,6 @@ interface Strip {
 }
 
 const ROAD = "#555a66";
-const CURB = "#c9c5bb";
 const WALK = "#dcd7cb";
 const PLAZA = "#a9a49b";
 const G1 = "#8ed04e";
@@ -24,15 +23,14 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
       // playable carriageway (3 lanes)
       { lat0: -3.75, lat1: 3.75, top: 0, colors: ["#343a4c"], skirt: false },
       // near curb + granite sidewalk + plaza under the towers
-      { lat0: -4.0, lat1: -3.7, top: 0.14, colors: ["#9aa2b5"], skirt: true },
+      // curb abu-abu di tepi jalur dihapus: kendaraan menempel di aspal
       { lat0: -8.2, lat1: -4.0, top: 0.12, colors: ["#5b6178", "#525871"], skirt: true },
       { lat0: -24, lat1: -8.2, top: 0.1, colors: ["#3d4257", "#444a61"], skirt: true },
       // raised centre median (street trees & lamps live here)
-      { lat0: 3.7, lat1: 5.0, top: 0.16, colors: ["#4b5169", "#454b62"], skirt: true },
+      { lat0: 3.7, lat1: 5.0, top: 0, colors: ["#343a4c"], skirt: false },
       // opposite carriageway (3 more lanes)
       { lat0: 5.0, lat1: 12.3, top: 0, colors: ["#31374a"], skirt: false },
       // far curb + sidewalk + plaza
-      { lat0: 12.3, lat1: 12.6, top: 0.14, colors: ["#9aa2b5"], skirt: true },
       { lat0: 12.6, lat1: 16.1, top: 0.12, colors: ["#5b6178", "#525871"], skirt: true },
       { lat0: 16.1, lat1: 26, top: 0.1, colors: ["#3d4257", "#444a61"], skirt: true },
     ];
@@ -54,8 +52,7 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
   }
   return [
     { lat0: -3.75, lat1: 3.75, top: 0, colors: [ROAD], skirt: false },
-    { lat0: -4.0, lat1: -3.7, top: 0.14, colors: [CURB], skirt: true },
-    { lat0: 3.7, lat1: 4.0, top: 0.14, colors: [CURB], skirt: true },
+    // curb abu-abu di tepi jalur dihapus: kendaraan menempel di aspal
     { lat0: -7.0, lat1: -4.0, top: 0.12, colors: [WALK], skirt: true },
     { lat0: 4.0, lat1: 6.3, top: 0.12, colors: [WALK], skirt: true },
     { lat0: -24, lat1: -7.0, top: 0.1, colors: kind === "park" ? [G1, G2] : [PLAZA], skirt: true },
