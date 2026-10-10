@@ -2086,6 +2086,169 @@ function SparkleFx() {
   return <instancedMesh ref={ref} args={[geo, mat, SPARKLE_POOL]} frustumCulled={false} renderOrder={6} />;
 }
 
+/* ---------- Pickup roti/NOS/huruf: ring emas + kilatan + partikel bintang & bulat + teks +10 ---------- */
+let ringTex: THREE.CanvasTexture | null = null;
+function getRingTex(): THREE.CanvasTexture {
+  if (!ringTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d")!;
+    const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grd.addColorStop(0, "rgba(255,220,130,0)");
+    grd.addColorStop(0.62, "rgba(255,220,130,0)");
+    grd.addColorStop(0.74, "rgba(255,225,140,0.95)");
+    grd.addColorStop(0.86, "rgba(255,210,110,0.35)");
+    grd.addColorStop(1, "rgba(255,200,90,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 128, 128);
+    ringTex = new THREE.CanvasTexture(c);
+  }
+  return ringTex;
+}
+
+let dotTex: THREE.CanvasTexture | null = null;
+function getDotTex(): THREE.CanvasTexture {
+  if (!dotTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d")!;
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, "rgba(255,250,220,1)");
+    grd.addColorStop(0.45, "rgba(255,226,150,0.85)");
+    grd.addColorStop(1, "rgba(255,200,100,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    dotTex = new THREE.CanvasTexture(c);
+  }
+  return dotTex;
+}
+
+let rewardTex: THREE.CanvasTexture | null = null;
+function getRewardTex(): THREE.CanvasTexture {
+  if (!rewardTex) {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 128;
+    const g = c.getContext("2d")!;
+    g.font = "bold 92px sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.lineWidth = 14;
+    g.strokeStyle = "#6b3f00";
+    g.strokeText("+10", 128, 66);
+    g.fillStyle = "#ffd55a";
+    g.fillText("+10", 128, 66);
+    rewardTex = new THREE.CanvasTexture(c);
+  }
+  return rewardTex;
+}
+
+const BURST_POOL = 6;
+const BURST_PART_CAP = 60;
+const burstCol = new THREE.Color();
+
+function BurstFx() {
+  const starRef = useRef<THREE.InstancedMesh>(null);
+  const dotRef = useRef<THREE.InstancedMesh>(null);
+  const { camera } = useThree();
+  const res = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const add = (map: THREE.Texture) =>
+      new THREE.MeshBasicMaterial({ map, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const slots = Array.from({ length: BURST_POOL }, () => {
+      const ring = new THREE.Mesh(geo, add(getRingTex()));
+      const flash = new THREE.Mesh(geo, add(getDotTex()));
+      const text = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({ map: getRewardTex(), transparent: true, depthWrite: false, toneMapped: false })
+      );
+      for (const o of [ring, flash, text]) {
+        o.frustumCulled = false;
+        o.visible = false;
+      }
+      return { ring, flash, text };
+    });
+    return { geo, slots, starMat: add(getSparkleTex()), dotMat: add(getDotTex()) };
+  }, []);
+
+  useFrame(() => {
+    const { slots } = res;
+    let si = 0;
+    let di = 0;
+    const star = starRef.current;
+    const dot = dotRef.current;
+    engine.bursts.forEach((bu, bi) => {
+      const slot = slots[bi];
+      if (!slot) return;
+      const k = Math.min(1, bu.t / bu.max);
+      const e = 1 - Math.pow(1 - k, 3);
+      // ring melebar tipis lalu memudar
+      slot.ring.visible = true;
+      slot.ring.position.set(bu.x, bu.y, bu.z);
+      slot.ring.quaternion.copy(camera.quaternion);
+      slot.ring.scale.setScalar(0.25 + 1.5 * e);
+      (slot.ring.material as THREE.MeshBasicMaterial).opacity = 0.7 * Math.pow(1 - k, 1.5);
+      // kilatan kecil di pusat
+      const kf = Math.min(1, bu.t / 0.18);
+      slot.flash.visible = kf < 1;
+      slot.flash.position.set(bu.x, bu.y, bu.z);
+      slot.flash.quaternion.copy(camera.quaternion);
+      slot.flash.scale.setScalar(0.45 * (1 - kf) + 0.15);
+      (slot.flash.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - kf);
+      // teks reward naik pelan lalu memudar
+      slot.text.visible = bu.reward;
+      if (bu.reward) {
+        slot.text.position.set(bu.x, bu.y + 0.35 + 0.9 * e, bu.z);
+        slot.text.quaternion.copy(camera.quaternion);
+        slot.text.scale.set(0.9, 0.45, 1);
+        (slot.text.material as THREE.MeshBasicMaterial).opacity = k < 0.6 ? 1 : Math.max(0, (1 - k) / 0.4);
+      }
+      // partikel: bintang & bulat, menyebar lalu mengecil dan memudar (additive: warna = fade)
+      for (const p of bu.parts) {
+        const useStar = p.star ? si < BURST_PART_CAP : di < BURST_PART_CAP;
+        const target = p.star ? star : dot;
+        if (!useStar || !target) continue;
+        const sc = p.size * (1 - k * k);
+        tmpObj.position.set(bu.x + p.px, bu.y + p.py, bu.z + p.pz);
+        tmpObj.quaternion.copy(camera.quaternion);
+        tmpObj.rotateZ(p.rot + p.spin * bu.t);
+        tmpObj.scale.setScalar(Math.max(0.001, sc));
+        tmpObj.updateMatrix();
+        const idx = p.star ? si++ : di++;
+        target.setMatrixAt(idx, tmpObj.matrix);
+        // kuning emas muda -> krem, dibuat lembut (bukan terang menyilaukan)
+        burstCol.setHSL(0.11 + p.hue * 0.035, 0.9, 0.8).multiplyScalar(0.6 * Math.pow(1 - k, 1.2));
+        target.setColorAt(idx, burstCol);
+      }
+    });
+    for (let j = engine.bursts.length; j < BURST_POOL; j++) {
+      slots[j].ring.visible = false;
+      slots[j].flash.visible = false;
+      slots[j].text.visible = false;
+    }
+    for (const [m, n] of [[star, si], [dot, di]] as const) {
+      if (!m) continue;
+      m.count = n;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
+  });
+
+  return (
+    <group>
+      {res.slots.map((s, i) => (
+        <group key={i}>
+          <primitive object={s.ring} />
+          <primitive object={s.flash} />
+          <primitive object={s.text} />
+        </group>
+      ))}
+      <instancedMesh ref={starRef} args={[res.geo, res.starMat, BURST_PART_CAP]} frustumCulled={false} renderOrder={7} />
+      <instancedMesh ref={dotRef} args={[res.geo, res.dotMat, BURST_PART_CAP]} frustumCulled={false} renderOrder={7} />
+    </group>
+  );
+}
+
 /* Halo emas radial (additive, selalu menghadap kamera) untuk glow roti. */
 let breadHaloTex: THREE.CanvasTexture | null = null;
 function getBreadHaloTex(): THREE.CanvasTexture {
@@ -2111,8 +2274,14 @@ function Breads() {
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
   const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.0, 1.0), []);
+  const floorRef = useRef<THREE.InstancedMesh>(null);
+  const floorGeo = useMemo(() => new THREE.PlaneGeometry(1.3, 1.3), []);
+  const floorMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    []
+  );
   const haloMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
   );
   useFrame(() => {
@@ -2131,12 +2300,21 @@ function Breads() {
       m.setMatrixAt(i, tmpObj.matrix);
       if (hm) {
         // halo: billboard menghadap kamera, berdenyut pelan
-        const pulse = 1 + 0.12 * Math.sin(t * 5 + b.phase);
+        const pulse = 1 + 0.05 * Math.sin(t * 2.2 + b.phase);
         tmpObj.position.set(b.wx, b.wy + bob + 0.35, b.wz);
         tmpObj.quaternion.copy(camera.quaternion);
         tmpObj.scale.setScalar(pulse);
         tmpObj.updateMatrix();
         hm.setMatrixAt(i, tmpObj.matrix);
+      }
+      const fm = floorRef.current;
+      if (fm) {
+        // pantulan lembut di lantai tepat di bawah roti
+        tmpObj.position.set(b.wx, b.wy - b.h + 0.03, b.wz);
+        tmpObj.rotation.set(-Math.PI / 2, 0, 0);
+        tmpObj.scale.setScalar(0.9);
+        tmpObj.updateMatrix();
+        fm.setMatrixAt(i, tmpObj.matrix);
       }
       i++;
     }
@@ -2152,12 +2330,18 @@ function Breads() {
       hm.count = i;
       hm.instanceMatrix.needsUpdate = true;
     }
+    const fm2 = floorRef.current;
+    if (fm2) {
+      fm2.count = i;
+      fm2.instanceMatrix.needsUpdate = true;
+    }
   });
   return (
     <>
       <instancedMesh ref={ref} args={[pair.lit, voxelMaterial, MAX_BREAD]} frustumCulled={false} castShadow />
       {pair.glow && <instancedMesh ref={glowRef} args={[pair.glow, glowMaterial, MAX_BREAD]} frustumCulled={false} />}
       <instancedMesh ref={haloRef} args={[haloGeo, haloMat, MAX_BREAD]} frustumCulled={false} renderOrder={5} />
+      <instancedMesh ref={floorRef} args={[floorGeo, floorMat, MAX_BREAD]} frustumCulled={false} renderOrder={1} />
     </>
   );
 }
@@ -2562,6 +2746,7 @@ export function World() {
       <Particles />
       <Pulses />
       <SparkleFx />
+      <BurstFx />
     </group>
   );
 }
