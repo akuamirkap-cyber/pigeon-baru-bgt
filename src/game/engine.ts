@@ -1519,6 +1519,7 @@ class Engine {
     // Vertical jump height is independent of speed mode; 2×/3× only changes forward travel speed.
     p.vh = v;
     p.airT = 0;
+    p.squash = -0.22; // juicy: badan memanjang sesaat saat lepas tanah (stretch)
     sfx.jump();
   }
 
@@ -1710,7 +1711,7 @@ class Engine {
     p.bigAir = false;
     p.h = SUBWAY_ROOF_H;
     p.vh = 0;
-    p.squash = 0.55; // Pendaratan empuk dengan kompresi suspensi skateboard yang memuaskan
+    p.squash = 0.8; // Pendaratan empuk: kompresi kuat (juicy)
     p.grindPts = 0;
     if (p.trick) {
       p.trick.t = p.trick.dur;
@@ -2653,7 +2654,7 @@ class Engine {
     p.airShift = lerp(p.airShift, shiftTarget, 1 - Math.exp(-dt * (shiftTarget > p.airShift ? 16 : 6)));
     const wingTarget = !p.grounded && !p.grinding ? 1 : 0;
     p.wing = lerp(p.wing, wingTarget, 1 - Math.exp(-dt * 14));
-    p.squash = Math.max(0, p.squash - dt * 5);
+    p.squash = p.squash > 0 ? Math.max(0, p.squash - dt * 5) : Math.min(0, p.squash + dt * 5);
     this.updatePush(dt);
 
     // GRIND DODGE: gerak samping kinematik selama lompat keluar dari rel
