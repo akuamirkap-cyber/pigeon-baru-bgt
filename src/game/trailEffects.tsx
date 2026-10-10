@@ -1136,7 +1136,9 @@ export function InGameTrailEffect({
   wave?: number;
 }) {
   // Update histori fisika elevasi & posisi lateral pemain per frame untuk flow delay kontinu saat melompat & pindah jalur
-  useFrame(({ clock }) => {
+  const fadeRef = useRef<THREE.Group>(null);
+  const fadeVal = useRef(1);
+  useFrame(({ clock }, dt) => {
     const now = clock.getElapsedTime();
     const p = engine?.player;
     const h = p ? p.h : 0;
@@ -1145,10 +1147,22 @@ export function InGameTrailEffect({
     const latVel = p ? p.latVel : 0;
     const sp = engine?.speed ? engine.speed : 14;
     trailHistory.update(now, h, vh, lat, latVel, sp);
+    // Jatuh / nabrak / game over: trail auto mengecil ke 0, lalu kembali saat main lagi
+    const down = engine.phase === "crashed" || engine.phase === "gameover";
+    fadeVal.current += ((down ? 0 : 1) - fadeVal.current) * Math.min(1, dt * (down ? 14 : 4));
+    const g = fadeRef.current;
+    if (g) {
+      const s = Math.max(0, fadeVal.current);
+      g.scale.setScalar(s);
+      g.visible = s > 0.005;
+    }
   });
 
   if (!effectId) return null;
+  return <group ref={fadeRef}>{trailBody(effectId, width, length, wave)}</group>;
+}
 
+function trailBody(effectId: string, width: number, length: number, wave: number) {
   switch (effectId) {
     case "rainbow":
       return <InGameRainbowTrail width={width} length={length} wave={wave} />;

@@ -2245,12 +2245,6 @@ function Breads() {
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
   const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.0, 1.0), []);
-  const floorRef = useRef<THREE.InstancedMesh>(null);
-  const floorGeo = useMemo(() => new THREE.PlaneGeometry(1.3, 1.3), []);
-  const floorMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
-    []
-  );
   const haloMat = useMemo(
     () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
@@ -2278,15 +2272,6 @@ function Breads() {
         tmpObj.updateMatrix();
         hm.setMatrixAt(i, tmpObj.matrix);
       }
-      const fm = floorRef.current;
-      if (fm) {
-        // pantulan lembut di lantai tepat di bawah roti
-        tmpObj.position.set(b.wx, b.wy - b.h + 0.03, b.wz);
-        tmpObj.rotation.set(-Math.PI / 2, 0, 0);
-        tmpObj.scale.setScalar(0.9);
-        tmpObj.updateMatrix();
-        fm.setMatrixAt(i, tmpObj.matrix);
-      }
       i++;
     }
     m.count = i;
@@ -2301,18 +2286,12 @@ function Breads() {
       hm.count = i;
       hm.instanceMatrix.needsUpdate = true;
     }
-    const fm2 = floorRef.current;
-    if (fm2) {
-      fm2.count = i;
-      fm2.instanceMatrix.needsUpdate = true;
-    }
   });
   return (
     <>
       <instancedMesh ref={ref} args={[pair.lit, voxelMaterial, MAX_BREAD]} frustumCulled={false} castShadow />
       {pair.glow && <instancedMesh ref={glowRef} args={[pair.glow, glowMaterial, MAX_BREAD]} frustumCulled={false} />}
       <instancedMesh ref={haloRef} args={[haloGeo, haloMat, MAX_BREAD]} frustumCulled={false} renderOrder={5} />
-      <instancedMesh ref={floorRef} args={[floorGeo, floorMat, MAX_BREAD]} frustumCulled={false} renderOrder={1} />
     </>
   );
 }
