@@ -546,7 +546,11 @@ export const SHIBUYA_MEDIAN_LAT = 4.72;
  * tenggelam ke trotoar atau tampak melayang di atas jalan.
  */
 export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): number {
-  // Trotoar, curb, dan median sudah rata dengan aspal (strip abu-abu dihapus).
+  // Shibuya: median pembatas (tempat pohon & lampu) dinaikkan 0.16; sisi kiri rata dengan aspal.
+  if (mode === "shibuya") {
+    if (lat >= 3.7 && lat <= 5.0) return 0.16;
+    return 0;
+  }
   if (mode === "haruna") {
     if (lat <= -4.1 && lat >= -6.4) return 0.1;
     if (lat >= 4.1 && lat <= 6.4) return 0.1;
