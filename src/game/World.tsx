@@ -2013,7 +2013,8 @@ const tmpObj = new THREE.Object3D();
 
 function Breads() {
   const ref = useRef<THREE.InstancedMesh>(null);
-  const geo = useMemo(() => getGeometry("bread", breadParts), []);
+  const glowRef = useRef<THREE.InstancedMesh>(null);
+  const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
@@ -2029,8 +2030,19 @@ function Breads() {
     }
     m.count = i;
     m.instanceMatrix.needsUpdate = true;
+    const g = glowRef.current;
+    if (g) {
+      g.count = i;
+      g.instanceMatrix.copy(m.instanceMatrix);
+      g.instanceMatrix.needsUpdate = true;
+    }
   });
-  return <instancedMesh ref={ref} args={[geo, voxelMaterial, MAX_BREAD]} frustumCulled={false} castShadow />;
+  return (
+    <>
+      <instancedMesh ref={ref} args={[pair.lit, voxelMaterial, MAX_BREAD]} frustumCulled={false} castShadow />
+      {pair.glow && <instancedMesh ref={glowRef} args={[pair.glow, glowMaterial, MAX_BREAD]} frustumCulled={false} />}
+    </>
+  );
 }
 
 /* ---------- Efek ambil roti: terbang & mengecil ke badan merpati (juicy hypercasual) ---------- */
@@ -2038,7 +2050,8 @@ const BREAD_FX_N = 8;
 
 function BreadFx() {
   const ref = useRef<THREE.InstancedMesh>(null);
-  const geo = useMemo(() => getGeometry("bread", breadParts), []);
+  const glowRef = useRef<THREE.InstancedMesh>(null);
+  const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
@@ -2064,8 +2077,19 @@ function BreadFx() {
     }
     m.count = i;
     m.instanceMatrix.needsUpdate = true;
+    const g = glowRef.current;
+    if (g) {
+      g.count = i;
+      g.instanceMatrix.copy(m.instanceMatrix);
+      g.instanceMatrix.needsUpdate = true;
+    }
   });
-  return <instancedMesh ref={ref} args={[geo, voxelMaterial, BREAD_FX_N]} frustumCulled={false} />;
+  return (
+    <>
+      <instancedMesh ref={ref} args={[pair.lit, voxelMaterial, BREAD_FX_N]} frustumCulled={false} />
+      {pair.glow && <instancedMesh ref={glowRef} args={[pair.glow, glowMaterial, BREAD_FX_N]} frustumCulled={false} />}
+    </>
+  );
 }
 
 /* ---------- Denyut: satu cincin tipis saat hewan mental ---------- */
