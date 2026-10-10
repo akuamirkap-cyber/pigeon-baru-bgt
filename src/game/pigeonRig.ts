@@ -16,7 +16,7 @@ export const RIG = {
   /** distance from the pigeon origin (deck top) down to the street */
   deckToRoad: 0.25,
   pigeonScale: 1.08, // merpati dikecilkan 10% (1.2 -> 1.08)
-  headPos: [0.22, 1.00, 0] as [number, number, number],
+  headPos: [0.22, 0.973, 0] as [number, number, number],
   /** head default yaw: 0 = menghadap lurus ke depan (dulu -0.32 menoleh ke kanan) */
   headRotY: 0,
   wingRPos: [-0.05, 0.72, 0.3] as [number, number, number],
@@ -192,7 +192,7 @@ export function buildPigeonGroup(
     const h = new THREE.Mesh(headGeo, voxelMaterial);
     h.position.set(...RIG.headPos);
     h.rotation.y = RIG.headRotY;
-    h.scale.setScalar(1.1); // kepala 10% lebih besar
+    h.scale.setScalar(1.15); // kepala 15% lebih besar
     pigeon.add(h);
     const wr = new THREE.Mesh(wingRGeo, voxelMaterial);
     wr.position.set(...RIG.wingRPos);

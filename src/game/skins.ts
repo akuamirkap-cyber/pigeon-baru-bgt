@@ -485,7 +485,7 @@ export function pigeonBodyParts(k: Skin): Part[] {
     // gradasi bawah badan lebih gelap dari Voxel Buddies Pigeon (menempel pas di atas pinggul kaki HIP_Y = 0.3)
     { x: 0.04, y: 0.36, z: 0, w: 0.75, h: 0.12, d: 0.61, color: k.belly ?? k.tail },
     // LEHER teal (cincin leher antara badan & kepala dari Voxel Buddies Pigeon, berdiri jelas di atas badan)
-    { x: 0.22, y: 0.91, z: 0, w: 0.40, h: 0.18, d: 0.40, color: k.neck1 }, // leher 10% lebih pendek
+    { x: 0.22, y: 0.8965, z: 0, w: 0.40, h: 0.153, d: 0.40, color: k.neck1 }, // leher dipendekkan (15% lagi)
   ];
 
   if (k.accessory === "mailbag") {
@@ -656,7 +656,7 @@ export function pigeonHeadParts(k: Skin): Part[] {
     // tingkat bawah (paruh bawah)
     { x: 0.26, y: 0.11, z: 0, w: 0.14, h: 0.06, d: 0.14, color: k.cere ?? k.beak },
     // kotak putih 1 di atas paruh (sesuai permintaan)
-    { x: 0.32, y: 0.29, z: 0, w: 0.08, h: 0.08, d: 0.08, color: "#ffffff" },
+    { x: 0.25, y: 0.29, z: 0, w: 0.08, h: 0.08, d: 0.08, color: "#ffffff" },
     ...hatParts(k),
   ];
 }
