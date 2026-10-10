@@ -2938,7 +2938,7 @@ class Engine {
       this.breadFx.push({ rel: b.s - d, lat: LANE_LAT[b.lane], h: b.h, age: 0 });
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
-      this.spawnBurst(b.wx, b.wy + 0.2, b.wz, true);
+      this.spawnBurst(b.wx, b.wy + 0.2, b.wz, false);
       this.trickScore += 10;
       sfx.bread();
     }
@@ -3839,7 +3839,7 @@ class Engine {
             this.breadFx.push({ rel: breadS - d, lat: LANE_LAT[st.lane], h: SUBWAY_ROOF_H + 0.35, age: 0 });
             if (this.breadFx.length > 8) this.breadFx.shift();
             this.emitWorld("crumb", tmpV.x, tmpV.y, tmpV.z, tmpV.y - 0.5, 5, 0, 0);
-            this.spawnBurst(tmpV.x, tmpV.y, tmpV.z, true);
+            this.spawnBurst(tmpV.x, tmpV.y, tmpV.z, false);
             this.trickScore += 10;
             sfx.bread();
           }
