@@ -12,6 +12,7 @@ import {
   buildingParts,
   bushParts,
   carParts,
+  withExhaust,
   carLightParts,
   crossCarLightParts,
   motoLightParts,
@@ -310,10 +311,10 @@ const DecorView = memo(function DecorView({ d }: { d: Decor }) {
       case "billboard":
         return getGeometryPair(`billboard-${d.variant % 3}`, () => billboardParts(d.variant));
       case "jam_car":
-        return getGeometryPair(`jam-car-${d.variant % 5}`, () => jamCarParts(d.variant));
+        return getGeometryPair(`jam-car-${d.variant % 5}`, () => withExhaust(jamCarParts(d.variant)));
       case "special_car":
         // RWB / Skyline R34 / AE86 parkir — livery warna dienkode di variant
-        return getGeometryPair(`special-car-${Math.abs(d.variant) % 12}`, () => specialCarParts(d.variant));
+        return getGeometryPair(`special-car-${Math.abs(d.variant) % 12}`, () => withExhaust(specialCarParts(d.variant)));
       case "tower109":
         return getShibuyaBuildingGeoPair("shibuya109");
       case "avenue_lamp":
@@ -333,7 +334,7 @@ const DecorView = memo(function DecorView({ d }: { d: Decor }) {
       case "subway_overhead_rail":
         return getGeometryPair("subway-overhead-rail", () => subwayOverheadRailParts(11.0));
       case "city_bus":
-        return getGeometryPair(`city-bus-${d.variant % 2}`, () => cityBusObstacleParts(d.variant));
+        return getGeometryPair(`city-bus-${d.variant % 2}`, () => withExhaust(cityBusObstacleParts(d.variant)));
       default:
         return getGeometryPair("lamp", lampParts);
     }
@@ -430,7 +431,7 @@ function obstacleGeometry(o: Obstacle) {
     case "planter":
       return getGeometry("planter", planterParts);
     case "car":
-      return getGeometry(`car-${o.variant % 7}`, () => carParts(o.variant));
+      return getGeometry(`car-${o.variant % 7}`, () => withExhaust(carParts(o.variant)));
     case "ramp":
       return getGeometry("ramp", rampParts);
     case "rail": {
@@ -770,7 +771,7 @@ const MoverView = memo(function MoverView({
 
   const geo = useMemo(() => {
     if (m.kind === "car") {
-      return getGeometry(`car-${m.variant % 7}`, () => carParts(m.variant));
+      return getGeometry(`car-${m.variant % 7}`, () => withExhaust(carParts(m.variant)));
     }
     if (m.kind === "motorcycle") {
       if (m.shibuyaMoto) {
@@ -1536,7 +1537,7 @@ function ShibuyaTraffic() {
   return (
     <>
       {cars.map((car) => {
-        const geo = getGeometryPair(`shibuya-flow-car-${car.variant}`, () => jamCarParts(car.variant));
+        const geo = getGeometryPair(`shibuya-flow-car-${car.variant}`, () => withExhaust(jamCarParts(car.variant)));
         return (
           <group
             key={car.id}
@@ -1554,7 +1555,7 @@ function ShibuyaTraffic() {
 }
 
 const CrossCarView = memo(function CrossCarView({ cc }: { cc: CrossTrafficCar }) {
-  const geo = useMemo(() => getGeometry(`cross-car-${cc.variant % 7}`, () => crossingCarParts(cc.variant)), [cc.variant]);
+  const geo = useMemo(() => getGeometry(`cross-car-${cc.variant % 7}`, () => withExhaust(crossingCarParts(cc.variant))), [cc.variant]);
   const rootRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Group>(null);
 
@@ -1669,7 +1670,7 @@ function OverpassCars() {
           }}
         >
           <group>
-            <mesh geometry={getGeometry(`opcar-${c.variant % 7}`, () => overpassCarParts(c.variant))} material={voxelMaterial} castShadow />
+            <mesh geometry={getGeometry(`opcar-${c.variant % 7}`, () => withExhaust(overpassCarParts(c.variant)))} material={voxelMaterial} castShadow />
           </group>
         </group>
       ))}

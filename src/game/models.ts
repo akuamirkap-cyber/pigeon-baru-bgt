@@ -287,6 +287,33 @@ export function carParts(variant: number): Part[] {
 }
 
 /**
+ * Menambahkan knalpot (2 pipa krom gelap) di bagian belakang kendaraan yang hadap +x.
+ * Posisi dihitung dari bounding box part yang ada, jadi berlaku untuk semua model mobil/bus.
+ * Asap keluar dari sini lewat emitExhaust di engine.
+ */
+export function withExhaust(parts: Part[]): Part[] {
+  let minX = Infinity;
+  let zHalf = 0;
+  for (const p of parts) {
+    minX = Math.min(minX, p.x - p.w / 2);
+    zHalf = Math.max(zHalf, Math.abs(p.z) + p.d / 2);
+  }
+  if (!Number.isFinite(minX)) return parts;
+  const pipeZ = Math.min(zHalf * 0.5, 0.55);
+  const pipeColor = "#8c929c";
+  const pipes: Part[] = [-1, 1].map((sz) => ({
+    x: minX - 0.05,
+    y: 0.24,
+    z: sz * pipeZ,
+    w: 0.14,
+    h: 0.12,
+    d: 0.12,
+    color: pipeColor,
+  }));
+  return [...parts, ...pipes];
+}
+
+/**
  * Motor gede + pengendaranya, hadap +x, roda menyentuh y = 0.
  * Dipakai sebagai `MoverKind = "motorcycle"` (lalu lintas dari arah depan).
  */
@@ -1703,8 +1730,10 @@ export function kamenRiderTorsoParts(): Part[] {
     { x: 0.225, y: 0.2, z: 0, w: 0.02, h: 0.045, d: 0.045, color: "#ffe89a" },
     // SYAL MERAH CERAH mengalir ke belakang (ciri khas!)
     { x: 0, y: 0.36, z: 0, w: 0.44, h: 0.1, d: 0.5, color: KR.scarf },
-    { x: -0.26, y: 0.3, z: 0.04, w: 0.26, h: 0.09, d: 0.2, rz: 0.28, color: KR.scarf },
-    { x: -0.44, y: 0.22, z: 0.02, w: 0.26, h: 0.08, d: 0.16, rz: 0.42, color: "#c22a20" }, // ujung syal
+    // Syal dirapikan: tanpa potongan miring (rz) yang lepas. Jatuh lurus dari lilitan leher,
+    // menempel di punggung, dan ujungnya menyambung ke bagian bawah.
+    { x: -0.245, y: 0.27, z: 0, w: 0.1, h: 0.2, d: 0.46, color: KR.scarf },   // jatuh dari leher ke punggung
+    { x: -0.29, y: 0.12, z: 0, w: 0.09, h: 0.2, d: 0.44, color: "#c22a20" }, // ujung syal (sedikit lebih gelap)
   ];
 }
 
