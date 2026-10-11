@@ -42,12 +42,20 @@ const SKINS: Framing = { back: 5.0, up: 1.6, lookAhead: 0.15, lookUp: -0.5, fov:
 // Kamera panel Trick disamakan persis dengan panel Skin (per request user)
 const TRICKS_F: Framing = { ...SKINS };
 const CRASH: Framing = { back: 5.6, up: 3.6, lookAhead: 0, lookUp: 0.35, fov: 56, latFollow: 0.25, orbit: 0, roll: 0, curveDown: 0.0006, curveSide: 0, hazeNear: 85, hazeFar: 165 };
+/**
+ * ROKET: kamera dinaikkan & diarahkan sejajar jalur terbang supaya jelas terlihat apa yang
+ * dilewati saat melaju (roti formasi di langit 3 m). Semua offset di-blend halus dengan
+ * engine.player.rocketFly (0..1), jadi naiknya mulus dan turun lagi begitu roket mati.
+ */
+const ROCKET_CAM = { up: 2.7, lookUp: 2.6, lookAhead: 7.0, back: 1.6 };
 
 function CameraRig() {
   const { camera, size, scene } = useThree();
   const cur = useRef<Framing>({ ...MENU });
   const yaw = useRef(0);
   const camLat = useRef(0);
+  /** blend 0..1 khusus offset kamera roket (dihaluskan sendiri, terpisah dari pose pemain) */
+  const rocketCamK = useRef(0);
   const v = useMemo(
     () => ({
       pos: new THREE.Vector3(),
@@ -125,12 +133,20 @@ function CameraRig() {
       v.base.set(ctr.x, ctr.y, ctr.z);
 
       const hFollow = phase === "playing" ? Math.max(0, p.h) * 0.25 : 0;
+      // ROKET: kamera ikut naik + mundur sedikit + mata diarahkan lebih jauh ke depan,
+      // supaya jalur terbang (roti langit 3 m) terlihat jelas, bukan cuma aspal di bawah.
+      const supRaw = phase === "playing" ? clamp(p.rocketFly, 0, 1) : 0;
+      // offset kamera roket dihaluskan sendiri: naik agak pelan (tidak menyentak) & turun lembut
+      rocketCamK.current += (supRaw - rocketCamK.current) * (1 - Math.exp(-step * (supRaw > rocketCamK.current ? 3.4 : 2.6)));
+      const sup = rocketCamK.current;
+      const camBack = c.back + ROCKET_CAM.back * sup;
+      const camAhead = c.lookAhead + ROCKET_CAM.lookAhead * sup;
       // slope follow: the aim point sits on the road ahead, so on a descent the camera tilts down with the hill
-      const gAhead = phase === "menu" ? 0 : track.sample(engine.distance + c.lookAhead).y - ctr.y;
-      const gBack = phase === "menu" ? 0 : track.sample(Math.max(0, engine.distance - c.back)).y - ctr.y;
+      const gAhead = phase === "menu" ? 0 : track.sample(engine.distance + camAhead).y - ctr.y;
+      const gBack = phase === "menu" ? 0 : track.sample(Math.max(0, engine.distance - camBack)).y - ctr.y;
 
-      v.pos.copy(v.base).addScaledVector(v.fwd, -c.back).addScaledVector(v.side, camLat.current);
-      v.pos.y += c.up + hFollow + gBack * 0.6;
+      v.pos.copy(v.base).addScaledVector(v.fwd, -camBack).addScaledVector(v.side, camLat.current);
+      v.pos.y += c.up + hFollow + gBack * 0.6 + ROCKET_CAM.up * sup;
 
       // Subtle handheld action float while idling in menu
       if (phase === "menu" && view === "main") {
@@ -138,8 +154,8 @@ function CameraRig() {
         v.pos.y += Math.cos(engine.time * 2.0) * 0.035;
       }
 
-      v.target.copy(v.base).addScaledVector(v.fwd, c.lookAhead).addScaledVector(v.side, camLat.current * 0.6);
-      v.target.y += c.lookUp + hFollow * 0.8 + gAhead * 0.85;
+      v.target.copy(v.base).addScaledVector(v.fwd, camAhead).addScaledVector(v.side, camLat.current * 0.6);
+      v.target.y += c.lookUp + hFollow * 0.8 + gAhead * 0.85 + ROCKET_CAM.lookUp * sup;
 
       // Penyetelan kamera in-game (panel adjust): offset tinggi, sudut & jarak zoom pemain.
       if (phase === "playing") {
