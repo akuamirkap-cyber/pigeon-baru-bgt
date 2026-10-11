@@ -10,6 +10,8 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
     if (!el) return;
     let startX = 0;
     let startY = 0;
+    /** dx terakhir yang sudah dipakai untuk geser bebas saat terbang roket (drag lanjutan) */
+    let steerDX = 0;
     let active = false;
     let swiped = false;
     let pointerId = -1;
@@ -30,6 +32,7 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
       pointerId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
+      steerDX = e.clientX;
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -45,11 +48,24 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
       }, 160);
     };
     const onMove = (e: PointerEvent) => {
-      if (!active || swiped || e.pointerId !== pointerId) return;
+      if (!active || e.pointerId !== pointerId) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
+      // TERBANG ROKET = GERAK BEBAS: jari tetap nempel lalu geser terus ke samping = posisi
+      // lateral bergeser mengalir (bukan pindah lajur 2.4 m lalu berhenti). Enak buat
+      // mengikuti jalur roti formasi S di langit.
+      if (swiped) {
+        if (!engine.freeFlight || Math.abs(dx) <= Math.abs(dy)) return;
+        const step = SWIPE_PX_BY_PRESET[useUI.getState().swipeSens] * 0.55;
+        const inc = dx - steerDX;
+        if (Math.abs(inc) < step) return;
+        steerDX = dx;
+        fire(inc > 0 ? "right" : "left");
+        return;
+      }
       if (Math.hypot(dx, dy) < SWIPE_PX_BY_PRESET[useUI.getState().swipeSens]) return;
       swiped = true;
+      steerDX = dx;
       if (holdTimer) clearTimeout(holdTimer);
       if (holding) {
         holding = false;
@@ -106,6 +122,15 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
         } else if (e.code === "Escape") ui.setMenuView("main");
         return;
       }
+      // TERBANG ROKET = GERAK BEBAS: tombol arah DITAHAN menggeser posisi lateral terus-menerus
+      // (bukan pindah lajur). Lepas tombol -> onKeyUp mengirim "steerStop".
+      if (engine.freeFlight && (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "ArrowRight" || e.code === "KeyD")) {
+        e.preventDefault();
+        const kiri = e.code === "ArrowLeft" || e.code === "KeyA";
+        fire(kiri ? "left" : "right"); // pencet singkat = geser 1 langkah (sama seperti swipe)
+        fire(kiri ? "steerL" : "steerR"); // DITAHAN = geser terus-menerus (mengalir)
+        return;
+      }
       const map: Record<string, InputAction> = {
         ArrowUp: "up",
         KeyW: "up",
@@ -133,6 +158,8 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "KeyG") fire("holdEnd");
+      // lepas tombol arah saat terbang roket = berhenti menggeser (gerak bebas)
+      if (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "ArrowRight" || e.code === "KeyD") fire("steerStop");
     };
 
     el.addEventListener("pointerdown", onDown);

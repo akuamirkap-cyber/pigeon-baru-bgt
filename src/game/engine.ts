@@ -178,6 +178,19 @@ export const ROCKET_NOZZLE_BACK = 0.18;
 export const ROCKET_NOZZLE_H = 1.03;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
 const ROCKET_SMOKE_MAX = 560;
+/**
+ * GERAK BEBAS (free move) saat terbang roket — request pemain: "pas naik roket gerak pindah
+ * jalur ga pindah jalur alias free move kanan kiri nyaman". Jadi selama roket menyala pemain
+ * TIDAK lagi pindah lajur penuh (2.4 m sekali pencet), tapi bisa menggeser posisinya BEBAS ke
+ * mana saja di badan jalan — pakai swipe berulang atau tahan tombol arah (keyboard). Ini yang
+ * bikin jalur roti formasi S di langit bisa diikuti dengan nyaman.
+ *   FREE_LAT_STEP = geseran lateral tiap swipe / pencet
+ *   FREE_LAT_VEL  = kecepatan geser kalau tombol arah DITAHAN (m/s)
+ *   FREE_LAT_MAX  = batas kiri/kanan (badan jalan; masih di dalam aspal +-3.75 m & roti
+ *                   formasi terjangkau karena radius serap roti 1 m) */
+const FREE_LAT_STEP = 1.1;
+const FREE_LAT_VEL = 5.0;
+const FREE_LAT_MAX = LANE_LAT[2] + 0.35;
 
 /** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
 export const ROCKET_FLY_H = 3;
@@ -822,7 +835,24 @@ export interface Pulse {
   cb: number;
 }
 
-export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "nosFull" | "boost" | "cycle";
+export type InputAction =
+  | "tap"
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "double"
+  | "salto"
+  | "holdStart"
+  | "holdEnd"
+  | "nos"
+  | "nosFull"
+  | "boost"
+  | "cycle"
+  // GERAK BEBAS saat terbang roket: tombol arah DITAHAN = geser lateral terus-menerus
+  | "steerL"
+  | "steerR"
+  | "steerStop";
 
 const TRICK_INFO = TRICK_MAP;
 
@@ -899,6 +929,9 @@ class Engine {
   /** ambient cherry-blossom petals drifting across the road (world-space, recycled) */
   petals: { x: number; y: number; z: number; vx: number; vy: number; vz: number; rx: number; ry: number; rz: number; wr: number; ph: number }[] = [];
   private lastSwipeDir = 0;
+  /** true = frame sebelumnya pemain sedang TERBANG ROKET (untuk memilih lajur sekali saja
+   *  tepat saat mendarat, biar transisi ke sistem lajur pendek & input pindah lajur normal). */
+  private wasFreeFly = false;
   private lastSwipeT = -10;
   /** physics turning model state (NEW mode) and the mode it was last initialised for */
   turn = makeTurnState(0);
@@ -1036,6 +1069,10 @@ class Engine {
     rocketFly: 0,
     /** true = setelah roket mati, pemain meluncur turun halus sampai menyentuh aspal. */
     rocketDescend: false,
+    /** GERAK BEBAS terbang: target lateral bebas (bukan pusat lajur) 0..FREE_LAT_MAX. */
+    freeLat: 0,
+    /** arah geser yang sedang DITAHAN (-1 kiri, 0 diam, +1 kanan) untuk gerak bebas terbang. */
+    freeDir: 0,
     grounded: true,
     grinding: false,
     rail: null as Obstacle | null,
@@ -1214,6 +1251,8 @@ class Engine {
     p.lane = 1;
     p.targetLane = 1;
     p.lat = 0;
+    p.freeLat = 0;
+    p.freeDir = 0;
     p.h = 0;
     p.vh = 0;
     p.grounded = true;
@@ -1387,6 +1426,12 @@ class Engine {
           this.grindDodge(dir);
           break;
         }
+        // TERBANG ROKET = GERAK BEBAS: geser lateral bebas, bukan pindah lajur penuh.
+        if (this.freeFlight) {
+          p.freeLat = clamp(p.freeLat + dir * FREE_LAT_STEP, -FREE_LAT_MAX, FREE_LAT_MAX);
+          sfx.swish();
+          break;
+        }
         // Swipe ↔ = lane change (also in the air: a smooth carve/drift). The 360 spin is a deliberate move:
         // a second swipe in the same direction within 0.3 s, or a swipe toward the edge when no lane is left.
         const now = this.time;
@@ -1453,8 +1498,17 @@ class Engine {
         this.fireNos();
         break;
       case "nosFull":
-        // TOMBOL N: isi tangki NOS otomatis PENUH lalu roket langsung menyala
+        // TOMBOL R: isi tangki NOS otomatis PENUH lalu roket langsung menyala
         this.fireNosFull();
+        break;
+      case "steerL":
+      case "steerR":
+        // TOMBOL ARAH DITAHAN saat terbang roket = geser lateral terus-menerus (gerak bebas).
+        // Di darat tidak berpengaruh (pindah lajur tetap pakai case "left"/"right").
+        if (this.freeFlight) p.freeDir = a === "steerL" ? -1 : 1;
+        break;
+      case "steerStop":
+        p.freeDir = 0;
         break;
       case "boost":
         this.boost();
@@ -1570,6 +1624,12 @@ class Engine {
     sfx.sprint();
   }
 
+  /** true = pemain sedang TERBANG ROKET (naik 3 m atau meluncur turun) → gerak lateral BEBAS
+   *  (free move kiri/kanan), bukan pindah lajur. Dipakai engine + layer input. */
+  get freeFlight() {
+    return this.nosT > 0 || this.player.rocketDescend;
+  }
+
   /** Activate NOS: 2.6 s of boost, flames, camera FOV kick. */
   fireNos() {
     if (this.phase !== "playing" || this.nosT > 0) return;
@@ -1601,7 +1661,7 @@ class Engine {
     this.rocketSparkS = this.distance + 0.1;
     // BURST roket: ledakan asap pelangi + percikan + dua cincin warna tepat di nosel
     this.rocketSmokeBurst();
-    useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m di atas aspal!");
+    useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m · geser BEBAS kiri/kanan (free move) 🕹️");
     sfx.nos();
   }
 
@@ -2250,7 +2310,28 @@ class Engine {
       if (Math.abs(p.showYaw) < 0.005) p.showYaw = 0;
     }
 
-    const tl = LANE_LAT[p.targetLane];
+    // ---- GERAK BEBAS SAAT TERBANG ROKET ------------------------------------------------
+    // Di darat: freeLat selalu disamakan dengan posisi sekarang (titik awal saat roket nyala,
+    // jadi roket menyala TANPA lompatan). Saat terbang: freeLat digeser oleh input.
+    const freeFly = this.freeFlight;
+    if (!freeFly) {
+      // baru saja mendarat: pilih lajur terdekat dari POSISI nyata SEKALI saja supaya
+      // transisinya pendek (maks ~1.2 m) dan input pindah lajur di darat langsung normal lagi
+      if (this.wasFreeFly) {
+        this.wasFreeFly = false;
+        p.targetLane = p.lat < -1.2 ? 0 : p.lat > 1.2 ? 2 : 1;
+      }
+      p.freeLat = p.lat;
+      p.freeDir = 0;
+    } else {
+      this.wasFreeFly = true;
+      if (p.freeDir !== 0) {
+        p.freeLat = clamp(p.freeLat + p.freeDir * FREE_LAT_VEL * dt, -FREE_LAT_MAX, FREE_LAT_MAX);
+      }
+      // lajur terdekat ikut target bebas (dipakai buat logika lajur & saat mendarat nanti)
+      p.targetLane = p.freeLat < -1.2 ? 0 : p.freeLat > 1.2 ? 2 : 1;
+    }
+    const tl = freeFly ? p.freeLat : LANE_LAT[p.targetLane];
     const airborneNow = !p.grounded && !p.grinding;
     const newTurn = this.newTurn;
     const prevVel = p.latVel;
@@ -2283,8 +2364,8 @@ class Engine {
         grindHeading: waveRail
           ? railHeading(WAVE_VARIANT, this.distance - waveRail.s, railPhase(waveRail.s))
           : undefined,
-        minLat: LANE_LAT[0] - 0.35,
-        maxLat: LANE_LAT[2] + 0.35,
+        minLat: freeFly ? -FREE_LAT_MAX : LANE_LAT[0] - 0.35,
+        maxLat: freeFly ? FREE_LAT_MAX : LANE_LAT[2] + 0.35,
         dt,
         // TERBANG ROKET: pindah jalur melayang halus (bukan carve tajam seperti di aspal)
         smooth: p.rocketFly,
