@@ -316,6 +316,9 @@ export interface Bread {
   wx: number;
   wy: number;
   wz: number;
+  /** Posisi lateral bebas (m dari garis tengah jalan). Kalau ada, ini yang dipakai untuk
+   *  penyerapan & efek hisap, bukan pusat lajur — dipakai formasi MENGULAR halus di langit. */
+  lat?: number;
   /** true = roti LANGIT (formasi terbang roket), dibersihkan otomatis saat mendarat. */
   sky?: boolean;
 }
@@ -913,8 +916,12 @@ class Engine {
   /** Roti LANGIT (formasi terbang roket): roti melayang di ketinggian terbang, hanya ada
    *  saat roket menyala. Punya bendera sky supaya bisa dibersihkan setelah mendarat. */
   private skyBreadS = 0;
-  private skyBreadLane = 1;
-  private skyBreadStep = 0;
+  /** posisi s tempat gelombang S dimulai (acuan fase). */
+  private skyBreadPhase = 0;
+  /** panjang gelombang S yang sedang dipakai (mengikuti kecepatan saat formasi dimulai). */
+  private skyBreadWave = 24;
+  /** arah gelombang S formasi langit (+1 mulai ke kanan, -1 mulai ke kiri). */
+  private skyBreadDir: 1 | -1 = 1;
   chunks: Chunk[] = [];
   /** Actual transformed footprints for Shibuya source buildings still in the window. */
   private shibuyaFootprints: ShibuyaPlacedFootprint[] = [];
@@ -1134,8 +1141,9 @@ class Engine {
     this.obstacles = [];
     this.breads = [];
     this.skyBreadS = 0;
-    this.skyBreadLane = 1;
-    this.skyBreadStep = 0;
+    this.skyBreadPhase = 0;
+    this.skyBreadWave = 24;
+    this.skyBreadDir = 1;
     this.chunks = [];
     this.shibuyaFootprints = [];
     this.movers = [];
@@ -3127,13 +3135,13 @@ class Engine {
     for (const b of this.breads) {
       if (b.taken) continue;
       if (Math.abs(b.s - d) > 0.9) continue;
-      if (Math.abs(LANE_LAT[b.lane] - p.lat) > 1.0) continue;
+      if (Math.abs((b.lat ?? LANE_LAT[b.lane]) - p.lat) > 1.0) continue;
       if (Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
       b.taken = true;
       this.breadCount++;
       buzz(14);
       this.addNos(NOS_PER_BREAD);
-      this.breadFx.push({ rel: b.s - d, lat: LANE_LAT[b.lane], h: b.h, age: 0 });
+      this.breadFx.push({ rel: b.s - d, lat: b.lat ?? LANE_LAT[b.lane], h: b.h, age: 0 });
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
       this.spawnBurst(b.wx, b.wy + 0.2, b.wz, false);
@@ -5620,26 +5628,34 @@ class Engine {
    * bisa nyerap roti yang ada di jalur langit. Roti langit dibersihkan otomatis saat mendarat.
    */
   private emitSkyBreads() {
-    // Pola MENGULAR ala S: 0 -> 1 -> 2 -> 1 -> 0 ... (gelombang sinus penuh, tanpa
-    // dua segmen tengah berurutan yang bikin bentuknya terlihat "lurus").
-    const seq = [0, 1, 2, 1];
-    const ahead = this.distance + 80; // runway panjang supaya formasi S-nya terbaca
+    // FORMASI MENGULAR ALA S YANG SEBENARNYA:
+    // roti ditempatkan pada KURVA SINUS menerus — lat = A * sin(2π s / λ) — jadi jalur roti
+    // benar-benar melengkung mulus dari lajur kiri ke kanan dan balik lagi (bukan pindah
+    // lajur putus-putus). Amplitudo A = 2.4 m (menjangkau lajur 0..2). Panjang gelombang λ
+    // DIPATOK saat formasi dimulai (tidak dikejar tiap frame) supaya gelombangnya utuh dan
+    // tidak di-refill terus; nilainya ikut kecepatan roket biar bentuk S-nya tetap terbaca.
+    const amp = 2.4;
+    const step = 1.1; // jarak antar roti di sepanjang jalan (m)
+    const ahead = this.distance + 90;
     if (this.skyBreadS < this.distance + 6) {
+      // mulai formasi baru: gelombang mulai dari lat 0 di 10 m depan pemain
       this.skyBreadS = this.distance + 10;
-      this.skyBreadStep = 0;
-      this.skyBreadLane = seq[0];
+      this.skyBreadPhase = this.skyBreadS;
+      this.skyBreadWave = clamp(this.speed * 0.6, 24, 40);
+      // arah S diacak: kadang gelombangnya mulai ke kanan, kadang ke kiri
+      this.skyBreadDir = Math.random() < 0.5 ? 1 : -1;
     }
     while (this.skyBreadS < ahead) {
-      track.frame(this.skyBreadS, LANE_LAT[this.skyBreadLane], ROCKET_FLY_H, tmpV);
+      const u = ((this.skyBreadS - this.skyBreadPhase) / this.skyBreadWave) * Math.PI * 2;
+      const lat = amp * this.skyBreadDir * Math.sin(u);
+      track.frame(this.skyBreadS, lat, ROCKET_FLY_H, tmpV);
       this.breads.push({
-        id: this.nextId++, s: this.skyBreadS, lane: this.skyBreadLane, h: ROCKET_FLY_H,
+        id: this.nextId++, s: this.skyBreadS, lane: lat < -1.2 ? 0 : lat > 1.2 ? 2 : 1,
+        lat, h: ROCKET_FLY_H,
         taken: false, phase: Math.random() * Math.PI * 2,
         wx: tmpV.x, wy: tmpV.y, wz: tmpV.z, sky: true,
       });
-      this.skyBreadStep++;
-      // tiap 4 roti ganti lajur mengikuti pola S: 0 -> 1 -> 2 -> 1 -> 0 -> ...
-      this.skyBreadLane = seq[Math.floor(this.skyBreadStep / 4) % seq.length];
-      this.skyBreadS += 1.3;
+      this.skyBreadS += step;
     }
     // buang roti langit yang sudah terlewat jauh supaya daftar tetap ringkas
     this.breads = this.breads.filter((b) => !b.sky || b.s > this.distance - 12);
