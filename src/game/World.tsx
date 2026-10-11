@@ -2156,7 +2156,7 @@ function getPuffTex(): THREE.CanvasTexture {
 }
 
 /* ---------- Asap roket NOS warna-warni (Subway Surfers style) ---------- */
-const ROCKET_SMOKE_CAP = 360;
+const ROCKET_SMOKE_CAP = 560;
 const rocketColor = new THREE.Color();
 const rocketObj = new THREE.Object3D();
 

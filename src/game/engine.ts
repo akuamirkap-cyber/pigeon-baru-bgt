@@ -168,13 +168,15 @@ export type CrashCause = "obstacle" | "car" | "oncoming" | "motorcycle" | "chick
 export const NOS_MAX = 100;
 export const NOS_DURATION = 2.6;
 export const NOS_SPEED_MULT = 1.75;
+/** Kecepatan roket = boost NOS x 2 (request pemain: "roketnya cepetin 2x"). */
+export const ROCKET_SPEED_MULT = 2;
 /** Posisi nosel roket punggung relatif pemain: 0.2 m di belakang, 0.66 m di atas jalan.
  *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635):
  *  saat membubung, punggung pemain + roket berada di tinggi itu. */
 export const ROCKET_NOZZLE_BACK = 0.07;
 export const ROCKET_NOZZLE_H = 0.66;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
-const ROCKET_SMOKE_MAX = 360;
+const ROCKET_SMOKE_MAX = 560;
 
 /** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
 export const ROCKET_FLY_H = 3;
@@ -2059,10 +2061,15 @@ class Engine {
       if (this.nosT > 0) {
         // nitro: shoot to the boosted speed, then decay back once it runs out
         this.nosT = Math.max(0, this.nosT - dt);
-        const boosted = target * NOS_SPEED_MULT;
+        const boosted = target * NOS_SPEED_MULT * ROCKET_SPEED_MULT;
         this.speed += clamp(boosted - this.speed, -dt * 2.5, dt * 40);
         // ASAP ROKET: semburan warna-warni dari nosel roket punggung sepanjang boost
         this.emitRocketSmoke(dt);
+      } else if (p.rocketDescend) {
+        // Habis roket: kecepatan turun cepat tapi mulus ke kecepatan normal, supaya pemain
+        // tidak "nyelonong" 3.5x kencang begitu roda menyentuh aspal (roket = semburan, bukan
+        // kecepatan permanen). Turun 3 m butuh ~0.43 s, cukup untuk mendarat di kecepatan wajar.
+        this.speed += (target - this.speed) * (1 - Math.exp(-dt * 6));
       } else {
         const decayRate = this.sprintTimer > 0 ? -dt * 1.5 : -dt * 2.4;
         this.speed += clamp(target - this.speed, decayRate, up);
@@ -2270,8 +2277,8 @@ class Engine {
     } else {
       // ---- OLD: critically damped spring => smooth ease-in / ease-out with no snap,
       // slightly softer in the air (the pigeon "drifts" across) than on the ground (a quick carve)
-      // terbang roket juga memperhalus mode lama: pegas lateral jadi jauh lebih lembut
-      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult) * (1 - 0.5 * p.rocketFly); // natural frequency (rad/s), stiffer for faster boards
+      // terbang roket: pegas lateral lebih gesit supaya pindah jalur responsif & tetap mulus
+      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult) * (1 + 0.6 * p.rocketFly); // natural frequency (rad/s), stiffer for faster boards
       // exact integration of the critically damped spring x'' + 2ωx' + ω²(x - tl) = 0
       const x0 = p.lat - tl;
       const v0 = p.latVel;
@@ -2805,8 +2812,8 @@ class Engine {
       const T = this.turn;
       p.steer = -T.headingVis;
       p.boardTwist = 0;
-      // Saat terbang roket, bank badan dikurangi (melayang mulus, tidak miring tajam)
-      const rollMax = (TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend) * (1 - 0.4 * p.rocketFly);
+      // Saat terbang roket, bank badan dikurangi sedikit (tetap mulus & nyaman, tidak miring tajam)
+      const rollMax = (TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend) * (1 - 0.25 * p.rocketFly);
       // Saat nge-grind, roll mengikuti BENTUK REL (grindRoll), bukan sisa carve pindah lajur.
       p.roll = p.grinding && p.rail ? p.grindRoll : T.leanVis * rollMax;
       p.carve = -T.leanVis; // legacy convention (+ = left); only the old-mode poses read it
@@ -2913,6 +2920,8 @@ class Engine {
       if (Math.abs(rel) > obstacleHalf(o) + PLAYER_HALF) continue;
       if (Math.abs(this.railLat(o, d) - p.lat) > 1.05) continue;
       if (o.kind === "rail") {
+        // saat terbang roket, rel tinggi (rollercoaster) tidak boleh "menyedot" pemain — biarkan lewat
+        if (rocketFlying) continue;
         if (p.grinding || p.railGrace > 0) continue;
         const rh = this.railHeightAt(o, d);
         if (p.h >= rh - 0.5) continue;
@@ -6165,7 +6174,7 @@ class Engine {
           ["rail", 3.4],
           ["ramp", 2.6],
           ["bread", 2.8],
-          ["bread_snake", 5.5],
+          ["bread_snake", 6.2],
           ["single", 1.8],
           // Busway tetap hidup: orang-orang tetap tampak menunggu & menyeberang di trotoar
           // jalur bus, sama seperti di ruas jalan biasa (sebelumnya pola ini mati total di
@@ -6181,7 +6190,7 @@ class Engine {
           ["ramp", 2.2],
           ["rail", 5.2], // rel dibuat jauh lebih sering di jalan (sebelumnya 2.2)
           ["bread", 2.4],
-          ["bread_snake", 5.5],
+          ["bread_snake", 6.2],
           ["oncoming", track.mode === "haruna" ? 3.2 + 2.4 * t : 10 + 4 * t],
           ["motorcycles", (track.mode === "shibuya" ? 6.5 : 2.5) + 1.2 * t],
           ["chickens", 2.2 + 0.8 * t],
@@ -7050,9 +7059,11 @@ class Engine {
     // SATU LUBANG ROKET: semua gumpalan keluar dari titik nosel yang sama lalu menyusur
     // lurus ke belakang — satu semburan pelangi yang padat, bukan tiga aliran terpisah.
     // (Sebaran menyamping cuma sedikit dari turbulensi, bukan kipas.)
+    // Karena roket melesat 3.5x, laju emisi ikut dinaikkan supaya pita asapnya tetap rapat.
+    const rateScale = clamp(this.speed / 16, 1, 2.6);
     this.rocketSmokeT -= dt;
-    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 30; guard++) {
-      this.rocketSmokeT += 0.0085; // ~118 gumpalan/detik -> jejak nyambung & tebal
+    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 60; guard++) {
+      this.rocketSmokeT += 0.0085 / rateScale; // ~118-300 gumpalan/detik -> jejak nyambung & tebal
       this.rocketSmokeHue = (this.rocketSmokeHue + 0.0125) % 1;
       const jit = rand(0, 1);
       this.rocketSmoke.push({
@@ -7069,8 +7080,8 @@ class Engine {
     }
     // percikan warna-warni dari lubang yang sama, menyusur lalu jatuh ke aspal
     this.rocketSparkT -= dt;
-    for (let guard = 0; this.rocketSparkT <= 0 && guard < 10; guard++) {
-      this.rocketSparkT += 0.016; // ~62/detik
+    for (let guard = 0; this.rocketSparkT <= 0 && guard < 20; guard++) {
+      this.rocketSparkT += 0.016 / rateScale; // ~62-160/detik
       this.rocketSmokeHue = (this.rocketSmokeHue + 0.02) % 1;
       this.rocketSmoke.push({
         x, y, z,

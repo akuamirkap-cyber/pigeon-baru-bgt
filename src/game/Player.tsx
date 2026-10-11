@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { buildVoxelGeometry, clamp, rand, voxelMaterial } from "./voxel";
+import { buildVoxelGeometry, clamp, getGeometry, rand, voxelMaterial } from "./voxel";
 import { engine, LANE_LAT } from "./engine";
 import { useUI } from "./store";
 import { charBodyParts, charHeadParts, charTailParts, charWingParts, deckParts, getSkin, truckParts, wheelParts, HIP_Y, LEG_Z, TAIL_ROOT } from "./skins";
@@ -203,7 +203,6 @@ export function Player() {
       truck: buildVoxelGeometry(truckParts()),
       tail: buildVoxelGeometry(charTailParts(skin)),
       tanks: buildVoxelGeometry(nosTankParts()),
-      backRocket: buildVoxelGeometry(rocketParts()),
     }),
     [skin, deckOverride, wheelColor],
   );
@@ -222,6 +221,10 @@ export function Player() {
     }),
     [],
   );
+  // ROKET PUNGGUNG: pakai geometri CACHE YANG SAMA dengan item roket di World.tsx
+  // (getGeometry("rocket", rocketParts)) — jadi roket yang nempel di punggung 100% identik
+  // dengan roket yang kita temui di jalan. Tidak ikut di-dispose karena dipakai bersama.
+  const backRocketGeo = useMemo(() => getGeometry("rocket", rocketParts), []);
   const flames = useRef<THREE.Group>(null);
   const tanks = useRef<THREE.Mesh>(null);
   /** ROKET PUNGGUNG: roket yang otomatis menempel di punggung saat NOS/roket menyala */
@@ -1187,7 +1190,7 @@ export function Player() {
                   "Superman"), jadi noselnya menghadap ke belakang dan asap keluar dari
                   SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy. */}
               <group ref={rocketPack} position={[-0.30, 0.30, 0]} scale={0.5} visible={false}>
-                <mesh geometry={geos.backRocket} material={voxelMaterial} castShadow />
+                <mesh geometry={backRocketGeo} material={voxelMaterial} castShadow />
                 <group ref={rocketFlame} position={[0, 0, 0]} visible={false}>
                   <mesh material={flameMats.outer} position={[0, -0.47, 0]} rotation-x={Math.PI}>
                     <coneGeometry args={[0.13, 1.0, 10]} />
