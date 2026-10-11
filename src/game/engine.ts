@@ -184,12 +184,12 @@ const ROCKET_SMOKE_MAX = 560;
  * TIDAK lagi pindah lajur penuh (2.4 m sekali pencet), tapi bisa menggeser posisinya BEBAS ke
  * mana saja di badan jalan — pakai swipe berulang atau tahan tombol arah (keyboard). Ini yang
  * bikin jalur roti formasi S di langit bisa diikuti dengan nyaman.
- *   FREE_LAT_STEP = geseran lateral tiap swipe / pencet
+ *   FREE_LAT_STEP = geseran lateral tiap swipe / pencet (langkah lebih jauh = langsung gesit)
  *   FREE_LAT_VEL  = kecepatan geser kalau tombol arah DITAHAN (m/s)
  *   FREE_LAT_MAX  = batas kiri/kanan (badan jalan; masih di dalam aspal +-3.75 m & roti
  *                   formasi terjangkau karena radius serap roti 1 m) */
-const FREE_LAT_STEP = 1.1;
-const FREE_LAT_VEL = 5.0;
+const FREE_LAT_STEP = 1.6;
+const FREE_LAT_VEL = 9.0;
 const FREE_LAT_MAX = LANE_LAT[2] + 0.35;
 
 /** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
@@ -929,9 +929,6 @@ class Engine {
   /** ambient cherry-blossom petals drifting across the road (world-space, recycled) */
   petals: { x: number; y: number; z: number; vx: number; vy: number; vz: number; rx: number; ry: number; rz: number; wr: number; ph: number }[] = [];
   private lastSwipeDir = 0;
-  /** true = frame sebelumnya pemain sedang TERBANG ROKET (untuk memilih lajur sekali saja
-   *  tepat saat mendarat, biar transisi ke sistem lajur pendek & input pindah lajur normal). */
-  private wasFreeFly = false;
   private lastSwipeT = -10;
   /** physics turning model state (NEW mode) and the mode it was last initialised for */
   turn = makeTurnState(0);
@@ -2315,16 +2312,12 @@ class Engine {
     // jadi roket menyala TANPA lompatan). Saat terbang: freeLat digeser oleh input.
     const freeFly = this.freeFlight;
     if (!freeFly) {
-      // baru saja mendarat: pilih lajur terdekat dari POSISI nyata SEKALI saja supaya
-      // transisinya pendek (maks ~1.2 m) dan input pindah lajur di darat langsung normal lagi
-      if (this.wasFreeFly) {
-        this.wasFreeFly = false;
-        p.targetLane = p.lat < -1.2 ? 0 : p.lat > 1.2 ? 2 : 1;
-      }
+      // di darat: target bebas selalu disamakan dengan posisi sekarang (titik awal saat roket
+      // menyala, jadi roket menyala TANPA lompatan). Lajur saat mendarat dipilih di momen
+      // pendaratan (lihat blok rocketDescend) supaya input pindah lajur langsung normal.
       p.freeLat = p.lat;
       p.freeDir = 0;
     } else {
-      this.wasFreeFly = true;
       if (p.freeDir !== 0) {
         p.freeLat = clamp(p.freeLat + p.freeDir * FREE_LAT_VEL * dt, -FREE_LAT_MAX, FREE_LAT_MAX);
       }
@@ -2693,6 +2686,9 @@ class Engine {
             p.rocketDescend = false;
             p.onRamp = !!ground.ramp;
             this.clearSkyBreads(); // roti langit dibersihkan setelah mendarat
+            // lajur dipilih SEKALI dari posisi nyata saat mendarat: kalau pemain lagi meluncur,
+            // transisi ke pusat lajur jadi pendek (maks ~1.2 m) & input pindah lajur langsung normal
+            p.targetLane = p.lat < -1.2 ? 0 : p.lat > 1.2 ? 2 : 1;
             this.land();
           }
         }

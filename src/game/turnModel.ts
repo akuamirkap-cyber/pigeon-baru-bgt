@@ -43,6 +43,9 @@ export const TURN = {
   /** 0..1: critically damped stopping capability prevents overshoot ("PAS" tepat di tengah jalur) */
   BRAKE_MARGIN: 1.0,
   BRAKE_MARGIN_AIR: 0.40,
+  /** TERBANG ROKET: margin pengereman dinaikkan di atas angka aspal supaya gerak bebas kiri/kanan
+   *  lebih cepat — masih memakai rumus pengereman yang sama, jadi tetap tidak overshoot. */
+  BRAKE_MARGIN_FREE: 1.25,
   /** the trucks lag the lean command, so we compare the desired heading with where the heading WILL be (s) */
   PREDICT: 0.04,
   PREDICT_AIR: 0.12,
@@ -109,12 +112,14 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
   // Semua tetap melalui hukum pengereman model (vDes dibatasi vBrake) jadi tetap mulus, tidak snap,
   // dan tidak pernah overshoot ke jalur sebelah.
   const f = clamp(i.smooth ?? 0, 0, 1);
-  const slowRef = 1 + 0.6 * f;
-  const slowPos = 1 + 1.1 * f;
+  // TERBANG ROKET: pegas referensi & koreksi posisi dipercepat lebih jauh lagi (gerak bebas
+  // kiri/kanan makin gesit); hukum pengereman di bawah tetap menjadi pengaman anti-overshoot.
+  const slowRef = 1 + 1.2 * f;
+  const slowPos = 1 + 2.4 * f;
   const slowHead = 1 + 0.8 * f;
   const slowLean = 1 + 0.6 * f;
   const slowTruck = 1 + 0.5 * f;
-  const authority = 1 + 0.2 * f; // otoritas setir (steerMax)
+  const authority = 1 + 0.3 * f; // otoritas setir (steerMax) — terbang: setir lebih tajam
   // Saat terbang, cengkeraman dinaikkan dari "udara" ke arah aspal supaya setirnya terasa nyata
   const gripBase = i.air ? T.GRIP_AIR : T.GRIP_GROUND;
   const gripBlend = gripBase + (T.GRIP_GROUND - gripBase) * 0.8 * f;
@@ -194,8 +199,13 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
         const c = (Math.tan((1 + T.REAR_RATIO) * steerMax) * gripBlend) / effWb();
         const toGo = i.target - s.lat;
         const dir = Math.sign(toGo);
-        const eff = Math.max(0, Math.abs(toGo) - (i.air ? T.LAG_AIR : T.LAG) * Math.max(0, s.latVel * dir));
-        const thBrake = Math.acos(clamp(1 - c * (i.air ? T.BRAKE_MARGIN_AIR : T.BRAKE_MARGIN) * eff, -1, 1));
+        // TERBANG ROKET (f = 1): batas pengereman (margin) dicampur ke angka aspal supaya
+        // gerak bebas kiri/kanan jauh lebih gesit. Kompensasi lag (truk menggantung lebih
+        // longgar di udara) tetap angka udara supaya hasilnya TETAP tidak overshoot.
+        const lag = i.air ? T.LAG_AIR : T.LAG;
+        const margin = i.air ? T.BRAKE_MARGIN_AIR + (T.BRAKE_MARGIN_FREE - T.BRAKE_MARGIN_AIR) * f : T.BRAKE_MARGIN;
+        const eff = Math.max(0, Math.abs(toGo) - lag * Math.max(0, s.latVel * dir));
+        const thBrake = Math.acos(clamp(1 - c * margin * eff, -1, 1));
         const vBrake = fwd * Math.sin(Math.min(thBrake, desiredMax));
         if (dir > 0 && vDes > vBrake) {
           vDes = vBrake;
