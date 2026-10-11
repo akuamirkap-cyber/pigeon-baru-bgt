@@ -225,6 +225,19 @@ export function Player() {
   // (getGeometry("rocket", rocketParts)) — jadi roket yang nempel di punggung 100% identik
   // dengan roket yang kita temui di jalan. Tidak ikut di-dispose karena dipakai bersama.
   const backRocketGeo = useMemo(() => getGeometry("rocket", rocketParts), []);
+  /** Aura emas additif: bikin roket punggung tampil persis seperti item ROCKET yang bersinar. */
+  const rocketAuraMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: "#ffd76a",
+        transparent: true,
+        opacity: 0.17,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  useEffect(() => () => rocketAuraMat.dispose(), [rocketAuraMat]);
   const flames = useRef<THREE.Group>(null);
   const tanks = useRef<THREE.Mesh>(null);
   /** ROKET PUNGGUNG: roket yang otomatis menempel di punggung saat NOS/roket menyala */
@@ -934,7 +947,9 @@ export function Player() {
       fl.scale.set(f * flick * (1.2 + 0.5 * f), f * (0.8 + 0.3 * flick), f * (0.9 + 0.2 * flick));
       fl.rotation.z = 0.08 * Math.sin(t * 25);
     }
-    if (tanks.current) tanks.current.visible = engine.nos > 1 || engine.nosT > 0;
+    // tangki NOS lama di papan disembunyikan saat roket punggung aktif (biar tidak rancu:
+    // yang tampil hanya roket item yang menempel di punggung)
+    if (tanks.current) tanks.current.visible = (engine.nos > 1 || engine.nosT > 0) && sup < 0.15;
 
     // ROKET PUNGGUNG: muncul (pop) saat NOS menyala, dengan nyala api yang berkedip
     const rp = rocketPack.current;
@@ -942,10 +957,10 @@ export function Player() {
       const on = sup > 0.02;
       rp.visible = on;
       if (on) {
-        // getaran kecil mesin roket (skala dasar 0.5 sudah dipasang di JSX)
-        const pop = 0.5 * (0.55 + 0.45 * sup);
+        // getaran kecil mesin roket (skala dasar 0.8 sudah dipasang di JSX -> hampir sebesar item)
+        const pop = 0.8 * (0.6 + 0.4 * sup);
         rp.scale.set(pop, pop, pop);
-        rp.position.set(-0.30 + Math.sin(t * 52) * 0.006, 0.30 + Math.sin(t * 44 + 1) * 0.006, 0);
+        rp.position.set(-0.38 + Math.sin(t * 52) * 0.006, 0.03 + Math.sin(t * 44 + 1) * 0.006, 0);
       }
     }
     const rf = rocketFlame.current;
@@ -1189,17 +1204,21 @@ export function Player() {
                   Ditempel di punggung (sumbu model +y = moncong = arah laju saat badan rebah
                   "Superman"), jadi noselnya menghadap ke belakang dan asap keluar dari
                   SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy. */}
-              <group ref={rocketPack} position={[-0.30, 0.30, 0]} scale={0.5} visible={false}>
+              <group ref={rocketPack} position={[-0.38, 0.03, 0]} scale={0.8} visible={false}>
                 <mesh geometry={backRocketGeo} material={voxelMaterial} castShadow />
-                <group ref={rocketFlame} position={[0, 0, 0]} visible={false}>
-                  <mesh material={flameMats.outer} position={[0, -0.47, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.13, 1.0, 10]} />
+                {/* aura emas additif — sama seperti kilau item ROCKET yang mengambang di jalan */}
+                <mesh position={[0, 0.58, 0]} material={rocketAuraMat}>
+                  <boxGeometry args={[0.52, 1.3, 0.52]} />
+                </mesh>
+                <group ref={rocketFlame} position={[0, 0.02, 0]} visible={false}>
+                  <mesh material={flameMats.outer} position={[0, -0.5, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.14, 1.05, 10]} />
                   </mesh>
-                  <mesh material={flameMats.mid} position={[0, -0.32, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.09, 0.7, 10]} />
+                  <mesh material={flameMats.mid} position={[0, -0.34, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.095, 0.72, 10]} />
                   </mesh>
-                  <mesh material={flameMats.core} position={[0, -0.195, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.055, 0.45, 10]} />
+                  <mesh material={flameMats.core} position={[0, -0.2, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.058, 0.46, 10]} />
                   </mesh>
                 </group>
               </group>

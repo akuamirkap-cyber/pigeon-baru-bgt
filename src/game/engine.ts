@@ -173,8 +173,8 @@ export const ROCKET_SPEED_MULT = 2;
 /** Posisi nosel roket punggung relatif pemain: 0.2 m di belakang, 0.66 m di atas jalan.
  *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635):
  *  saat membubung, punggung pemain + roket berada di tinggi itu. */
-export const ROCKET_NOZZLE_BACK = 0.07;
-export const ROCKET_NOZZLE_H = 0.66;
+export const ROCKET_NOZZLE_BACK = 0.21;
+export const ROCKET_NOZZLE_H = 0.70;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
 const ROCKET_SMOKE_MAX = 560;
 
@@ -5634,14 +5634,17 @@ class Engine {
     // lajur putus-putus). Amplitudo A = 2.4 m (menjangkau lajur 0..2). Panjang gelombang λ
     // DIPATOK saat formasi dimulai (tidak dikejar tiap frame) supaya gelombangnya utuh dan
     // tidak di-refill terus; nilainya ikut kecepatan roket biar bentuk S-nya tetap terbaca.
-    const amp = 2.4;
-    const step = 1.1; // jarak antar roti di sepanjang jalan (m)
-    const ahead = this.distance + 90;
+    // Amplitudo dilebarkan sampai 2.9 m (masih di dalam badan jalan +-3.75 m, dan masih
+    // terjangkau pemain karena batas menyamping lajur +-2.75 m + radius serap 1 m).
+    const amp = 2.9;
+    const step = 1.2; // jarak antar roti di sepanjang jalan (m)
+    const ahead = this.distance + 150; // runway SANGAT panjang: lebih dari 2 gelombang sekaligus
     if (this.skyBreadS < this.distance + 6) {
       // mulai formasi baru: gelombang mulai dari lat 0 di 10 m depan pemain
       this.skyBreadS = this.distance + 10;
       this.skyBreadPhase = this.skyBreadS;
-      this.skyBreadWave = clamp(this.speed * 0.6, 24, 40);
+      // panjang gelombang dilebarkan (S lebih memanjang): 45-80 m per gelombang penuh
+      this.skyBreadWave = clamp(this.speed * 1.0, 45, 80);
       // arah S diacak: kadang gelombangnya mulai ke kanan, kadang ke kiri
       this.skyBreadDir = Math.random() < 0.5 ? 1 : -1;
     }
