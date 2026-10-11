@@ -168,6 +168,14 @@ export type CrashCause = "obstacle" | "car" | "oncoming" | "motorcycle" | "chick
 export const NOS_MAX = 100;
 export const NOS_DURATION = 2.6;
 export const NOS_SPEED_MULT = 1.75;
+/** Posisi nosel roket punggung relatif pemain: 0.2 m di belakang, 0.66 m di atas jalan.
+ *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635):
+ *  saat membubung, punggung pemain + roket berada di tinggi itu. */
+export const ROCKET_NOZZLE_BACK = 0.12;
+export const ROCKET_NOZZLE_H = 0.64;
+/** Batas jumlah partikel asap roket yang hidup sekaligus. */
+const ROCKET_SMOKE_MAX = 170;
+
 export const NOS_PER_BREAD = 6;
 export const NOS_PER_TRICK = 10;
 export const NOS_CAN_S = 50;
@@ -732,6 +740,28 @@ function stepRagdoll(r: Ragdoll, dt: number, floor: number, friction = 4.2, boun
   }
 }
 
+/**
+ * Asap roket punggung (NOS): puff besar yang MENGEMBANG sambil memudar, warna pelangi
+ * bergilir khas Subway Surfers, plus percikan kecil terang yang jatuh. Dirender di
+ * World.tsx sebagai billboard additive (RocketSmokeFx).
+ */
+export interface RocketSmoke {
+  x: number; y: number; z: number;
+  vx: number; vy: number; vz: number;
+  life: number;
+  max: number;
+  /** ukuran awal (m) */
+  size: number;
+  /** pengali pembesaran sepanjang umur */
+  grow: number;
+  /** 0..1 warna pelangi */
+  hue: number;
+  rot: number;
+  spin: number;
+  /** true = kilau kecil tajam, false = puff asap */
+  spark: boolean;
+}
+
 export interface Particle {
   x: number;
   y: number;
@@ -931,6 +961,12 @@ class Engine {
   private interCount = 0;
   crashCause: CrashCause = "obstacle";
   particles: Particle[] = [];
+  /** Asap roket warna-warni (NOS): puff pelangi + percikan; digambar di World.tsx. */
+  rocketSmoke: RocketSmoke[] = [];
+  /** timer emisi asap/percipat roket */
+  private rocketSmokeT = 0;
+  private rocketSparkT = 0;
+  private rocketSmokeHue = 0;
   /** gelombang "denyut" yang sedang aktif (lihat Pulse) */
   pulses: Pulse[] = [];
   /** Pickup burst (roti/NOS/huruf): ring + flash + partikel emas + teks reward. */
@@ -1122,6 +1158,9 @@ class Engine {
     this.subwayTunnels = [];
     this.nextSubwayTunnelS = START_S + 110;
     this.particles = [];
+    this.rocketSmoke = [];
+    this.rocketSmokeT = 0;
+    this.rocketSparkT = 0;
     this.reserved = [];
     this.nextChunkS = 0;
     this.nextObstacleS = this.distance + 40;
@@ -1492,6 +1531,8 @@ class Engine {
     this.nos = 0;
     this.nosT = NOS_DURATION;
     this.shake = Math.max(this.shake, 0.35);
+    // BURST roket: ledakan asap pelangi + percikan + dua cincin warna tepat di nosel
+    this.rocketSmokeBurst();
     useUI.getState().addPopup("NOS!", "#4cc9f0", "hold on!");
     sfx.nos();
   }
@@ -1965,6 +2006,8 @@ class Engine {
         this.nosT = Math.max(0, this.nosT - dt);
         const boosted = target * NOS_SPEED_MULT;
         this.speed += clamp(boosted - this.speed, -dt * 2.5, dt * 40);
+        // ASAP ROKET: semburan warna-warni dari nosel roket punggung sepanjang boost
+        this.emitRocketSmoke(dt);
       } else {
         const decayRate = this.sprintTimer > 0 ? -dt * 1.5 : -dt * 2.4;
         this.speed += clamp(target - this.speed, decayRate, up);
@@ -2037,6 +2080,7 @@ class Engine {
     }
 
     this.updateParticles(dt);
+    this.updateRocketSmoke(dt);
     this.updatePulses(dt);
     this.updatePetals(dt);
     this.updateTransform();
@@ -6755,6 +6799,130 @@ class Engine {
     if (this.particles.length > 150) this.particles.splice(0, this.particles.length - 150);
   }
 
+  /* ---------- Asap roket NOS (warna-warni khas Subway Surfers) ---------- */
+
+  /** Titik nosel roket punggung di koordinat dunia (posisi pemain + offset rig). */
+  private rocketNozzle(sPos: number, out: { x: number; y: number; z: number }) {
+    const p = this.player;
+    const c = track.sample(sPos, tmpS);
+    out.x = c.x - Math.sin(c.th) * p.lat;
+    out.z = c.z + Math.cos(c.th) * p.lat;
+    out.y = c.y + p.h + ROCKET_NOZZLE_H;
+    return c;
+  }
+
+  /** Ledakan asap pelangi tepat saat roket dinyalakan (burst besar + cincin warna). */
+  private rocketSmokeBurst() {
+    const c = this.rocketNozzle(this.distance - ROCKET_NOZZLE_BACK, rocketTmp);
+    const x = rocketTmp.x;
+    const y = rocketTmp.y;
+    const z = rocketTmp.z;
+    const fx = Math.cos(c.th);
+    const fz = Math.sin(c.th);
+    const lx = -Math.sin(c.th); // sumbu menyamping (lat)
+    const lz = Math.cos(c.th);
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2 + rand(-0.22, 0.22);
+      const sp = rand(2.2, 6.4);
+      const outX = lx * Math.cos(a) + 0 * Math.sin(a);
+      const outZ = lz * Math.cos(a);
+      this.rocketSmoke.push({
+        x: x + rand(-0.1, 0.1), y: y + rand(-0.1, 0.1), z: z + rand(-0.1, 0.1),
+        vx: -fx * rand(1.5, 4.5) + outX * sp,
+        vy: Math.sin(a) * sp * 0.75 + rand(0.2, 1.4),
+        vz: -fz * rand(1.5, 4.5) + outZ * sp,
+        life: 0, max: rand(0.55, 1.15), size: rand(0.22, 0.42), grow: rand(1.5, 2.6),
+        hue: (i / 36) * 0.999, rot: rand(0, 6.28), spin: rand(-3, 3), spark: false,
+      });
+    }
+    for (let i = 0; i < 22; i++) {
+      const a = rand(0, Math.PI * 2);
+      const sp = rand(4, 11);
+      this.rocketSmoke.push({
+        x, y, z,
+        vx: -fx * rand(2, 7) + lx * Math.cos(a) * sp,
+        vy: Math.sin(a) * sp * 0.8 + rand(0.5, 3),
+        vz: -fz * rand(2, 7) + lz * Math.cos(a) * sp,
+        life: 0, max: rand(0.28, 0.55), size: rand(0.1, 0.2), grow: 0.4,
+        hue: Math.random(), rot: rand(0, 6.28), spin: rand(-12, 12), spark: true,
+      });
+    }
+    if (this.rocketSmoke.length > ROCKET_SMOKE_MAX) {
+      this.rocketSmoke.splice(0, this.rocketSmoke.length - ROCKET_SMOKE_MAX);
+    }
+    this.spawnPulse(x, y, z, { max: 0.55, r0: 0.35, r1: 3.4, color: [0.35, 0.95, 1] });
+    this.spawnPulse(x, y, z, { max: 0.75, r0: 0.2, r1: 2.4, color: [1, 0.45, 0.9] });
+    this.spawnPulse(x, y, z, { max: 0.95, r0: 0.15, r1: 1.7, color: [1, 0.92, 0.4] });
+  }
+
+  /** Semburan asap kontinu selama NOS menyala (puff pelangi + percikan terang). */
+  private emitRocketSmoke(dt: number) {
+    const c = this.rocketNozzle(this.distance - ROCKET_NOZZLE_BACK, rocketTmp);
+    const x = rocketTmp.x;
+    const y = rocketTmp.y;
+    const z = rocketTmp.z;
+    const fx = Math.cos(c.th);
+    const fz = Math.sin(c.th);
+    const lx = -Math.sin(c.th);
+    const lz = Math.cos(c.th);
+    this.rocketSmokeHue = (this.rocketSmokeHue + dt * 0.55) % 1;
+    // puff besar: ~45/detik, umur ~0.9 s -> jejak asap panjang yang mengembang
+    this.rocketSmokeT -= dt;
+    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 8; guard++) {
+      this.rocketSmokeT += 0.022;
+      const hue = (this.rocketSmokeHue + rand(-0.06, 0.06) + 1) % 1;
+      this.rocketSmoke.push({
+        x: x + rand(-0.08, 0.08), y: y + rand(-0.08, 0.08), z: z + rand(-0.08, 0.08),
+        vx: -fx * rand(1.6, 3.6) + lx * rand(-0.9, 0.9),
+        vy: rand(0.1, 0.9),
+        vz: -fz * rand(1.6, 3.6) + lz * rand(-0.9, 0.9),
+        life: 0, max: rand(0.6, 1.05), size: rand(0.18, 0.34), grow: rand(1.6, 2.6),
+        hue, rot: rand(0, 6.28), spin: rand(-2.4, 2.4), spark: false,
+      });
+    }
+    // percikan kecil: ~26/detik, warna pelangi, jatuh ke aspal
+    this.rocketSparkT -= dt;
+    for (let guard = 0; this.rocketSparkT <= 0 && guard < 6; guard++) {
+      this.rocketSparkT += 0.038;
+      this.rocketSmoke.push({
+        x, y, z,
+        vx: -fx * rand(3, 8) + lx * rand(-1.6, 1.6),
+        vy: rand(0.6, 3.4),
+        vz: -fz * rand(3, 8) + lz * rand(-1.6, 1.6),
+        life: 0, max: rand(0.3, 0.6), size: rand(0.09, 0.17), grow: 0.4,
+        hue: (this.rocketSmokeHue + rand(-0.12, 0.12) + 1) % 1, rot: rand(0, 6.28), spin: rand(-10, 10), spark: true,
+      });
+    }
+    if (this.rocketSmoke.length > ROCKET_SMOKE_MAX) {
+      this.rocketSmoke.splice(0, this.rocketSmoke.length - ROCKET_SMOKE_MAX);
+    }
+  }
+
+  private updateRocketSmoke(dt: number) {
+    const arr = this.rocketSmoke;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const s = arr[i];
+      s.life += dt;
+      if (s.life >= s.max) {
+        arr.splice(i, 1);
+        continue;
+      }
+      // seret udara: asap cepat kehilangan dorongan lalu mengapung & mengembang
+      const drag = Math.exp(-dt * (s.spark ? 2.6 : 1.7));
+      s.vx *= drag;
+      s.vz *= drag;
+      s.vy = s.vy * drag + (s.spark ? -7.5 : 0.5) * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.z += s.vz * dt;
+      if (s.y < 0.04 && s.vy < 0) {
+        s.y = 0.04;
+        s.vy *= -0.25;
+      }
+      s.rot += s.spin * dt;
+    }
+  }
+
   private updateParticles(dt: number) {
     const arr = this.particles;
     for (let i = arr.length - 1; i >= 0; i--) {
@@ -6779,5 +6947,7 @@ class Engine {
     }
   }
 }
+
+const rocketTmp = { x: 0, y: 0, z: 0 };
 
 export const engine = new Engine();

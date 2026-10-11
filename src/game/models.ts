@@ -2448,6 +2448,47 @@ export function rocketParts(): Part[] {
   ];
 }
 
+/**
+ * ROKET PUNGGUNG (jetpack) yang ditempelkan di punggung merpati saat NOS/roket menyala.
+ * Orientasi: nosel di bawah (-y), moncong di atas (+y). Di rig pemain roket ini dipasang
+ * rebah di punggung, jadi saat merpati terbang "Superman" moncongnya menghadap arah laju
+ * dan noselnya menyemburkan asap pelangi ke belakang.
+ */
+export function backRocketParts(): Part[] {
+  const white = "#f4f6fa";
+  const gold = "#ffc93c";
+  const goldDark = "#d69a12";
+  const purple = "#7b3ff2";
+  const red = "#e63946";
+  const dark = "#2b2f38";
+  const cyan = "#65d6ff";
+  return [
+    // ---- nosel + nyala di dasar roket ----
+    { x: 0, y: 0.02, z: 0, w: 0.17, h: 0.1, d: 0.17, color: dark },
+    { x: 0, y: 0.06, z: 0, w: 0.11, h: 0.06, d: 0.11, color: "#ff8c1a" },
+    { x: 0, y: 0.09, z: 0, w: 0.07, h: 0.05, d: 0.07, color: "#ffe066" },
+    // ---- sirip emas 4 arah ----
+    { x: 0, y: 0.2, z: 0.13, w: 0.05, h: 0.2, d: 0.14, color: gold },
+    { x: 0, y: 0.2, z: -0.13, w: 0.05, h: 0.2, d: 0.14, color: gold },
+    { x: 0.13, y: 0.2, z: 0, w: 0.14, h: 0.2, d: 0.05, color: gold },
+    { x: -0.13, y: 0.2, z: 0, w: 0.14, h: 0.2, d: 0.05, color: gold },
+    // ---- badan roket ----
+    { x: 0, y: 0.36, z: 0, w: 0.2, h: 0.3, d: 0.2, color: white },
+    { x: 0, y: 0.25, z: 0, w: 0.23, h: 0.05, d: 0.23, color: goldDark }, // ring bawah
+    { x: 0, y: 0.4, z: 0, w: 0.21, h: 0.07, d: 0.21, color: purple }, // pita ungu
+    { x: 0, y: 0.47, z: 0, w: 0.21, h: 0.03, d: 0.21, color: gold }, // garis emas
+    // jendela kokpit kecil di sisi atas
+    { x: 0.09, y: 0.37, z: 0, w: 0.03, h: 0.1, d: 0.1, color: cyan },
+    // bintang emas kecil (tanda roket langka)
+    { x: -0.1, y: 0.42, z: 0, w: 0.02, h: 0.08, d: 0.08, color: gold },
+    // ---- moncong merah meruncing ----
+    { x: 0, y: 0.53, z: 0, w: 0.2, h: 0.08, d: 0.2, color: red },
+    { x: 0, y: 0.6, z: 0, w: 0.15, h: 0.07, d: 0.15, color: red },
+    { x: 0, y: 0.66, z: 0, w: 0.1, h: 0.06, d: 0.1, color: red },
+    { x: 0, y: 0.71, z: 0, w: 0.05, h: 0.05, d: 0.05, color: gold },
+  ];
+}
+
 /** Item LANGKA #2: berlian raksasa (biru-cyan) — hadiah skor paling gede. */
 export function diamondParts(): Part[] {
   const cyan = "#4fd8ff";

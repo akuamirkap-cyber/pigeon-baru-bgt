@@ -2123,6 +2123,120 @@ function getDotTex(): THREE.CanvasTexture {
   return dotTex;
 }
 
+/** Tekstur gumpalan asap lembut (beberapa bulatan radial ditumpuk) untuk asap roket. */
+let puffTex: THREE.CanvasTexture | null = null;
+function getPuffTex(): THREE.CanvasTexture {
+  if (!puffTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d")!;
+    const blobs: [number, number, number, number][] = [
+      [64, 64, 62, 0.5],
+      [44, 54, 42, 0.5],
+      [86, 60, 40, 0.45],
+      [58, 88, 34, 0.4],
+      [88, 88, 26, 0.34],
+      [36, 80, 26, 0.3],
+    ];
+    for (const [px, py, r, a] of blobs) {
+      const grd = g.createRadialGradient(px, py, 0, px, py, r);
+      grd.addColorStop(0, `rgba(255,255,255,${a})`);
+      grd.addColorStop(0.55, `rgba(255,255,255,${a * 0.45})`);
+      grd.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grd;
+      g.beginPath();
+      g.arc(px, py, r, 0, Math.PI * 2);
+      g.fill();
+    }
+    puffTex = new THREE.CanvasTexture(c);
+  }
+  return puffTex;
+}
+
+/* ---------- Asap roket NOS warna-warni (Subway Surfers style) ---------- */
+const ROCKET_SMOKE_CAP = 170;
+const rocketColor = new THREE.Color();
+const rocketObj = new THREE.Object3D();
+
+function RocketSmokeFx() {
+  const puffRef = useRef<THREE.InstancedMesh>(null);
+  const sparkRef = useRef<THREE.InstancedMesh>(null);
+  const { camera } = useThree();
+  const res = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const add = (map: THREE.Texture) =>
+      new THREE.MeshBasicMaterial({
+        map,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      });
+    return { geo, puffMat: add(getPuffTex()), sparkMat: add(getSparkleTex()) };
+  }, []);
+  useEffect(
+    () => () => {
+      res.geo.dispose();
+      res.puffMat.dispose();
+      res.sparkMat.dispose();
+    },
+    [res],
+  );
+
+  useFrame(() => {
+    const puffs = puffRef.current;
+    const sparks = sparkRef.current;
+    if (!puffs || !sparks) return;
+    let pi = 0;
+    let si = 0;
+    for (const s of engine.rocketSmoke) {
+      const k = s.life / s.max; // 0..1 umur
+      const fade = Math.pow(1 - k, 1.5);
+      if (s.spark) {
+        if (si >= ROCKET_SMOKE_CAP) continue;
+        const sc = s.size * (0.6 + 0.5 * (1 - k));
+        rocketObj.position.set(s.x, s.y, s.z);
+        rocketObj.quaternion.copy(camera.quaternion);
+        rocketObj.rotateZ(s.rot);
+        rocketObj.scale.setScalar(Math.max(0.001, sc));
+        rocketObj.updateMatrix();
+        sparks.setMatrixAt(si, rocketObj.matrix);
+        // kilau pelangi terang (additive: kecerahan = warna)
+        rocketColor.setHSL(s.hue, 0.85, 0.72).multiplyScalar(0.55 + 0.75 * fade);
+        sparks.setColorAt(si, rocketColor);
+        si++;
+      } else {
+        if (pi >= ROCKET_SMOKE_CAP) continue;
+        const sc = s.size * (0.6 + s.grow * k); // mengembang sepanjang umur
+        rocketObj.position.set(s.x, s.y, s.z);
+        rocketObj.quaternion.copy(camera.quaternion);
+        rocketObj.rotateZ(s.rot);
+        rocketObj.scale.setScalar(Math.max(0.001, sc));
+        rocketObj.updateMatrix();
+        puffs.setMatrixAt(pi, rocketObj.matrix);
+        // puff pelangi: warna vivid, memudar mulus karena additive
+        rocketColor.setHSL(s.hue, 0.95, 0.6).multiplyScalar(0.42 * fade + 0.06 * (1 - k) * fade + 0.02);
+        puffs.setColorAt(pi, rocketColor);
+        pi++;
+      }
+    }
+    puffs.count = pi;
+    sparks.count = si;
+    puffs.instanceMatrix.needsUpdate = true;
+    sparks.instanceMatrix.needsUpdate = true;
+    if (puffs.instanceColor) puffs.instanceColor.needsUpdate = true;
+    if (sparks.instanceColor) sparks.instanceColor.needsUpdate = true;
+  });
+
+  return (
+    <>
+      <instancedMesh ref={puffRef} args={[res.geo, res.puffMat, ROCKET_SMOKE_CAP]} frustumCulled={false} renderOrder={8} />
+      <instancedMesh ref={sparkRef} args={[res.geo, res.sparkMat, ROCKET_SMOKE_CAP]} frustumCulled={false} renderOrder={8} />
+    </>
+  );
+}
+
 const BURST_POOL = 6;
 const BURST_PART_CAP = 60;
 const burstCol = new THREE.Color();
@@ -2831,6 +2945,7 @@ export function World() {
       <Pulses />
       <SparkleFx />
       <BurstFx />
+      <RocketSmokeFx />
     </group>
   );
 }
