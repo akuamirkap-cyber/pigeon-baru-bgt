@@ -3316,7 +3316,12 @@ class Engine {
             ? undefined
             : this.intersections.find((inter) => inter.id === m.signalIntersectionId);
           // Scramble pedestrians wait at the curb until the vehicle light is fully red.
-          if (m.delay <= 0 && (!signal || signal.lightState === "red")) m.phase = "hop";
+          // BUSWAY: bus melaju kencang ke arah -s dan tidak bisa mengerem — penyeberang
+          // menunggu dulu di tepi sampai jalur bus benar-benar lengang.
+          const busNear = this.subwayTrains.some(
+            (st) => st.speed > 0 && !st.isStopped && st.s - m.s > -18 && st.s - m.s < 42,
+          );
+          if (m.delay <= 0 && (!signal || signal.lightState === "red") && !busNear) m.phase = "hop";
         } else if (m.phase === "hop") {
           // PENYEBERANG HATI-HATI: kalau merpati melaju mendekat, tunggu dulu di tepi
           // jalan (tengok kanan-kiri); kalau terlanjur di jalur main, buru-buru menepi.
@@ -3326,6 +3331,10 @@ class Engine {
             const inLanes = Math.abs(m.lat) < 2.4;
             if (inLanes) v = m.speed * 1.55; // lari kecil biar cepat keluar jalur
             else if (Math.abs(m.lat) < 4.8) v = 0; // berhenti dulu di tepi / median
+          }
+          // Bus melaju dekat (busway): jangan berdiri di jalur bus — cepat menepi.
+          if (Math.abs(m.lat) < 4.2 && this.subwayTrains.some((st) => st.speed > 0 && st.s - m.s > -18 && st.s - m.s < 30)) {
+            v = Math.max(v, m.speed * 1.6);
           }
           m.lat += m.dir * v * dt;
           const ghNow = this.pedSurfaceAt(m.lat, m.s);
@@ -4968,13 +4977,15 @@ class Engine {
         return this.crossings.some((cr) => Math.abs(cr.s - sAbs) < 9) || Math.abs(sAbs - this.nextCrossingS) < 9;
       };
 
-      // 5. Tree-lined centre median: hanya saat bukan di jalur bus khusus agar lajur bus tetap bersih
-      if (!curTunnel) {
-        for (const lx of [3, 9]) {
-          if (!nearCrossing(lx)) add("tree", lx, 4.35, 0.16, randInt(0, 2));
-        }
-        if (id % 2 === 1 && !nearCrossing(6)) add("lamp", 6, 4.35, 0.16);
+      // 5. Tree-lined centre median: SELALU ada — termasuk di jalur bus khusus (busway).
+      // Pohon & lampu ini berdiri di median yang ditinggikan (lat 4.35), BUKAN di lajur bus
+      // (lajur bus ada di lat -2.4 / 0 / 2.4), jadi lajur bus tetap bersih & pemain tetap
+      // melihat barisan pohon di sisi kanan walau sedang melintasi jalur bus.
+      for (const lx of [3, 9]) {
+        if (!nearCrossing(lx)) add("tree", lx, 4.35, 0.16, randInt(0, 2));
       }
+      if (id % 2 === 1 && !nearCrossing(6)) add("lamp", 6, 4.35, 0.16);
+      if (id % 2 === 0 && !nearCrossing(6.5)) add("avenue_lamp", 6.5, 4.35, 0.16);
 
       // 6. Sidewalk atmosphere: pleasantly spaced out (not packed edge-to-edge)
       if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -5.2, 0.12, randInt(0, 3));
@@ -4988,7 +4999,6 @@ class Engine {
       // 12.6..16.1 — lat 10.5 dulu masih aspal jalur mobil seberang 5.0..12.3)
       add("lamp", id % 2 === 0 ? 3 : 9, -4.3, 0.12);
       add("lamp", id % 2 === 0 ? 9 : 3, curTunnel ? 12.75 : 12.55, 0.14);
-      if (!curTunnel && id % 2 === 0 && !nearCrossing(6.5)) add("avenue_lamp", 6.5, 4.35, 0.16);
 
       // 8. Pagar pembatas trotoar pipa putih khas Jepang kini disapu mulus & kontinu di ground.ts mengikuti kontur jalan tanpa patah/anak tangga
 
@@ -5843,6 +5853,10 @@ class Engine {
           ["ramp", 2.6],
           ["bread", 2.2],
           ["single", 1.8],
+          // Busway tetap hidup: orang-orang tetap tampak menunggu & menyeberang di trotoar
+          // jalur bus, sama seperti di ruas jalan biasa (sebelumnya pola ini mati total di
+          // jalur bus sehingga trotoar terasa kosong).
+          ["pedestrians", 2.4],
         ]
       : [
           ["single", 3.8],
