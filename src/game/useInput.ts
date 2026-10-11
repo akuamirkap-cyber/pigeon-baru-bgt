@@ -119,6 +119,8 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
         KeyF: "double",
         KeyE: "salto",
         KeyS: "cycle",
+        // ROKET: tombol R (juga N) untuk menyalakan roket/NOS — terbang 3 m di atas aspal
+        KeyR: "nos",
         KeyN: "nos",
         ShiftLeft: "boost",
         ShiftRight: "boost",

@@ -258,9 +258,10 @@ export function Player() {
 
     const crashed = engine.phase === "crashed" || engine.phase === "gameover";
     // ROKET/NOS: saat menyala, pemain otomatis terbang "Superman" — roket menempel di
-    // punggung, badan rebah ke depan, dan papan dikempit di tangan kanan.
-    const wantBoost = !crashed && engine.nosT > 0;
-    boostK.current += ((wantBoost ? 1 : 0) - boostK.current) * (1 - Math.exp(-dt * (wantBoost ? 16 : 5.5)));
+    // punggung, badan rebah ke depan, dan papan dikempit di tangan kanan. Blend-nya dihitung
+    // engine (termasuk saat meluncur turun setelah roket mati) supaya pose & ketinggian
+    // penerbangan selalu selaras.
+    boostK.current = crashed ? 0 : engine.player.rocketFly;
     const sup = boostK.current;
     // Keep the chunky pigeon silhouette compact while preserving full-size legs.
     // The torso group contains the body, collar, head, wings and tail; the IK legs

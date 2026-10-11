@@ -176,6 +176,14 @@ export const ROCKET_NOZZLE_H = 0.64;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
 const ROCKET_SMOKE_MAX = 170;
 
+/** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
+export const ROCKET_FLY_H = 3;
+/** Kecepatan naik ke ketinggian terbang & turun kembali ke aspal (m/s). */
+const ROCKET_CLIMB = 9;
+const ROCKET_DESCEND = 7;
+/** Isi NOS minimum (fraksi 0..1) supaya roket bisa dinyalakan; durasi ikut sisa isi. */
+export const NOS_MIN_FIRE = 0.35;
+
 export const NOS_PER_BREAD = 6;
 export const NOS_PER_TRICK = 10;
 export const NOS_CAN_S = 50;
@@ -1001,6 +1009,10 @@ class Engine {
     lat: 0,
     h: 0,
     vh: 0,
+    /** Blend terbang roket 0..1 (pose Superman di Player.tsx + ketinggian di engine). */
+    rocketFly: 0,
+    /** true = setelah roket mati, pemain meluncur turun halus sampai menyentuh aspal. */
+    rocketDescend: false,
     grounded: true,
     grinding: false,
     rail: null as Obstacle | null,
@@ -1134,6 +1146,8 @@ class Engine {
     this.nos = 0;
     this.nosT = 0;
     this.nosFlame = 0;
+    this.player.rocketFly = 0;
+    this.player.rocketDescend = false;
     this.nosCans = [];
     this.rockets = [];
     this.rocketTaken = 0;
@@ -1527,13 +1541,33 @@ class Engine {
 
   /** Activate NOS: 2.6 s of boost, flames, camera FOV kick. */
   fireNos() {
-    if (this.phase !== "playing" || this.nosT > 0 || this.nos < NOS_MAX * 0.99) return;
+    if (this.phase !== "playing" || this.nosT > 0) return;
+    // ROKET (tombol R / N / tombol NOS): cukup isi 35% saja, durasi terbang ikut sisa isi.
+    // Tangki penuh (missal dari item ROCKET LANGKA) = durasi terbang penuh.
+    if (this.nos < NOS_MAX * NOS_MIN_FIRE) {
+      useUI.getState().addPopup("NOS BELUM CUKUP", "#9aa2b5", `isi ${Math.round(NOS_MIN_FIRE * 100)}% dulu · makan roti / trik / roket 🚀`);
+      return;
+    }
+    const charge = this.nos / NOS_MAX;
     this.nos = 0;
-    this.nosT = NOS_DURATION;
+    this.nosT = Math.max(0.9, NOS_DURATION * charge);
+    this.player.rocketDescend = false;
+    // lepas dari rel / atap mobil / atap bus: roket langsung membawa pemain naik 3 m
+    const p = this.player;
+    if (p.subwayMover) {
+      p.subwayMover = null;
+    }
+    if (p.carMover || p.carObstacle) this.endCarGrind();
+    else if (p.grinding) this.endGrind();
+    p.railGrace = 0.35;
+    p.carGrace = 0.35;
+    p.subwayGrace = 0.35;
+    p.bigAir = false;
+    p.onRamp = false;
     this.shake = Math.max(this.shake, 0.35);
     // BURST roket: ledakan asap pelangi + percikan + dua cincin warna tepat di nosel
     this.rocketSmokeBurst();
-    useUI.getState().addPopup("NOS!", "#4cc9f0", "hold on!");
+    useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m di atas aspal!");
     sfx.nos();
   }
 
@@ -1878,6 +1912,9 @@ class Engine {
     p.carMover = null;
     p.carObstacle = null;
     p.subwayMover = null;
+    p.rocketDescend = false;
+    this.nosT = 0;
+    this.nosFlame = 0;
     p.carGrace = 0;
     p.grab = 0;
     const v = Math.max(this.speed, 8);
@@ -2233,6 +2270,8 @@ class Engine {
     p.subwayGrace = Math.max(0, p.subwayGrace - dt);
 
     const ground = this.groundInfo(p.lat);
+    // ROKET: selama NOS menyala pemain TERBANG di ketinggian tetap (bukan lagi soal lompatan)
+    const rocketFlying = this.nosT > 0;
     const prevH = p.h;
 
     if (p.grinding && p.subwayMover) {
@@ -2409,7 +2448,7 @@ class Engine {
             p.vh = Math.max(0, p.vh);
           }
         }
-        if (p.railGrace <= 0) {
+        if (!rocketFlying && p.railGrace <= 0) {
           for (const o of this.obstacles) {
             if (o.kind !== "rail") continue;
             const rel = d - o.s;
@@ -2427,7 +2466,7 @@ class Engine {
             }
           }
         }
-        if (!p.grinding && p.carGrace <= 0) {
+        if (!rocketFlying && !p.grinding && p.carGrace <= 0) {
           // Landing on oncoming cars ("mobil yg arah depan") only if physically touching down onto the roof
           const isFalling = p.vh <= 0.05 && prevH >= p.h;
           for (const m of this.movers) {
@@ -2458,7 +2497,7 @@ class Engine {
           }
         }
         // Mendarat di atas atap bus saat pemain turun menyentuh ketinggian atap (SUBWAY_ROOF_H):
-        if (!p.grinding && p.subwayGrace <= 0 && (p.vh <= 0.5 || prevH >= p.h)) {
+        if (!rocketFlying && !p.grinding && p.subwayGrace <= 0 && (p.vh <= 0.5 || prevH >= p.h)) {
           for (const st of this.subwayTrains) {
             const relS = d - st.s;
             if (relS < -0.8 || relS > st.length + 0.8) continue;
@@ -2470,12 +2509,56 @@ class Engine {
             }
           }
         }
-        if (!p.grinding && p.h <= ground.y) {
+        if (!rocketFlying && !p.rocketDescend && !p.grinding && p.h <= ground.y) {
           p.h = ground.y;
           this.land();
           p.onRamp = !!ground.ramp;
         }
       }
+    }
+
+    // ---- TERBANG ROKET: 3 METER DI ATAS ASPAL SELAMA NOS MENYALA ----
+    // Ketinggian dijaga pakai kontrol halus (naik 9 m/s, tahan, lalu turun halus 7 m/s
+    // setelah roket mati) supaya pemain benar-benar melayang 3 m di atas aspal, bukan
+    // melompat balistik. Semua bentuk grind/atap dilepas supaya roket yang menentukan.
+    {
+      const target = ground.y + ROCKET_FLY_H;
+      if (rocketFlying) {
+        if (p.grinding) {
+          if (p.carMover || p.carObstacle) this.endCarGrind();
+          else this.endGrind();
+        }
+        p.subwayMover = null;
+        p.grounded = false;
+        p.rail = null;
+        p.onRamp = false;
+        p.vh = 0;
+        p.bigAir = false;
+        p.rocketDescend = true;
+        p.h += clamp(target - p.h, -ROCKET_CLIMB * dt, ROCKET_CLIMB * dt);
+        p.airT += dt;
+      } else if (p.rocketDescend) {
+        if (p.grinding || p.subwayMover) {
+          // saat meluncur turun pemain menyentuh rel / atap bus → serahkan ke mekanik grind biasa
+          p.rocketDescend = false;
+        } else {
+          p.grounded = false;
+          p.vh = 0;
+          p.airT += dt;
+          const remain = p.h - ground.y;
+          if (remain > 0.1) {
+            p.h = Math.max(ground.y, p.h - ROCKET_DESCEND * dt);
+          } else {
+            // pendaratan bersih: turun pelan lalu menyentuh aspal tanpa guling
+            p.h = ground.y;
+            p.rocketDescend = false;
+            p.onRamp = !!ground.ramp;
+            this.land();
+          }
+        }
+      }
+      // blend untuk pose terbang (Player.tsx): naik cepat, turun halus
+      p.rocketFly = lerp(p.rocketFly, rocketFlying ? 1 : 0, 1 - Math.exp(-dt * (rocketFlying ? 16 : 4.5)));
     }
 
     // queued "S" trick: fire as soon as we are airborne
@@ -2945,10 +3028,14 @@ class Engine {
       }
     }
 
+    // MAGNET ROKET: selama terbang, item di aspal tetap tersedot ke badan pemain
+    // (roti/NOS/huruf/roket tetap bisa dikumpulkan walau badan 3 m di atas aspal).
+    const flyPick = p.rocketFly > 0.5;
+
     // NOS canisters
     for (const c of this.nosCans) {
       if (c.taken) continue;
-      if (Math.abs(c.s - d) > 0.9 || Math.abs(LANE_LAT[c.lane] - p.lat) > 1.0 || p.h > 1.6) continue;
+      if (Math.abs(c.s - d) > 0.9 || Math.abs(LANE_LAT[c.lane] - p.lat) > 1.0 || (p.h > 1.6 && !flyPick)) continue;
       c.taken = true;
       this.addNos(NOS_MAX * 0.5);
       this.spawnBurst(c.wx, c.wy + 0.4, c.wz, false);
@@ -2958,14 +3045,14 @@ class Engine {
     // item LANGKA: ROCKET — sekali ambil langsung NOS penuh + skor besar + kilatan sinar
     for (const r of this.rockets) {
       if (r.taken) continue;
-      if (Math.abs(r.s - d) > 1.0 || Math.abs(LANE_LAT[r.lane] - p.lat) > 1.05 || p.h > 1.7) continue;
+      if (Math.abs(r.s - d) > 1.0 || Math.abs(LANE_LAT[r.lane] - p.lat) > 1.05 || (p.h > 1.7 && !flyPick)) continue;
       this.collectRocket(r);
     }
 
     // Daily Word Hunt letters
     for (const l of this.letters) {
       if (l.taken) continue;
-      if (Math.abs(l.s - d) > 1.0 || Math.abs(LANE_LAT[l.lane] - p.lat) > 1.05 || p.h > 1.8) continue;
+      if (Math.abs(l.s - d) > 1.0 || Math.abs(LANE_LAT[l.lane] - p.lat) > 1.05 || (p.h > 1.8 && !flyPick)) continue;
       this.collectLetter(l);
     }
 
@@ -2988,7 +3075,7 @@ class Engine {
       if (b.taken) continue;
       if (Math.abs(b.s - d) > 0.9) continue;
       if (Math.abs(LANE_LAT[b.lane] - p.lat) > 1.0) continue;
-      if (Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
+      if (!flyPick && Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
       b.taken = true;
       this.breadCount++;
       buzz(14);
