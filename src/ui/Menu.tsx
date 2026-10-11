@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useUI, WHEEL_COLORS } from "../game/store";
+import { useUI, WHEEL_COLORS, SWIPE_SENS_LABEL } from "../game/store";
 import { engine } from "../game/engine";
 import { getSkin, DECKS } from "../game/skins";
 import { sfx, unlockAudio, SoundId } from "../game/audio";
@@ -155,6 +155,8 @@ function SettingsRow() {
   const setWheel = useUI((s) => s.setWheelColor);
   const weather = useUI((s) => s.weather);
   const toggleWeather = useUI((s) => s.toggleWeather);
+  const swipeSens = useUI((s) => s.swipeSens);
+  const cycleSwipeSens = useUI((s) => s.cycleSwipeSens);
   const nightBright = useUI((s) => s.nightBright);
   const cycleNightBright = useUI((s) => s.cycleNightBright);
   const shibuyaTime = useUI((s) => s.shibuyaTime);
@@ -236,6 +238,15 @@ function SettingsRow() {
           accent={nightBright === 2 ? "#c9a13d" : undefined}
           onTap={() => {
             cycleNightBright();
+            sfx.click();
+          }}
+        />
+        <CyclePill
+          label="SENSITIVITAS"
+          value={SWIPE_SENS_LABEL[swipeSens]}
+          accent={swipeSens !== "normal" ? "#4cc9f0" : undefined}
+          onTap={() => {
+            cycleSwipeSens();
             sfx.click();
           }}
         />

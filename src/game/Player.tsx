@@ -11,6 +11,7 @@ import { buildShibuyaAnimalRig } from "./shibuyaPacks";
 import { buildBuddyRig, VOXEL_BOARD_IDS } from "./buddiesSkins";
 import { Koi, Goldfish, Ufo, Broom, Drone } from "../buddies/characters";
 import { InGameTrailEffect } from "./trailEffects";
+import { RAIL_POSE } from "./railTricks";
 
 /** Max truck steering angle (rad) at full lean — real trucks turn ~10–20° with the deck tilted ~15–20° */
 const TRUCK_MAX = 0.42;
@@ -370,7 +371,11 @@ export function Player() {
       // board yaws into the carve (nose points where the pigeon is going) on top of any trick rotation
       // NEW: in the air the feet steer the board, so it tilts a little MORE than the body (lean * 0.2)
       const airTilt = nm ? lv * 0.2 * p.airBlend : 0;
-      bd.rotation.set(p.flip + (g > 0 ? g * 0.9 : 0) + airTilt, p.boardYaw + p.boardTwist, p.pitch + (g < 0 ? g * 0.35 : 0) + p.boardPitch);
+      bd.rotation.set(
+        p.flip + (g > 0 ? g * 0.9 : 0) + airTilt + p.railRoll,
+        p.boardYaw + p.boardTwist + p.railYaw,
+        p.pitch + (g < 0 ? g * 0.35 : 0) + p.boardPitch + p.railPitch,
+      );
 
       let hop = 0;
       // semua trick flip/shuv-family mendapat "pop" papan naik-turun ala ollie
@@ -392,6 +397,9 @@ export function Player() {
         drive = pushTarget(u, kTmp);
         out = u < 0.12 ? smooth(u / 0.12) : u < 0.82 ? 1 : 1 - smooth((u - 0.82) / 0.18);
         dip = 0.1 * drive + 0.05 * spr;
+      } else if (p.grinding) {
+        // grind rel: lutut menekuk (jongkok) sesuai pose trik, halus saat mulai grind
+        dip = 0.03 + 0.12 * p.railCrouch;
       } else if (airborne) {
         dip = 0.06 * Math.min(1, p.airT * 6); // knees bend as the pigeon pulls the board up
       }
@@ -399,9 +407,31 @@ export function Player() {
       const crouch = g > 0 ? g * 0.12 : g < 0 ? -g * 0.1 : 0;
       const s = p.squash;
       // Move rider together with the board so feet stay planted instead of clipping through it.
-      pg.position.set(0, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift, -0.03 * out);
-      pg.rotation.set(0, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0));
-      pg.scale.set(PS * (1 + 0.18 * s), PS * (1 - 0.32 * s + idle), PS * (1 + 0.18 * s));
+      // salto: badan pigeon berputar penuh 360° (depan/belakang sesuai arah acak trik)
+      const saltoZ = tr && tr.kind === "salto" ? -Math.PI * 2 * engine.trickDir * smooth(Math.min(1, tr.t / tr.dur)) : 0;
+      // pivot rotasi dikompensasi di pusat badan supaya pigeon tidak ikut terangkat/terayun saat salto
+      const saltoCy = 0.6 * PS;
+      const saltoX = saltoCy * Math.sin(saltoZ);
+      const saltoY = saltoCy * (1 - Math.cos(saltoZ));
+      // ragdoll saat mendarat: tumble/guling ke depan (full roll saat jatuh keras), wobble settling
+      const lr = engine.landRollT;
+      let rollZ = 0;
+      let rollX = 0;
+      let landBounce = 0;
+      if (lr < 1.2) {
+        const amp = engine.landRollAmp;
+        const dir = engine.landRollDir;
+        if (engine.landRollFull && lr < 0.6) {
+          const u = Math.min(1, lr / 0.6);
+          rollZ += dir * Math.PI * 2 * (1 - Math.pow(1 - u, 3));
+        }
+        rollZ += dir * amp * 0.22 * Math.sin(lr * 20) * Math.exp(-lr * 6);
+        rollX = amp * 0.3 * Math.sin(lr * 15) * Math.exp(-lr * 5);
+        landBounce = amp * 0.22 * Math.exp(-lr * 7) * Math.abs(Math.sin(lr * 11));
+      }
+      pg.position.set(saltoX, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift + saltoY + landBounce, -0.03 * out);
+      pg.rotation.set(rollX, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ + rollZ);
+      pg.scale.set(PS * (1 + 0.26 * s), PS * (1 - 0.42 * s + idle), PS * (1 + 0.26 * s));
 
       if (friendModel.current && friendRig) {
         // Keep the source animal recognizable in the air: a small centered tuck
@@ -469,6 +499,10 @@ export function Player() {
           const openT = Math.min(1, p.airT * 5);
           rxL = -0.12 + openT * 0.12; rxR = -0.12 + openT * 0.12;
           spL = 0.3 + 0.5 * openT; spR = 0.3 + 0.5 * openT;
+        } else if (p.grinding && p.railTrick) {
+          // pose lengan sesuai trik rel (lihat RAIL_POSE)
+          const ra = RAIL_POSE[p.railTrick.kind].arms;
+          rxL = ra.rxL; rxR = ra.rxR; spL = ra.spL; spR = ra.spR;
         } else if (p.grinding) {
           // grind: rapat & rendah menjaga posisi di atas rail
           rxL = 0.12; rxR = 0.12; spL = 0.42; spR = 0.42;
@@ -541,7 +575,7 @@ export function Player() {
         //  - torso rolls LESS than the board (counter-roll -lean*0.14) so the head stays over the deck
         //  - hips slide toward the inside of the turn (lean * 0.06)
         //  - head counter-rolls (-lean*0.22) to keep the horizon level and looks into the turn (yaw - lean*0.35)
-        leanTorso(-0.12 * out - lv * 0.14, -0.2 * drive - 0.04 * out - 0.14 * spr, 0.04 * drive + 0.03 * spr, -0.02 * drive, -0.05 * out + lv * 0.06, 0);
+        leanTorso(-0.12 * out - lv * 0.14 + p.railBodyRoll, -0.2 * drive - 0.04 * out - 0.14 * spr + p.railLean, 0.04 * drive + 0.03 * spr, -0.02 * drive, -0.05 * out + lv * 0.06, p.railBodyYaw);
         // head bob halus yang selalu menempel pada leher (RIG.headPos)
         hd.position.set(RIG.headPos[0] + bob * 0.02, RIG.headPos[1] + Math.abs(bob) * 0.015, 0);
         hd.rotation.set(hl.pitch - lv * 0.1, hl.yaw, grounded ? -0.06 * drive : -0.12);
@@ -549,7 +583,7 @@ export function Player() {
         // extra torso roll INTO the turn (rotation.x > 0 tips the top toward +z, so it is -carve)
         const torsoCarve = -carve * (airborne ? 0.55 : 0.35);
         const hipShift = Math.sign(p.latVel) * Math.min(1, Math.abs(p.latVel) / 6) * (airborne ? 0.1 : 0.06);
-        leanTorso(-0.12 * out + torsoCarve, -0.2 * drive - 0.04 * out - 0.14 * spr + 0.12 * shift, 0.04 * drive + 0.03 * spr, -0.02 * drive - 0.03 * shift, -0.05 * out + hipShift, -p.steer * 0.35);
+        leanTorso(-0.12 * out + torsoCarve + p.railBodyRoll, -0.2 * drive - 0.04 * out - 0.14 * spr + 0.12 * shift + p.railLean, 0.04 * drive + 0.03 * spr, -0.02 * drive - 0.03 * shift, -0.05 * out + hipShift, -p.steer * 0.35 + p.railBodyYaw);
         // head bob halus yang selalu menempel pada leher (RIG.headPos)
         hd.position.set(RIG.headPos[0] + bob * 0.02, RIG.headPos[1] + Math.abs(bob) * 0.015, 0);
         hd.rotation.set(hl.pitch - carve * 0.18, hl.yaw, grounded ? -0.06 * drive : -0.12);

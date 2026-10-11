@@ -1031,8 +1031,9 @@ class SoundEngineBGM {
       rollGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.02);
     }
 
-    if (isGrinding && onGround) {
-      grindGain.gain.setTargetAtTime(0.12, c.currentTime, 0.02);
+    // suara scrape logam berkelanjutan selama grind rel (saat grind, karakter di udara = onGround false)
+    if (isGrinding) {
+      grindGain.gain.setTargetAtTime(0.22, c.currentTime, 0.02);
     } else {
       grindGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.03);
     }

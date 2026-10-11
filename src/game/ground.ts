@@ -104,7 +104,10 @@ export function buildGroundGeometry(
     return { x: t.x, y: t.y, z: t.z, sn, cs, ux: ux / l, uy: uy / l, uz: uz / l, kappa: t.kappa };
   };
   const smp: S[] = [];
-  for (let i = 0; i <= steps; i++) smp.push(sampleAt(s0 + i));
+  // Strip tanah (trotoar, median, curb) disampel lebih rapat supaya ikut kontur tikungan tanpa patah.
+  const SUB = 4;
+  const subSteps = steps * SUB;
+  for (let i = 0; i <= subSteps; i++) smp.push(sampleAt(s0 + i / SUB));
 
   const shade = (hex: string, k: number): P => {
     color.set(hex);
@@ -139,10 +142,10 @@ export function buildGroundGeometry(
   };
 
   for (const st of stripsFor(kind)) {
-    for (let i = 0; i < steps; i++) {
+    for (let i = 0; i < subSteps; i++) {
       const a = smp[i];
       const b = smp[i + 1];
-      const hex = st.colors.length > 1 ? st.colors[Math.round(s0 + i) & 1] : st.colors[0];
+      const hex = st.colors.length > 1 ? st.colors[Math.round(s0 + Math.floor(i / SUB)) & 1] : st.colors[0];
       const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
       quad(a, b, st.lat0, st.lat1, st.top, n, shade(hex, 1.05));
       if (st.skirt) {
@@ -183,8 +186,8 @@ export function buildGroundGeometry(
     // Drift tire skid marks baked into hairpin turns
     const skidColor = shade("#1f2227", 0.95);
     for (let i = 0; i < steps; i++) {
-      const a = smp[i];
-      const b = smp[i + 1];
+      const a = smp[i * SUB];
+      const b = smp[(i + 1) * SUB];
       const kappa = Math.abs(a.kappa);
       if (kappa > 0.005) {
         const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
@@ -221,8 +224,8 @@ export function buildGroundGeometry(
     const refCol = shade("#ef4444", 1.25);
 
     for (let i = 0; i < steps; i++) {
-      const a = smp[i];
-      const b = smp[i + 1];
+      const a = smp[i * SUB];
+      const b = smp[(i + 1) * SUB];
       const sc = s0 + i;
 
       for (const side of [-1, 1]) {
@@ -351,8 +354,8 @@ export function buildGroundGeometry(
       for (let i = 0; i < steps; i++) {
         const sc = s0 + i;
         if (skipRailing && (skipRailing(sc + 0.2) || skipRailing(sc + 0.8))) continue;
-        const a = smp[i];
-        const b = smp[i + 1];
+        const a = smp[i * SUB];
+        const b = smp[(i + 1) * SUB];
 
         // Pipa atas (top rail, 7cm x 7cm 3D box)
         sweptBox(a, b, lat - 0.035, lat + 0.035, 0.67, 0.74, whitePipe, whiteTop, whiteBack, whiteBottom);

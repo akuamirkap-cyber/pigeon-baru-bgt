@@ -25,6 +25,7 @@ import {
   type ShibuyaMotorcycleId,
 } from "./shibuyaPacks";
 import { TRICK_MAP, TRICKS, type TrickKind } from "./tricks";
+import { RailTrickDeck, RAIL_POSE, RAIL_POSE_NONE, type RailTrickDef } from "./railTricks";
 import { useUI, type Phase } from "./store";
 import { recordRun, recordShibuyaRun } from "./stats";
 import { sfx, bgm } from "./audio";
@@ -766,7 +767,7 @@ export interface Pulse {
   cb: number;
 }
 
-export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
+export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
 
 const TRICK_INFO = TRICK_MAP;
 
@@ -925,6 +926,20 @@ class Engine {
   particles: Particle[] = [];
   /** gelombang "denyut" yang sedang aktif (lihat Pulse) */
   pulses: Pulse[] = [];
+  /** Pickup burst (roti/NOS/huruf): ring + flash + partikel emas + teks reward. */
+  bursts: {
+    x: number; y: number; z: number; t: number; max: number; reward: boolean;
+    parts: { px: number; py: number; pz: number; vx: number; vy: number; vz: number; size: number; rot: number; spin: number; hue: number; star: boolean }[];
+  }[] = [];
+  /** Ragdoll saat mendarat: roll/tumble visual (dibaca Player.tsx). */
+  landRollT = 99;
+  landRollDir = 1;
+  landRollFull = false;
+  landRollAmp = 0.5;
+  /** Trail skate ikut mengecil ke 0 setelah trik gagal (SKETCHY) sampai mendarat normal lagi. */
+  trailDown = false;
+  /** Kilau bintang (sparkle) saat ambil item: seperti efek pickup Subway Surfers. */
+  sparkles: { x: number; y: number; z: number; t: number; max: number; size: number; rot: number; hue: number }[] = [];
   reserved: { lane: number; from: number; until: number }[] = [];
   listVersion = 0;
   moverVersion = 0;
@@ -939,6 +954,8 @@ class Engine {
   private shibuyaAnimalRosterIndex = 0;
   private shibuyaPedestrianIndex = 0;
   private shibuyaMotoIndex = 0;
+  /** kantong trik rel: semua trik kebagian giliran sebelum ada yang diulang */
+  private railDeck = new RailTrickDeck();
 
   player = {
     lane: 1,
@@ -961,6 +978,8 @@ class Engine {
     tricksThisAir: 0,
     bigAir: false,
     grindPts: 0,
+    /** trik rel yang sedang dijalankan otomatis saat grind (null jika tidak grind rel) */
+    railTrick: null as RailTrickDef | null,
     squash: 0,
     latVel: 0,
     latAcc: 0,
@@ -995,6 +1014,16 @@ class Engine {
     trickPitch: 0,
     /** kanal trick BARU: hidung papan naik/turun INDEPENDEN dari badan (wrap/rocket/pressure) */
     boardPitch: 0,
+    /** pose papan saat trik rel (dihaluskan): yaw / pitch / roll relatif rel */
+    railYaw: 0,
+    railPitch: 0,
+    railRoll: 0,
+    railCrouch: 0,
+    railBodyYaw: 0,
+    railLean: 0,
+    railBodyRoll: 0,
+    /** skor live grind rel (float, sebelum dibulatkan) */
+    grindLive: 0,
     wing: 0,
     crashVx: 0,
     crashVy: 0,
@@ -1098,6 +1127,7 @@ class Engine {
     this.shibuyaAnimalRosterIndex = 0;
     this.shibuyaPedestrianIndex = 0;
     this.shibuyaMotoIndex = 0;
+    this.railDeck.reset();
     const p = this.player;
     p.lane = 1;
     p.targetLane = 1;
@@ -1119,6 +1149,7 @@ class Engine {
     p.tricksThisAir = 0;
     p.bigAir = false;
     p.grindPts = 0;
+    p.railTrick = null;
     p.squash = 0;
     p.latVel = 0;
     p.latAcc = 0;
@@ -1150,6 +1181,10 @@ class Engine {
     this.slowMo = 1;
     this.punch = 0;
     this.pulses = [];
+    this.sparkles = [];
+    this.bursts = [];
+    this.landRollT = 99;
+    this.trailDown = false;
     this.downhillFlag = false;
     while (this.nextChunkS < this.distance + 90) this.spawnChunk();
     this.seedShibuyaAnimalRoster();
@@ -1324,6 +1359,9 @@ class Engine {
       case "double":
         if (airborne) this.tryTrick("double");
         break;
+      case "salto":
+        if (airborne) this.tryTrick("tapUp");
+        break;
       case "holdStart":
         this.holdT = 0;
         break;
@@ -1467,7 +1505,7 @@ class Engine {
   }
 
   /** Pick the enabled trick bound to this input (big-air variants take priority off a ramp). */
-  private tryTrick(input: "tap" | "swipeL" | "swipeR" | "swipeUp" | "swipeDown" | "double" | "hold"): boolean {
+  private tryTrick(input: "tap" | "swipeL" | "swipeR" | "swipeUp" | "swipeDown" | "double" | "hold" | "tapUp"): boolean {
     const p = this.player;
     if (p.trick) return false;
     const on = useUI.getState().tricksOn;
@@ -1481,6 +1519,11 @@ class Engine {
       if (kf && hf) pickT = TRICK_MAP[this.flipToggle ? "heelflip" : "kickflip"];
       else pickT = TRICK_MAP[kf ? "kickflip" : "heelflip"];
     }
+    if (pickT.kind === "salto") {
+      // salto acak: depan atau belakang (50:50)
+      this.startTrick("salto", pickT.dur, Math.random() < 0.5 ? 1 : -1);
+      return true;
+    }
     if (pickT.kind === "coo540" && input === "swipeR") this.startTrick("coo540", pickT.dur, -1);
     else this.startTrick(pickT.kind, pickT.dur);
     return true;
@@ -1488,6 +1531,8 @@ class Engine {
 
   private jump(v = JUMP_V) {
     const p = this.player;
+    // debu kubus kecil saat skateboard lepas dari tanah / rel
+    if (p.grounded || p.grinding) this.emit("dust", 0, p.h + 0.03, p.lat, 7);
     if (p.grinding) {
       if (p.subwayMover) this.endSubwayGrind();
       else if (p.carMover || p.carObstacle) this.endCarGrind();
@@ -1500,6 +1545,7 @@ class Engine {
     // Vertical jump height is independent of speed mode; 2×/3× only changes forward travel speed.
     p.vh = v;
     p.airT = 0;
+    p.squash = -0.34; // juicy: badan memanjang kuat saat lepas tanah (stretch)
     sfx.jump();
   }
 
@@ -1526,7 +1572,7 @@ class Engine {
     this.trickDir = dir;
     if (kind === "wingflap") sfx.whoosh();
   }
-  private trickDir = 1;
+  trickDir = 1;
 
   private completeTrick() {
     const p = this.player;
@@ -1537,6 +1583,14 @@ class Engine {
     p.trickRoll = 0;
     p.trickPitch = 0;
     p.boardPitch = 0;
+    p.railYaw = 0;
+    p.railPitch = 0;
+    p.railRoll = 0;
+    p.railCrouch = 0;
+    p.railBodyYaw = 0;
+    p.railLean = 0;
+    p.railBodyRoll = 0;
+    p.grindLive = 0;
     if (this.phase !== "playing") return;
     const info = TRICK_INFO[tr.kind];
     p.tricksThisAir++;
@@ -1584,6 +1638,9 @@ class Engine {
     p.h = this.railHeightAt(rail, this.distance);
     p.vh = 0;
     p.grindPts = 0;
+    // TRIK REL OTOMATIS: setiap mendarat di rel, jalankan trik acak yang berbeda dari sebelumnya
+    p.railTrick = this.railDeck.next();
+    p.grindLive = 0;
     // Lock-on: sekajarkan badan dengan garis tengah rel (magnet menarik pemain tepat ke atas rel,
     // termasuk rel ULAR yang sedang meliku di posisi pemain).
     p.lat = this.railLat(rail, this.distance);
@@ -1592,6 +1649,10 @@ class Engine {
       this.completeTrick();
     }
     useUI.getState().addPopup("GRIND!", "#ff9f1c");
+    if (p.railTrick) useUI.getState().addPopup(p.railTrick.name, p.railTrick.color, p.railTrick.desc);
+    // kilatan singkat saat pertama kali menyentuh rel + debu saat mendarat di rel
+    this.emit("flash", 0, p.h, p.lat, 7);
+    this.emit("dust", 0, p.h + 0.03, p.lat, 5);
     sfx.grind();
   }
 
@@ -1601,11 +1662,16 @@ class Engine {
     p.grinding = false;
     p.rail = null;
     p.railGrace = 0.3;
-    const base = Math.max(10, Math.round(p.grindPts / 10) * 10);
+    const trick = p.railTrick;
+    p.railTrick = null;
     p.tricksThisAir++;
-    const pts = base * p.tricksThisAir;
-    this.trickScore += pts;
-    useUI.getState().addPopup(`GRIND +${pts}`, "#ff9f1c", p.tricksThisAir > 1 ? `COMBO x${p.tricksThisAir}` : undefined);
+    // poin dasar sudah masuk live selama grind; di sini hanya bonus trik (x combo)
+    const bonus = (trick ? trick.pts : 0) * p.tricksThisAir;
+    this.trickScore += bonus;
+    const pts = Math.floor(p.grindLive) + bonus;
+    p.grindLive = 0;
+    const label = trick ? `${trick.short} +${bonus} · GRIND +${pts}` : `GRIND +${pts}`;
+    useUI.getState().addPopup(label, trick ? trick.color : "#ff9f1c", p.tricksThisAir > 1 ? `COMBO x${p.tricksThisAir}` : undefined);
     sfx.trick();
   }
 
@@ -1671,7 +1737,7 @@ class Engine {
     p.bigAir = false;
     p.h = SUBWAY_ROOF_H;
     p.vh = 0;
-    p.squash = 0.55; // Pendaratan empuk dengan kompresi suspensi skateboard yang memuaskan
+    p.squash = 1.0; // Pendaratan empuk: kompresi kuat (juicy)
     p.grindPts = 0;
     if (p.trick) {
       p.trick.t = p.trick.dur;
@@ -1712,14 +1778,24 @@ class Engine {
 
   private land() {
     const p = this.player;
+    const impact = -p.vh;
+    if (impact > 2) {
+      // ragdoll style: terguling saat mendarat keras (full roll), tapi ringan untuk pendaratan kecil
+      this.landRollT = 0;
+      this.landRollDir = Math.random() < 0.5 ? 1 : -1;
+      this.landRollFull = impact >= 8;
+      this.landRollAmp = Math.min(1, impact / 10);
+    }
     p.grounded = true;
     p.vh = 0;
     p.squash = 1;
     p.subwayLastId = null;
+    this.trailDown = false;
     if (p.trick) {
       const tr = p.trick;
       const prog = tr.t / tr.dur;
       if (prog < 0.72) {
+        this.trailDown = true; // gagal atraksi: trail mengecil ke 0
         p.trick = null;
         p.flip = 0;
         if (this.phase === "playing") {
@@ -2175,12 +2251,32 @@ class Engine {
       } else {
         p.h = this.railHeightAt(r, d);
         p.grindPts += dt * 100;
+        // skor naik LIVE selama grind: 10 poin/detik x combo
+        const before = Math.floor(p.grindLive);
+        p.grindLive += dt * 10 * (p.tricksThisAir + 1);
+        this.trickScore += Math.floor(p.grindLive) - before;
         this.sparkT += dt;
-        if (this.sparkT > 0.05) {
+        if (this.sparkT > 0.03) {
           this.sparkT = 0;
-          this.emit("spark", -0.5, p.h - 0.05, p.lat, 2);
+          const rl = this.railLat(r, d);
+          // percikan dari kedua truck yang bergesekan dengan rel
+          this.emit("spark", 0.35, p.h - 0.03, rl, 3);
+          this.emit("spark", -0.35, p.h - 0.03, rl, 3);
         }
       }
+    }
+
+    // POSE TRIK REL: papan menyesuaikan gaya trik yang sedang dijalankan, dihaluskan dari pose sebelumnya
+    {
+      const target = p.grinding && p.rail && p.railTrick ? RAIL_POSE[p.railTrick.kind] : RAIL_POSE_NONE;
+      const k = 1 - Math.exp(-dt * 9);
+      p.railYaw += (target.yaw - p.railYaw) * k;
+      p.railPitch += (target.pitch - p.railPitch) * k;
+      p.railRoll += (target.roll - p.railRoll) * k;
+      p.railCrouch += ((p.grinding && p.rail ? target.crouch : 0) - p.railCrouch) * k;
+      p.railBodyYaw += (target.bodyYaw - p.railBodyYaw) * k;
+      p.railLean += (target.lean - p.railLean) * k;
+      p.railBodyRoll += (target.bodyRoll - p.railBodyRoll) * k;
     }
 
     if (p.grinding && p.carMover) {
@@ -2377,6 +2473,10 @@ class Engine {
           break;
         case "heelflip":
           flip = -e * Math.PI * 2;
+          break;
+        case "salto":
+          // papan tetap freestyle: ikut berputar (kickflip-style) searah salto
+          flip = this.trickDir * e * Math.PI * 2;
           break;
         case "spinL":
           yaw = e * Math.PI * 2;
@@ -2594,7 +2694,7 @@ class Engine {
     p.airShift = lerp(p.airShift, shiftTarget, 1 - Math.exp(-dt * (shiftTarget > p.airShift ? 16 : 6)));
     const wingTarget = !p.grounded && !p.grinding ? 1 : 0;
     p.wing = lerp(p.wing, wingTarget, 1 - Math.exp(-dt * 14));
-    p.squash = Math.max(0, p.squash - dt * 5);
+    p.squash = p.squash > 0 ? Math.max(0, p.squash - dt * 5) : Math.min(0, p.squash + dt * 5);
     this.updatePush(dt);
 
     // GRIND DODGE: gerak samping kinematik selama lompat keluar dari rel
@@ -2812,7 +2912,7 @@ class Engine {
       if (Math.abs(c.s - d) > 0.9 || Math.abs(LANE_LAT[c.lane] - p.lat) > 1.0 || p.h > 1.6) continue;
       c.taken = true;
       this.addNos(NOS_MAX * 0.5);
-      this.emitWorld("spark", c.wx, c.wy + 0.4, c.wz, c.wy, 10, 0, 0);
+      this.spawnBurst(c.wx, c.wy + 0.4, c.wz, false);
       sfx.nosPickup();
     }
 
@@ -2857,6 +2957,8 @@ class Engine {
       this.breadFx.push({ rel: b.s - d, lat: LANE_LAT[b.lane], h: b.h, age: 0 });
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
+      this.spawnBurst(b.wx, b.wy + 0.2, b.wz, false);
+      this.trickScore += 10;
       sfx.bread();
     }
   }
@@ -3756,6 +3858,8 @@ class Engine {
             this.breadFx.push({ rel: breadS - d, lat: LANE_LAT[st.lane], h: SUBWAY_ROOF_H + 0.35, age: 0 });
             if (this.breadFx.length > 8) this.breadFx.shift();
             this.emitWorld("crumb", tmpV.x, tmpV.y, tmpV.z, tmpV.y - 0.5, 5, 0, 0);
+            this.spawnBurst(tmpV.x, tmpV.y, tmpV.z, false);
+            this.trickScore += 10;
             sfx.bread();
           }
         }
@@ -5747,7 +5851,7 @@ class Engine {
           ["wall", 1 + 2 * t],
           ["zigzag", 0.4 + 2.5 * t],
           ["ramp", 2.2],
-          ["rail", 2.2],
+          ["rail", 5.2], // rel dibuat jauh lebih sering di jalan (sebelumnya 2.2)
           ["bread", 1.6],
           ["oncoming", track.mode === "haruna" ? 3.2 + 2.4 * t : 10 + 4 * t],
           ["motorcycles", (track.mode === "shibuya" ? 6.5 : 2.5) + 1.2 * t],
@@ -5898,7 +6002,10 @@ class Engine {
         break;
       }
       case "rail": {
-        const candidateLanes = [0, 1, 2].filter((l) => !this.isNearCollectibleItem(x, l, 22, 20));
+        // lajur yang sedang dipakai bus (koridor reserved) dilewati; rel tetap dipasang di lajur lain
+        const candidateLanes = [0, 1, 2].filter(
+          (l) => !this.isNearCollectibleItem(x, l, 22, 20) && !this.laneReserved(l, x),
+        );
         const lane = candidateLanes.length > 0 ? pick(candidateLanes) : -1;
         if (lane >= 0) {
           const weights = [3, 2 + 2 * t, 1 + 3 * t, 0.5 + 3 * t];
@@ -5916,9 +6023,10 @@ class Engine {
           // terbaca; di dalam terowongan rel tetap yang biasa ( ruang terbatas).
           const roll = Math.random();
           let variant = 0;
-          if (!inTunnel && L >= 18 && roll < 0.3) variant = 1;
-          else if (!inTunnel && L >= 12 && roll < 0.52) variant = WAVE_VARIANT;
-          else if (!inTunnel && L >= 18 && roll < 0.66) variant = COASTER_VARIANT;
+          // rel ULAR & ROLLERCOASTER dibuat lebih sering (datar/kinked jadi minoritas)
+          if (!inTunnel && L >= 18 && roll < 0.12) variant = 1;
+          else if (!inTunnel && L >= 12 && roll < 0.42) variant = WAVE_VARIANT;
+          else if (!inTunnel && L >= 18 && roll < 0.72) variant = COASTER_VARIANT;
           this.addObstacle("rail", cx, lane, false, half, variant);
           if (L >= 12 && t > 0.3 && Math.random() < 0.6) {
             const l2 = this.otherLane([lane]);
@@ -6107,6 +6215,9 @@ class Engine {
   }
 
   private cull() {
+    // Saat jatuh (crashed) & layar game over, dunia dibiarkan utuh: potongan jalan yang masih
+    // terlihat kamera tidak boleh dihapus, supaya tempat jatuh tidak tiba-tiba kosong.
+    if (this.phase === "crashed" || this.phase === "gameover") return;
     const d = this.distance;
     let changed = false;
     if (this.chunks.length && this.chunks[0].s0 + CHUNK_LEN < d - 20) {
@@ -6299,6 +6410,7 @@ class Engine {
     this.spawnPulse(r.wx, r.wy + 0.5, r.wz, { max: 0.55, r0: 0.6, r1: 4.2, color: [rgb[0], rgb[1], rgb[2]] });
     this.emitWorld("pow", r.wx, r.wy + 0.6, r.wz, r.wy, 14, 0, 0);
     this.emitWorld("spark", r.wx, r.wy + 0.5, r.wz, r.wy, 18, 0, 0);
+    this.spawnSparkle(r.wx, r.wy + 0.5, r.wz);
     useUI.getState().addPopup(reward.title, r.kind === "diamond" ? "#4fd8ff" : "#ffc93c", reward.sub);
     sfx.rare();
   }
@@ -6324,12 +6436,77 @@ class Engine {
       this.addNos(15);
       this.spawnPulse(l.wx, l.wy + 0.6, l.wz, { max: 0.45, r0: 0.4, r1: 2.2, color: [1, 0.85, 0.2] });
       this.emitWorld("pow", l.wx, l.wy + 0.6, l.wz, l.wy, 12, 0, 0);
-      this.emitWorld("spark", l.wx, l.wy + 0.5, l.wz, l.wy, 14, 0, 0);
+      this.spawnBurst(l.wx, l.wy + 0.5, l.wz, false);
       useUI.getState().addPopup(`HURUF [${l.char}]! 🔤`, "#ffd21f", `SISA ${res.remaining} HURUF LAGI`);
     }
   }
 
+  /** Spawn pickup burst. reward=true menampilkan teks +10 (sesuai skor roti). */
+  spawnBurst(x: number, y: number, z: number, reward: boolean) {
+    const reduce = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const parts: { px: number; py: number; pz: number; vx: number; vy: number; vz: number; size: number; rot: number; spin: number; hue: number; star: boolean }[] = [];
+    const n = reduce ? 0 : 16;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.0 + Math.random() * 1.1;
+      parts.push({
+        px: 0, py: 0, pz: 0,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp * 0.6 + 0.9 + Math.random() * 0.4,
+        vz: (Math.random() - 0.5) * 0.5,
+        size: 0.07 + Math.random() * 0.09,
+        rot: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 3,
+        hue: Math.random(),
+        star: i % 2 === 0,
+      });
+    }
+    this.bursts.push({ x, y, z, t: 0, max: 0.9, reward, parts });
+    if (this.bursts.length > 6) this.bursts.splice(0, this.bursts.length - 6);
+  }
+
+  /** Spawn ledakan sparkle bintang berkilau di titik pickup. */
+  spawnSparkle(x: number, y: number, z: number) {
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = i === 0 ? 0 : 0.25 + Math.random() * 0.35;
+      this.sparkles.push({
+        x: x + Math.cos(a) * r,
+        y: y + Math.sin(a) * r * 0.8,
+        z,
+        t: -Math.random() * 0.06,
+        max: 0.4 + Math.random() * 0.25,
+        size: i === 0 ? 1.1 : 0.4 + Math.random() * 0.45,
+        rot: Math.random() * Math.PI,
+        hue: Math.random(),
+      });
+    }
+    if (this.sparkles.length > 40) this.sparkles.splice(0, this.sparkles.length - 40);
+  }
+
   private updatePulses(dt: number) {
+    this.landRollT += dt;
+    for (let i = this.bursts.length - 1; i >= 0; i--) {
+      const bu = this.bursts[i];
+      bu.t += dt;
+      const dr = Math.exp(-2.6 * dt); // drag lembut
+      for (const p of bu.parts) {
+        p.px += p.vx * dt;
+        p.py += p.vy * dt;
+        p.pz += p.vz * dt;
+        p.vy -= 2.2 * dt; // gravitasi ringan
+        p.vx *= dr;
+        p.vy *= dr;
+        p.vz *= dr;
+      }
+      if (bu.t >= bu.max) this.bursts.splice(i, 1);
+    }
+    for (let i = this.sparkles.length - 1; i >= 0; i--) {
+      const s = this.sparkles[i];
+      s.t += dt;
+      if (s.t >= s.max) this.sparkles.splice(i, 1);
+    }
     for (let i = this.pulses.length - 1; i >= 0; i--) {
       const q = this.pulses[i];
       q.t += dt;
@@ -6364,14 +6541,14 @@ class Engine {
   }
 
   /* ---------- Particles ---------- */
-  emit(kind: "feather" | "crumb" | "spark" | "dust" | "splash" | "pow", ds: number, h: number, lat: number, n: number) {
+  emit(kind: "feather" | "crumb" | "spark" | "dust" | "splash" | "pow" | "flash", ds: number, h: number, lat: number, n: number) {
     const c = track.sample(this.distance + ds, tmpS);
     const x = c.x - Math.sin(c.th) * lat;
     const z = c.z + Math.cos(c.th) * lat;
     this.emitWorld(kind, x, c.y + h, z, c.y + 0.02, n, Math.cos(c.th), Math.sin(c.th));
   }
 
-  emitWorld(kind: "feather" | "crumb" | "spark" | "dust" | "splash" | "pow" | "smoke", x: number, y: number, z: number, floor: number, n: number, tx: number, tz: number) {
+  emitWorld(kind: "feather" | "crumb" | "spark" | "dust" | "splash" | "pow" | "smoke" | "flash", x: number, y: number, z: number, floor: number, n: number, tx: number, tz: number) {
     for (let i = 0; i < n; i++) {
       let pt: Particle;
       if (kind === "smoke") {
@@ -6420,6 +6597,14 @@ class Engine {
           vx: -tx * rand(1, 3) + rand(-0.5, 0.5), vy: rand(2.5, 5), vz: -tz * rand(1, 3) + side * rand(1.5, 3.5),
           life: 0, max: rand(0.3, 0.5), size: rand(0.08, 0.16), r: 0.55, g: 0.75, b: 0.95,
           rx: 0, ry: 0, spin: rand(-4, 4), gravity: 18, floor,
+        };
+      } else if (kind === "flash") {
+        // kilatan putih-kekuningan singkat yang langsung mengecil dan hilang
+        pt = {
+          x: x + rand(-0.12, 0.12), y: y + rand(-0.02, 0.06), z: z + rand(-0.12, 0.12),
+          vx: rand(-0.8, 0.8), vy: rand(0, 0.7), vz: rand(-0.8, 0.8),
+          life: 0, max: rand(0.1, 0.16), size: rand(0.38, 0.5), r: 1, g: 0.97, b: 0.78,
+          rx: rand(0, 6), ry: rand(0, 6), spin: 0, gravity: 0, floor,
         };
       } else if (kind === "spark") {
         const back = rand(2, 6);

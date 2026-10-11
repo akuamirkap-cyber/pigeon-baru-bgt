@@ -298,8 +298,8 @@ import { BUDDY_SKIN_OPTIONS, VOXEL_BOARD_IDS, getBuddyBoardParts } from "./buddi
 export const SKINS: Skin[] = [
   {
     id: "classic", name: "Classic Coo", tagline: "The original street bird", cost: 0,
-    body: "#C9C4BE", belly: "#A8A29B", head: "#F2EEEA", neck1: "#6BC4B4", neck2: "#6BC4B4",
-    wing: "#C9C4BE", wingTip: "#6E6862", tail: "#A8A29B", tailTip: "#6E6862", beak: "#F08A8A", cere: "#E8A0A8", feet: ORANGE,
+    body: "#C9C4BE", belly: "#A8A29B", head: "#6D70A5", neck1: "#6BC4B4", neck2: "#6BC4B4",
+    wing: "#C9C4BE", wingTip: "#6E6862", tail: "#A8A29B", tailTip: "#6D70A5", beak: "#6E6862", cere: "#6E6862", feet: ORANGE,
     deck: "#2ec4b6", wheels: "#fff1d6",
   },
   {
@@ -485,7 +485,7 @@ export function pigeonBodyParts(k: Skin): Part[] {
     // gradasi bawah badan lebih gelap dari Voxel Buddies Pigeon (menempel pas di atas pinggul kaki HIP_Y = 0.3)
     { x: 0.04, y: 0.36, z: 0, w: 0.75, h: 0.12, d: 0.61, color: k.belly ?? k.tail },
     // LEHER teal (cincin leher antara badan & kepala dari Voxel Buddies Pigeon, berdiri jelas di atas badan)
-    { x: 0.22, y: 0.90, z: 0, w: 0.40, h: 0.20, d: 0.40, color: k.neck1 },
+    { x: 0.22, y: 0.8965, z: 0, w: 0.40, h: 0.153, d: 0.40, color: k.neck1 }, // leher dipendekkan (15% lagi)
   ];
 
   if (k.accessory === "mailbag") {
@@ -655,6 +655,8 @@ export function pigeonHeadParts(k: Skin): Part[] {
     { x: 0.32, y: 0.19, z: 0, w: 0.24, h: 0.12, d: 0.20, color: k.beak },
     // tingkat bawah (paruh bawah)
     { x: 0.26, y: 0.11, z: 0, w: 0.14, h: 0.06, d: 0.14, color: k.cere ?? k.beak },
+    // kotak putih 1 di atas paruh (sesuai permintaan)
+    { x: 0.25, y: 0.29, z: 0, w: 0.08, h: 0.08, d: 0.08, color: "#ffffff" },
     ...hatParts(k),
   ];
 }
@@ -669,7 +671,7 @@ export function wingParts(k: Skin, side: 1 | -1): Part[] {
     { x: -0.12, y: -0.04, z: z + 0.015 * side, w: 0.22, h: 0.26, d: 0.09, color: k.neck1 },
     // Ujung gelap bertingkat ke belakang (dark)
     { x: -0.32, y: -0.08, z, w: 0.18, h: 0.30, d: 0.09, color: k.wingTip },
-    { x: -0.41, y: 0.02, z, w: 0.16, h: 0.18, d: 0.09, color: k.tailTip ?? k.wingTip },
+    { x: -0.41, y: 0.02, z, w: 0.16, h: 0.18, d: 0.09, color: k.wingTip },
   ];
 }
 

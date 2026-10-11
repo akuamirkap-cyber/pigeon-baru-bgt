@@ -570,9 +570,9 @@ export function breadParts(): Part[] {
     { x: -0.16, y: 0.58, z: 0, w: 0.14, h: 0.12, d: 0.25, color: crumb },
     { x: 0.16, y: 0.58, z: 0, w: 0.14, h: 0.12, d: 0.25, color: crumb },
     // garis crumb terang, menonjol lagi 0.01 dari crumb utama
-    { x: 0, y: 0.15, z: 0, w: 0.38, h: 0.06, d: 0.26, color: crumb2 },
+    { x: 0, y: 0.15, z: 0, w: 0.38, h: 0.06, d: 0.26, color: crumb2, glow: true },
     // mentega menempel di muka depan
-    { x: 0.03, y: 0.55, z: 0.14, w: 0.2, h: 0.12, d: 0.07, color: "#ffe066" },
+    { x: 0.03, y: 0.55, z: 0.14, w: 0.2, h: 0.12, d: 0.07, color: "#ffe066", glow: true },
     { x: 0.05, y: 0.585, z: 0.165, w: 0.1, h: 0.06, d: 0.05, color: "#fff3b0" },
   ];
 }

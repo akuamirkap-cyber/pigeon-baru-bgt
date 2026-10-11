@@ -7,6 +7,10 @@ import { evaluate, markAllSeen, unseenCount, getAch } from "./achievements";
 export type Phase = "menu" | "playing" | "crashed" | "gameover";
 export type TurnMode = "old" | "new";
 export type TrackMode = "tokyo" | "haruna" | "shibuya";
+export type SwipeSens = "cepat" | "normal" | "presisi";
+/** jarak geser (px) minimal untuk dianggap pindah jalur, per preset */
+export const SWIPE_PX_BY_PRESET: Record<SwipeSens, number> = { cepat: 8, normal: 15, presisi: 28 };
+export const SWIPE_SENS_LABEL: Record<SwipeSens, string> = { cepat: "CEPAT", normal: "NORMAL", presisi: "PRESISI" };
 export type CameraMode = "chase" | "crossy";
 export type MenuView = "main" | "skins" | "tricks" | "exit" | "bye";
 /** Warna ban skateboard: default HITAM, bisa diganti merah/hijau/kuning/biru (atau ikut warna skin). */
@@ -112,6 +116,9 @@ interface UIState {
   /** cuaca mode siang: cerah / berawan indah */
   weather: "sunny" | "cloudy" | "snow";
   toggleWeather: () => void;
+  /** preset sensitivitas geser pindah jalur: cepat = geser pendek cukup, presisi = geser harus lebih panjang */
+  swipeSens: SwipeSens;
+  cycleSwipeSens: () => void;
   /** kecerahan lampu malam: 0 = redup, 1 = pas, 2 = terang */
   nightBright: 0 | 1 | 2;
   cycleNightBright: () => void;
@@ -371,6 +378,16 @@ export const useUI = create<UIState>((set, get) => ({
   resetBuddyScale: () => {
     save("pigeon-sk8-buddy-scale", { scale: BUDDY_SCALE_DEFAULT });
     set({ buddyScale: BUDDY_SCALE_DEFAULT });
+  },
+  swipeSens: ((): SwipeSens => {
+    const s = load<string>("pigeon-sk8-swipe-sens", "normal");
+    return s === "cepat" || s === "presisi" ? s : "normal";
+  })(),
+  cycleSwipeSens: () => {
+    const cur = get().swipeSens;
+    const next: SwipeSens = cur === "normal" ? "cepat" : cur === "cepat" ? "presisi" : "normal";
+    save("pigeon-sk8-swipe-sens", next);
+    set({ swipeSens: next });
   },
   weather: ((): "sunny" | "cloudy" | "snow" => {
     const w = load<string>("pigeon-sk8-weather", "sunny");
