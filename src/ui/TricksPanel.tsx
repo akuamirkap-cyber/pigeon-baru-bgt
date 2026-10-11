@@ -121,9 +121,10 @@ export function TricksPanel() {
             Tips: tombol S ungu (atau keyboard S) memainkan semua trick aktif berurutan — di darat dia ollie dulu, di udara lanjut trick berikutnya, jadi bisa chain 2–3 per lompatan. Gerakan swipe tetap jalan. Mendarat sebelum animasi selesai = SKETCHY!
           </div>
           <div className="mt-1 rounded-2xl bg-[#0b3a52]/85 px-3 py-2 font-body text-[3cqw] font-bold leading-snug text-white/85">
-            🚀 ROKET: tekan <span className="text-[#65d6ff]">R</span> (atau N) untuk menyalakan roket begitu meter NOS terisi
-            minimal 35% — roket otomatis menempel di punggung, pemain terbang 3 meter di atas aspal sambil asap pelangi
-            menyembur, dan skate dikempit di tangan kanan. Tangki penuh = terbang paling lama.
+            🚀 ROKET: tekan <span className="text-[#65d6ff]">R</span> untuk menyalakan roket (butuh isi NOS ≥ 35%), atau tekan{" "}
+            <span className="text-[#ffd60a]">N</span> untuk mengisi tangki NOS otomatis PENUH lalu roket langsung menyala.
+            Roket menempel di punggung, pemain terbang 3 meter di atas aspal, asap pelangi menyembur deras, dan skate
+            dikempit di tangan kanan.
           </div>
         </div>
       </div>

@@ -174,7 +174,7 @@ export const NOS_SPEED_MULT = 1.75;
 export const ROCKET_NOZZLE_BACK = 0.12;
 export const ROCKET_NOZZLE_H = 0.64;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
-const ROCKET_SMOKE_MAX = 170;
+const ROCKET_SMOKE_MAX = 360;
 
 /** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
 export const ROCKET_FLY_H = 3;
@@ -812,7 +812,7 @@ export interface Pulse {
   cb: number;
 }
 
-export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
+export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "nosFull" | "boost" | "cycle";
 
 const TRICK_INFO = TRICK_MAP;
 
@@ -1425,6 +1425,10 @@ class Engine {
       case "nos":
         this.fireNos();
         break;
+      case "nosFull":
+        // TOMBOL N: isi tangki NOS otomatis PENUH lalu roket langsung menyala
+        this.fireNosFull();
+        break;
       case "boost":
         this.boost();
         break;
@@ -1569,6 +1573,18 @@ class Engine {
     this.rocketSmokeBurst();
     useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m di atas aspal!");
     sfx.nos();
+  }
+
+  /**
+   * TOMBOL N: isi NOS otomatis penuh, lalu roket langsung menyala (request pemain).
+   * Jadi tidak perlu lagi ngumpulin roti dulu — pencet N, tangki penuh, terbang 3 m.
+   */
+  fireNosFull() {
+    if (this.phase !== "playing") return;
+    if (this.nosT > 0) return; // roket sedang menyala
+    this.nos = NOS_MAX;
+    useUI.getState().addPopup("NOS PENUH! ⛽", "#65d6ff", "roket siap · terbang 3 m 🚀");
+    this.fireNos();
   }
 
   addNos(v: number) {
@@ -6908,21 +6924,21 @@ class Engine {
     const fz = Math.sin(c.th);
     const lx = -Math.sin(c.th); // sumbu menyamping (lat)
     const lz = Math.cos(c.th);
-    for (let i = 0; i < 36; i++) {
-      const a = (i / 36) * Math.PI * 2 + rand(-0.22, 0.22);
-      const sp = rand(2.2, 6.4);
-      const outX = lx * Math.cos(a) + 0 * Math.sin(a);
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2 + rand(-0.18, 0.18);
+      const sp = rand(2.4, 7.2);
+      const outX = lx * Math.cos(a);
       const outZ = lz * Math.cos(a);
       this.rocketSmoke.push({
-        x: x + rand(-0.1, 0.1), y: y + rand(-0.1, 0.1), z: z + rand(-0.1, 0.1),
+        x: x + rand(-0.12, 0.12), y: y + rand(-0.12, 0.12), z: z + rand(-0.12, 0.12),
         vx: -fx * rand(1.5, 4.5) + outX * sp,
-        vy: Math.sin(a) * sp * 0.75 + rand(0.2, 1.4),
+        vy: Math.sin(a) * sp * 0.75 + rand(0.2, 1.6),
         vz: -fz * rand(1.5, 4.5) + outZ * sp,
-        life: 0, max: rand(0.55, 1.15), size: rand(0.22, 0.42), grow: rand(1.5, 2.6),
-        hue: (i / 36) * 0.999, rot: rand(0, 6.28), spin: rand(-3, 3), spark: false,
+        life: 0, max: rand(0.7, 1.5), size: rand(0.34, 0.6), grow: rand(1.8, 3.0),
+        hue: (i / 72) * 0.999, rot: rand(0, 6.28), spin: rand(-3, 3), spark: false,
       });
     }
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 40; i++) {
       const a = rand(0, Math.PI * 2);
       const sp = rand(4, 11);
       this.rocketSmoke.push({
@@ -6952,32 +6968,41 @@ class Engine {
     const fz = Math.sin(c.th);
     const lx = -Math.sin(c.th);
     const lz = Math.cos(c.th);
-    this.rocketSmokeHue = (this.rocketSmokeHue + dt * 0.55) % 1;
-    // puff besar: ~45/detik, umur ~0.9 s -> jejak asap panjang yang mengembang
+    // Asap gaya Subway Surfers: tiap semburan keluar 3 gumpalan — satu di tengah, dua
+    // melebar kiri-kanan — jadi membentuk KIPAS PELANGI yang lebar, tebal, dan panjang.
     this.rocketSmokeT -= dt;
-    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 8; guard++) {
-      this.rocketSmokeT += 0.022;
-      const hue = (this.rocketSmokeHue + rand(-0.06, 0.06) + 1) % 1;
-      this.rocketSmoke.push({
-        x: x + rand(-0.08, 0.08), y: y + rand(-0.08, 0.08), z: z + rand(-0.08, 0.08),
-        vx: -fx * rand(1.6, 3.6) + lx * rand(-0.9, 0.9),
-        vy: rand(0.1, 0.9),
-        vz: -fz * rand(1.6, 3.6) + lz * rand(-0.9, 0.9),
-        life: 0, max: rand(0.6, 1.05), size: rand(0.18, 0.34), grow: rand(1.6, 2.6),
-        hue, rot: rand(0, 6.28), spin: rand(-2.4, 2.4), spark: false,
-      });
+    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 16; guard++) {
+      this.rocketSmokeT += 0.017;
+      for (let k = 0; k < 3; k++) {
+        this.rocketSmokeHue = (this.rocketSmokeHue + 0.0105) % 1;
+        const side = k === 0 ? 0 : k === 1 ? 1 : -1;
+        const spread = side === 0 ? rand(-0.12, 0.12) : side * rand(0.18, 0.52);
+        const fan = side === 0 ? rand(-0.5, 0.5) : side * rand(0.9, 3.1);
+        this.rocketSmoke.push({
+          x: x + lx * spread + rand(-0.06, 0.06),
+          y: y + rand(-0.1, 0.12),
+          z: z + lz * spread + rand(-0.06, 0.06),
+          vx: -fx * rand(1.4, 3.4) + lx * fan,
+          vy: rand(0.15, 1.25),
+          vz: -fz * rand(1.4, 3.4) + lz * fan,
+          life: 0, max: rand(1.1, 1.85), size: rand(0.3, 0.58), grow: rand(1.9, 3.1),
+          hue: (this.rocketSmokeHue + rand(-0.035, 0.035) + 1) % 1,
+          rot: rand(0, 6.28), spin: rand(-2.6, 2.6), spark: false,
+        });
+      }
     }
-    // percikan kecil: ~26/detik, warna pelangi, jatuh ke aspal
+    // percikan kecil warna-warni (~45/detik) menyebar lalu jatuh ke aspal
     this.rocketSparkT -= dt;
-    for (let guard = 0; this.rocketSparkT <= 0 && guard < 6; guard++) {
-      this.rocketSparkT += 0.038;
+    for (let guard = 0; this.rocketSparkT <= 0 && guard < 8; guard++) {
+      this.rocketSparkT += 0.022;
+      this.rocketSmokeHue = (this.rocketSmokeHue + 0.02) % 1;
       this.rocketSmoke.push({
         x, y, z,
-        vx: -fx * rand(3, 8) + lx * rand(-1.6, 1.6),
-        vy: rand(0.6, 3.4),
-        vz: -fz * rand(3, 8) + lz * rand(-1.6, 1.6),
-        life: 0, max: rand(0.3, 0.6), size: rand(0.09, 0.17), grow: 0.4,
-        hue: (this.rocketSmokeHue + rand(-0.12, 0.12) + 1) % 1, rot: rand(0, 6.28), spin: rand(-10, 10), spark: true,
+        vx: -fx * rand(3, 8) + lx * rand(-2.6, 2.6),
+        vy: rand(0.8, 3.8),
+        vz: -fz * rand(3, 8) + lz * rand(-2.6, 2.6),
+        life: 0, max: rand(0.32, 0.62), size: rand(0.1, 0.2), grow: 0.4,
+        hue: (this.rocketSmokeHue + rand(-0.08, 0.08) + 1) % 1, rot: rand(0, 6.28), spin: rand(-10, 10), spark: true,
       });
     }
     if (this.rocketSmoke.length > ROCKET_SMOKE_MAX) {

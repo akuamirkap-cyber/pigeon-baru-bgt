@@ -2131,17 +2131,19 @@ function getPuffTex(): THREE.CanvasTexture {
     c.width = c.height = 128;
     const g = c.getContext("2d")!;
     const blobs: [number, number, number, number][] = [
-      [64, 64, 62, 0.5],
-      [44, 54, 42, 0.5],
-      [86, 60, 40, 0.45],
-      [58, 88, 34, 0.4],
-      [88, 88, 26, 0.34],
-      [36, 80, 26, 0.3],
+      [64, 64, 62, 0.62],
+      [46, 52, 44, 0.6],
+      [86, 58, 42, 0.55],
+      [56, 86, 36, 0.5],
+      [88, 86, 28, 0.44],
+      [38, 78, 28, 0.42],
+      [70, 34, 30, 0.4],
     ];
     for (const [px, py, r, a] of blobs) {
       const grd = g.createRadialGradient(px, py, 0, px, py, r);
       grd.addColorStop(0, `rgba(255,255,255,${a})`);
-      grd.addColorStop(0.55, `rgba(255,255,255,${a * 0.45})`);
+      grd.addColorStop(0.5, `rgba(255,255,255,${a * 0.62})`);
+      grd.addColorStop(0.78, `rgba(255,255,255,${a * 0.22})`);
       grd.addColorStop(1, "rgba(255,255,255,0)");
       g.fillStyle = grd;
       g.beginPath();
@@ -2154,7 +2156,7 @@ function getPuffTex(): THREE.CanvasTexture {
 }
 
 /* ---------- Asap roket NOS warna-warni (Subway Surfers style) ---------- */
-const ROCKET_SMOKE_CAP = 170;
+const ROCKET_SMOKE_CAP = 360;
 const rocketColor = new THREE.Color();
 const rocketObj = new THREE.Object3D();
 
@@ -2203,7 +2205,7 @@ function RocketSmokeFx() {
         rocketObj.updateMatrix();
         sparks.setMatrixAt(si, rocketObj.matrix);
         // kilau pelangi terang (additive: kecerahan = warna)
-        rocketColor.setHSL(s.hue, 0.85, 0.72).multiplyScalar(0.55 + 0.75 * fade);
+        rocketColor.setHSL(s.hue, 0.95, 0.7).multiplyScalar(0.45 + 1.0 * fade);
         sparks.setColorAt(si, rocketColor);
         si++;
       } else {
@@ -2215,8 +2217,8 @@ function RocketSmokeFx() {
         rocketObj.scale.setScalar(Math.max(0.001, sc));
         rocketObj.updateMatrix();
         puffs.setMatrixAt(pi, rocketObj.matrix);
-        // puff pelangi: warna vivid, memudar mulus karena additive
-        rocketColor.setHSL(s.hue, 0.95, 0.6).multiplyScalar(0.42 * fade + 0.06 * (1 - k) * fade + 0.02);
+        // puff pelangi: saturasi penuh, cerah, memudar mulus (additive)
+        rocketColor.setHSL(s.hue, 1, 0.56).multiplyScalar(0.72 * fade + 0.14 * fade * (1 - k) + 0.03);
         puffs.setColorAt(pi, rocketColor);
         pi++;
       }
