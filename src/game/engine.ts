@@ -359,6 +359,13 @@ export interface Decor {
   spec?: BuildingSpec;
   /** placed on the camera side of the road (positive lat) => model is turned to face the road */
   frontSide?: boolean;
+  /** Titik tumbuh decor di koordinat jalan (s = jarak, lat = posisi menyamping) —
+   *  dipakai pejalan kaki trotoar supaya tidak menembus tiang/pohon/vending/pagar. */
+  s?: number;
+  lat?: number;
+  /** Tapak nyata gedung Shibuya (sMin..sMax, latMin..latMax) — pejalan kaki memakai ini
+   *  agar tidak berjalan menembus dinding gedung yang menjorok ke trotoar. */
+  bounds?: { sMin: number; sMax: number; latMin: number; latMax: number };
 }
 
 export interface SubwayTrain {
@@ -4667,7 +4674,7 @@ class Engine {
       const dy = rand(0.02, 0.1);
       const variant = big ? 2 : Math.random() < 0.35 ? 3 : randInt(0, 3);
       const pl = this.place(absS, lat, dy);
-      decor.push({ kind: "snow_drift", pos: pl.pos, rotY: pl.rotY + (Math.random() * 0.5 - 0.25), variant, frontSide: lat > 0 });
+      decor.push({ kind: "snow_drift", pos: pl.pos, rotY: pl.rotY + (Math.random() * 0.5 - 0.25), variant, frontSide: lat > 0, s: absS, lat });
     }
   }
 
@@ -4718,6 +4725,27 @@ class Engine {
       }
     }
     return null;
+  }
+
+  /**
+   * Lat muka gedung yang PALING MAJU (paling dekat jalan) di titik s untuk satu sisi jalan.
+   * Dipakai vending machine supaya mesin menempel dinding yang benar-benar ada di titik itu
+   * (tidak menembus gedung) tapi tetap tidak berdiri di tengah jalur langkah pejalan kaki.
+   * null kalau tidak ada gedung di titik tersebut.
+   */
+  private shibuyaWallLat(absS: number, side: -1 | 1): number | null {
+    let edge: number | null = null;
+    for (const f of this.shibuyaFootprints) {
+      if (absS < f.sMin - 0.4 || absS > f.sMax + 0.4) continue;
+      if (side < 0) {
+        if (f.latMax >= -0.5) continue;
+        edge = edge === null ? f.latMax : Math.max(edge, f.latMax);
+      } else {
+        if (f.latMin <= 0.5) continue;
+        edge = edge === null ? f.latMin : Math.min(edge, f.latMin);
+      }
+    }
+    return edge;
   }
 
   private spawnChunk() {
@@ -4811,7 +4839,10 @@ class Engine {
         spec.assetScale = placement.scale;
       }
       const pl = this.place(placedS, placedLat, dy);
-      decor.push({ kind: k, pos: pl.pos, rotY: pl.rotY, variant, spec, frontSide: placedLat > 0 });
+      decor.push({
+        kind: k, pos: pl.pos, rotY: pl.rotY, variant, spec, frontSide: placedLat > 0,
+        s: placedS, lat: placedLat, bounds: placement ? placement.bounds : undefined,
+      });
       return placement;
     };
 
@@ -4914,6 +4945,27 @@ class Engine {
         ? buildingLat + 4.85   // sisi dekat: trotoar dalam lebar, pengunjung berdiri ~depan toko
         : buildingLat - 1.15;  // sisi seberang: rapat di muka etalase, tetap ATAS trotoar jauh (12.6..16.1)
 
+      // VENDING MACHINE: SELALU DI TEPI KIRI TROTOAR (sisi gedung), bukan di tengah jalur
+      // langkah pejalan kaki. Lat dihitung dari muka gedung nyata di titik itu sehingga
+      // mesin menempel dinding (tidak menembus gedung) dan tetap di tepi luar trotoar.
+      // Trotoar dekat -8.2..-4.0 (gedung mulai <= -6.8) | trotoar jauh 12.6..16.1 (gedung >= 12.75).
+      const placeVending = (lx: number, side: -1 | 1) => {
+        const absS = s0 + lx;
+        const wall = this.shibuyaWallLat(absS, side);
+        const lat = side < 0
+          ? Math.max(-8.2 + 0.5, (wall ?? -99) + 0.62)
+          : Math.min(16.1 - 0.5, (wall ?? 99) - 0.62);
+        // Mesin tidak boleh berdiri di jalur langkah (dekat) / di tepi curb (jauh) —
+        // lebih baik tidak ada mesin daripada mesin menghalangi trotoar.
+        if (side < 0 && lat > -6.45) return null;
+        if (side > 0 && lat < 13.75) return null;
+        return add("vending", lx, lat, 0.12, randInt(0, 3));
+      };
+
+      // PENTING: buildingS di sini adalah S LOKAL chunk (buildingS - s0), sebab add()
+      // menambahkan s0 lagi (absS = s0 + lx). Dulu S absolut dikirim ke sini, jadi
+      // lampu lampion, pelanggan ramen, shopper, vending, dan planter toko mendarat
+      // puluhan meter dari tokonya dan tampak berdiri sendiri di trotoar.
       const addRamenCustomers = (buildingS: number, buildingLat: number) => {
         // The exact Shibuya Blocks Eat rig is rendered by World.tsx. Two customers
         // sit at the frontage; the second one is the streetwear sumo requested by the user.
@@ -4929,7 +4981,7 @@ class Engine {
         const sidewalkLat = frontageSidewalkLat(buildingLat);
         add("shopper", buildingS - 1.05, sidewalkLat, 0.14, 0);
         add("shopper", buildingS + 1.15, sidewalkLat + (buildingLat < 0 ? 0.32 : -0.32), 0.14, 2);
-        add("vending", buildingS - 2.25, sidewalkLat, 0.12, 0);
+        placeVending(buildingS - 2.25, buildingLat < 0 ? -1 : 1);
         add("mamachari", buildingS + 2.15, sidewalkLat, 0.12, 0);
         add("sidewalk_planter", buildingS + 2.65, sidewalkLat, 0.12, 1);
       };
@@ -4947,11 +4999,11 @@ class Engine {
 
       // 1. Near frontage: one exact transferred Shibuya Blocks asset every chunk.
       const nearPlacement = add("building", 6, -10.2, 0.1, 0, makeShibuyaTowerSpec(10.5, undefined, nearBld));
-      if (nearPlacement) addShibuyaShopFrontage(nearBld, nearPlacement.s, nearPlacement.lat);
+      if (nearPlacement) addShibuyaShopFrontage(nearBld, nearPlacement.s - s0, nearPlacement.lat);
 
       // 2. Far frontage: the next exact asset, visible across the full Shibuya avenue.
       const farPlacement = add("building", 6, farLat, -0.14, 0, makeShibuyaTowerSpec(14.0, undefined, farBld));
-      if (farPlacement) addShibuyaShopFrontage(farBld, farPlacement.s, farPlacement.lat);
+      if (farPlacement) addShibuyaShopFrontage(farBld, farPlacement.s - s0, farPlacement.lat);
 
       // 3. A third skyline copy is optional. It is attempted in a reserve row,
       // but the planner skips it when the source diorama cannot fit with a real
@@ -4960,7 +5012,11 @@ class Engine {
       const skylinePlacement = add("building", 6, skylineLat, -0.15, 0, makeShibuyaTowerSpec(16.0, 14, skyBld));
       // The reserve skyline is still a real storefront copy: do not leave a
       // ramen facade without its visible Eat rig (or a konbini without frontage).
-      if (skylinePlacement) addShibuyaShopFrontage(skyBld, skylinePlacement.s, skylinePlacement.lat);
+      if (skylinePlacement) addShibuyaShopFrontage(skyBld, skylinePlacement.s - s0, skylinePlacement.lat);
+
+      // 3b. Vending machine trotoar: menempel tepi kiri trotoar (sisi gedung) di kedua sisi.
+      if (Math.random() < 0.45) placeVending(rand(2.5, 9.5), -1);
+      if (Math.random() < 0.3) placeVending(rand(2.5, 9.5), 1);
 
       // Keep a recognizable standalone house in the route in addition to Machiya and Townhouse.
       // It is placed on the opposite skyline side so it never masks the exact transfer asset.
@@ -4988,12 +5044,14 @@ class Engine {
       if (id % 2 === 0 && !nearCrossing(6.5)) add("avenue_lamp", 6.5, 4.35, 0.16);
 
       // 6. Sidewalk atmosphere: pleasantly spaced out (not packed edge-to-edge)
-      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -5.2, 0.12, randInt(0, 3));
+      // (Vending machine trotoar ditambahkan di blok "etalase" di bawah, setelah gedung
+      //  chunk ini berdiri, supaya tepi kirinya benar-benar menempel muka gedung.)
       if (Math.random() < 0.35) add("neon_sign", rand(2.5, 9.5), -4.8, 0.12, randInt(0, 2));
       if (Math.random() < 0.3) add("mamachari", rand(2.5, 9.5), -4.9, 0.12, randInt(0, 3));
-      if (Math.random() < 0.4) add("tree", rand(2.5, 9.5), -6.6, 0.12, randInt(0, 2));
+      // Pohon trotoar = pohon jalan (varian 3): kanopi tinggi, pejalan kaki lewat di bawahnya.
+      if (Math.random() < 0.4) add("tree", rand(2.5, 9.5), -6.6, 0.12, 3);
       // Pohon sisi seberang juga harus di trotoar jauh, bukan di aspal jalur seberang (12.0 -> 15.6)
-      if (Math.random() < 0.35) add("tree", rand(2.5, 9.5), curTunnel ? 15.6 : 16.2, 0.12, randInt(0, 2));
+      if (Math.random() < 0.35) add("tree", rand(2.5, 9.5), curTunnel ? 15.6 : 16.2, 0.12, 3);
 
       // 7. Lampu jalan: di kedua trotoar (sisi seberang SELALU di atas trotoar jauh
       // 12.6..16.1 — lat 10.5 dulu masih aspal jalur mobil seberang 5.0..12.3)
@@ -5049,9 +5107,10 @@ class Engine {
         lot(6); // One grand, spacious lot per 12m chunk
       }
 
-      // Vending machines (Jihanki) on sidewalk
-      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -4.8, 0.12, randInt(0, 3));
-      if (Math.random() < 0.3) add("vending", rand(2.5, 9.5), 4.8, 0.12, randInt(0, 3));
+      // Vending machine (Jihanki) DI TEPI KIRI trotoar dekat (sisi gedung, bukan jalur
+      // langkah orang): trotoar Tokyo -7..-4, jadi mesin berdiri di -6.45 menghadap jalan.
+      // (Mesin sisi seberang ditambahkan di bawah setelah sakura/hydrant trotoar jauh.)
+      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -6.45, 0.12, randInt(0, 3));
 
       // Mamachari commuter bicycles parked along sidewalks
       if (Math.random() < 0.4) add("mamachari", rand(2.5, 9.5), -4.55, 0.12, randInt(0, 3));
@@ -5065,8 +5124,8 @@ class Engine {
 
       // Illuminated sidewalk neon / ramen lantern signboards
       if (Math.random() < 0.35) add("neon_sign", rand(2.5, 9.5), -4.4, 0.12, randInt(0, 2));
-      // a sakura in front of the shops now and then
-      if (Math.random() < 0.4) add("sakura", rand(2.5, 9.5), -5.2, 0.12, randInt(0, 3));
+      // a sakura in front of the shops now and then (di tepi kiri trotoar, bukan jalur langkah)
+      if (Math.random() < 0.4) add("sakura", rand(2.5, 9.5), -6.3, 0.12, randInt(0, 3));
       // Front sidewalk buildings & houses (facing the street)
       const rFront = Math.random();
       if (rFront < 0.22) add("house", 6, 11.2, -0.1, randInt(0, 1));
@@ -5099,6 +5158,15 @@ class Engine {
     }
     if (Math.random() < 0.4) add("sakura", rand(1, 11), 5.1, 0.12, randInt(0, 3));
     for (let i = 0; i < randInt(1, 2); i++) add("bush", rand(0.5, 11.5), rand(6.6, 11), 0.05, randInt(0, 1));
+    // Vending mesin tepi kanan trotoar jauh (sisi gedung, 5.75 dari trotoar 4..6.3) — hanya
+    // kalau mulut trotoar di titik itu masih lapang, supaya jalur langkah pejalan kaki tetap ada.
+    if (kind === "street" && Math.random() < 0.3) {
+      const vx = rand(2.5, 9.5);
+      const blocked = decor.some(
+        (d) => d.lat !== undefined && d.lat > 0 && d.lat < 7.5 && Math.abs((d.s ?? 0) - (s0 + vx)) < 2.6,
+      );
+      if (!blocked) add("vending", vx, 5.75, 0.12, randInt(0, 3));
+    }
     for (let i = 0; i < randInt(1, 3); i++) add("flowers", rand(0.5, 11.5), rand(6.4, 11.5), 0.08, randInt(0, 1));
     this.addSnowDrifts(s0, decor);
     this.chunks.push({ id, s0, kind, decor });
@@ -5513,18 +5581,65 @@ class Engine {
       const dir = i % 2 === 0 ? 1 : -1;
       // Hewan pinggir jalan berdiri di trotoar: sisi +1 di trotoar JAUH (12.6..16.1),
       // bukan di aspal jalur seberang (5.0..12.3) seperti lat 5.3 sebelumnya.
-      const m = this.newMover("shibuya_animal", this.distance + 46 + i * 5.6, -1, activity === "crossing" ? -dir * 4.15 : side > 0 ? 13.45 : -5.3);
+      // Penyeberang (termasuk hewan) berangkat dari 0.8 m DI DALAM trotoar, bukan dari garis pagar
+      // pipa putih di -4.12, dan hanya menyeberang di celah pagar (perempatan/perlintasan) —
+      // jadi tidak ada lagi yang berjalan menembus pagar.
+      let animalS = this.distance + 46 + i * 5.6;
+      const gap = activity === "crossing" ? this.railingGapRange(animalS, 400) : null;
+      const crossing = activity === "crossing" && !!gap;
+      if (crossing && gap) animalS = clamp(animalS, gap[0], gap[1]);
+      const startLat = crossing ? -dir * 4.93 : side > 0 ? 13.45 : -5.3;
+      const m = this.newMover("shibuya_animal", animalS, -1, startLat);
       m.dir = dir;
-      m.speed = activity === "crossing" ? 2.35 : 0;
-      m.delay = activity === "crossing" ? Math.max(0.25, (m.s - this.distance) / Math.max(this.speed, START_SPEED) - 3.4) : 0;
-      m.crossingEdge = activity === "crossing" ? 5.2 : undefined;
+      m.speed = crossing ? 2.35 : 0;
+      m.delay = crossing ? Math.max(0.25, (m.s - this.distance) / Math.max(this.speed, START_SPEED) - 3.4) : 0;
+      m.crossingEdge = crossing ? 5.2 : undefined;
       m.shibuyaAnimal = this.nextShibuyaAnimal();
-      m.shibuyaAnimalActivity = activity;
+      m.shibuyaAnimalActivity = crossing ? "crossing" : "waving";
       m.shibuyaAnimalSide = side;
-      if (activity !== "crossing") m.phase = "pause";
+      if (!crossing) m.phase = "pause";
       this.movers.push(m);
     }
     this.moverVersion++;
+  }
+
+  /**
+   * Geser titik tunggu/seberang sedikit kalau tepat ada tiang lampu (atau dekor trotoar sejenis)
+   * di lintasannya, supaya penyeberang tidak berjalan menembus tiang saat menunggu/menyeberang.
+   */
+  private clearSidewalkPoleS(s: number): number {
+    for (const c of this.chunks) {
+      if (s < c.s0 - 4 || s > c.s0 + CHUNK_LEN + 4) continue;
+      for (const d of c.decor) {
+        if (d.s === undefined || d.lat === undefined) continue;
+        if (d.kind !== "lamp" && d.kind !== "avenue_lamp" && d.kind !== "touge_lamp") continue;
+        if (Math.abs(d.s - s) < 1.15) return s + (d.s >= s ? 1.35 : -1.35);
+      }
+    }
+    return s;
+  }
+
+  /**
+   * Rentang s di sekitar CELAH pagar pipa putih: perempatan, perlintasan kereta, atau di dalam
+   * terowongan busway (pagar sengaja tidak dipasang di sana). Penyeberang hanya melintas di
+   * celah ini supaya mereka tidak berjalan menembus pagar — persis seperti di jalan nyata.
+   */
+  private railingGapRange(s: number, maxDist = 40): [number, number] | null {
+    if (this.isInSubwayTunnel(s, 3)) {
+      const tun = this.subwayTunnels.find((t) => s >= t.startS - 3 && s <= t.endS + 3);
+      if (tun) return [tun.startS + 1, tun.endS - 1];
+    }
+    let best: [number, number] | null = null;
+    let bestDist = Infinity;
+    const consider = (center: number, radius: number) => {
+      const dist = Math.abs(center - s);
+      if (dist > maxDist || dist >= bestDist) return;
+      bestDist = dist;
+      best = [center - radius + 0.6, center + radius - 0.6];
+    };
+    for (const it of this.intersections) consider(it.s, it.scramble ? 11.5 : it.wide ? 10.5 : 8.5);
+    for (const cr of this.crossings) consider(cr.s, 8.5);
+    return best;
   }
 
   private spawnPedestrians(x: number, t: number) {
@@ -5534,6 +5649,11 @@ class Engine {
     const d = this.distance;
     // Urban crossers start at the curb and cross the live carriageway without reaching sidewalk fixtures.
     const edge = track.mode === "shibuya" ? 4.15 : 6.8;
+    // TITIK TUNGGU DI TROTOAR: di Shibuya pagar pipa putih berdiri di lat -4.12 dan tiang lampu
+    // di -4.3, jadi penyeberang menunggu 0.78 m lebih ke dalam trotoar (lat -4.93) supaya badan
+    // mereka tidak menembus pagar/tiang. Sisi median tetap di dalam pulau median.
+    const curbWait = track.mode === "shibuya" ? 4.93 : 6.8;
+    const medianWait = track.mode === "shibuya" ? 4.95 : 6.8;
     // One occasional elderly pedestrian per group; everyone else gets independent timing and direction.
     const elderIndex = Math.random() < 0.3 ? randInt(0, n - 1) : -1;
     const offsets: number[] = [];
@@ -5545,11 +5665,19 @@ class Engine {
       offsets.push(offset);
     }
     offsets.sort((a, b) => a - b);
+    // Tanpa celah pagar di dekat sini, penyeberang akan menembus pagar pipa putih — jadi
+    // kelompok ini dilewati saja (trotoar tetap hidup oleh pejalan kaki ambient).
+    const gap = this.railingGapRange(x);
+    if (!gap) return 0;
+    const gapWide = gap[1] - gap[0] > 16;
     const firstDir = Math.random() < 0.5 ? 1 : -1;
     for (let i = 0; i < n; i++) {
       const dir = i === 0 ? firstDir : i === 1 ? -firstDir : Math.random() < 0.5 ? 1 : -1;
-      const pedestrianS = x + offsets[i];
-      const m = this.newMover("pedestrian", pedestrianS, -1, -dir * edge);
+      const rawS = x + offsets[i];
+      if (gapWide && (rawS < gap[0] || rawS > gap[1])) continue; // celah sempit: di luar celah jangan
+      const pedestrianS = this.clearSidewalkPoleS(gapWide ? rawS : clamp(rawS, gap[0], gap[1]));
+      const waitLat = dir > 0 ? -curbWait : medianWait;
+      const m = this.newMover("pedestrian", pedestrianS, -1, waitLat);
       m.dir = dir;
       m.crossingEdge = edge;
       // Any nearby city signal controls the crossing, not just Shibuya's scramble lights.
@@ -5579,7 +5707,8 @@ class Engine {
       // Shibuya uses the deterministic retained Pigeon roster instead of a
       // random subset. The cursor wraps after the four enabled Friends.
       if (i === 0 && (track.mode === "shibuya" || Math.random() < 0.35)) {
-        const petMover = this.newMover("shibuya_animal", pedestrianS + rand(-1.2, 1.2), -1, -dir * (edge - 0.4));
+        // Hewan peliharaan ikut menunggu DI TROTOAR (bukan di atas aspal/curb).
+        const petMover = this.newMover("shibuya_animal", pedestrianS + rand(-1.2, 1.2), -1, (dir > 0 ? -curbWait : medianWait) + (dir > 0 ? -0.4 : 0.4));
         petMover.dir = dir;
         petMover.crossingEdge = edge;
         petMover.speed = rand(2.0, 2.7);

@@ -2483,6 +2483,132 @@ function crowdLat(mode: TrackMode, side: 1 | -1, dir: 1 | -1): number {
   return pick(farLanes) + (Math.random() - 0.5) * 0.25;
 }
 
+/** Kecepatan langkah pejalan kaki trotoar (1.5x lebih cepat sesuai request: trotoar hidup). */
+const WALK_SPEED_MULT = 1.5;
+
+/** Koridor langkah yang WAJAR: jalur tengah trotoar, sudah bersih dari furnitur tepi curb
+ *  (pagar pipa putih, tiang lampu, neon sign, mamachari) dan dari dinding gedung. */
+export function walkCorridor(mode: TrackMode, side: 1 | -1): [number, number] {
+  // Shibuya: trotoar dekat -8.2..-4.0 dengan pagar pipa di -4.12; trotoar jauh 12.6..16.1
+  // dengan pagar di 12.45. Lajur langkah sengaja dijaga di bagian tengah trotoar.
+  if (mode === "shibuya") return side < 0 ? [-6.9, -4.95] : [13.45, 14.95];
+  // Tokyo City / Park: trotoar -7..-4 dan 4..6.3 (pagar pipa di ±4.12)
+  return side < 0 ? [-6.55, -4.85] : [4.6, 5.95];
+}
+
+/** Batas FISIK trotoar: seluruh badan pejalan kaki tetap di atas trotoar dan tidak bisa
+ *  menyentuh pagar pipa di tepi curb. Dipakai sebagai batas darurat saat mengelak. */
+export function walkHardBand(mode: TrackMode, side: 1 | -1): [number, number] {
+  // Shibuya dekat: pagar -4.12, badan ±0.3 => berhenti di -4.6. Sisi gedung dijaga pita
+  // tapak gedung di safeWalkLat; -8.0 masih di atas trotoar (-8.2..-4.0).
+  // Shibuya jauh: pagar 12.45 => mulai 12.95; tepi trotoar 16.1 => 15.75.
+  if (mode === "shibuya") return side < 0 ? [-8.0, -4.6] : [12.95, 15.75];
+  return side < 0 ? [-6.75, -4.6] : [4.6, 6.15];
+}
+
+/** Benda padat di trotoar + jarak aman lateral (m) dari titik pusatnya — pejalan kaki
+ *  mengelak mulus, tidak menembus tiang/pohon/vending/planter/orang yang berdiri. */
+export const WALK_OBSTACLES: Record<string, number> = {
+  // Nilai = setengah lebar benda di sumbu lat + setengah lebar badan pejalan kaki (±0.33 m).
+  // Tanpa tambahan margin besar lagi supaya pejalan kaki masih bisa menyelip di antara dua
+  // benda yang memang punya celah nyata (mis. pohon trotoar vs pengunjung toko).
+  lamp: 0.5,
+  avenue_lamp: 0.5,
+  touge_lamp: 0.5,
+  tree: 0.55,
+  sakura: 0.55,
+  autumn_tree: 0.55,
+  bush: 0.78,
+  vending: 0.78,
+  sidewalk_planter: 0.58,
+  mamachari: 0.6,
+  neon_sign: 0.55,
+  lantern: 0.5,
+  shopper: 0.62,
+  ramen_customer: 0.62,
+  hydrant: 0.5,
+};
+
+/**
+ * Posisi lat aman untuk pejalan kaki di titik s.
+ *  - Tiang lampu, pohon, vending, planter, sepeda, orang berdiri, dan TAPAK GEDUNG
+ *    memblokir pita lateral masing-masing (pagar pipa dijamin oleh walkHardBand).
+ *  - Benda yang masih 1.3 m+ di depan baru memblokir sebagian (pengelakan mulai halus
+ *    lebih awal) dan menjadi blokir penuh saat sudah dekat, sehingga pejalan kaki tidak
+ *    pernah "terlambat mengelak".
+ *  - Posisi terdekat yang bebas dipilih: prioritas di dalam koridor langkah, kalau jalur
+ *    itu benar-benar penuh baru keluar koridor seperlunya (tetap di atas trotoar), dan
+ *    sebagai pilihan terakhir posisi paling dangkal menembusnya (bukan di tengah benda).
+ */
+export function safeWalkLat(mode: TrackMode, side: 1 | -1, s: number, lat: number): number {
+  const [cMin, cMax] = walkCorridor(mode, side);
+  const [hMin, hMax] = walkHardBand(mode, side);
+  const clampHard = (c: number) => Math.min(hMax, Math.max(hMin, c));
+  // Ruang cadangan hanya ke arah gedung: ke arah pagar/curb tidak boleh sama sekali
+  // (badan pejalan kaki tidak boleh menyentuh pagar pipa putih di tepi trotoar).
+  const slackMin = side < 0 ? 0.3 : 0;
+  const slackMax = side < 0 ? 0 : 0.3;
+  const blocks: [number, number][] = [];
+  for (const c of engine.chunks) {
+    if (s < c.s0 - 8 || s > c.s0 + CHUNK_LEN + 10) continue; // hanya chunk di sekitar s
+    for (const d of c.decor) {
+      if (d.s === undefined || d.lat === undefined) continue;
+      const ahead = d.s - s;
+      if (Math.abs(ahead) > 3.4) continue; // hanya benda dekat / sedikit di depan
+      if (d.kind === "building") {
+        const b = d.bounds;
+        if (!b) continue;
+        if (lat > b.latMax + 1.2 || lat < b.latMin - 1.2) continue;
+        blocks.push([b.latMin, b.latMax - 0.05]); // dinding gedung = pita terlarang
+        continue;
+      }
+      const clear = WALK_OBSTACLES[d.kind];
+      if (clear === undefined) continue;
+      // Pengelakan bertahap: 1.3 m/lebih di depan baru sebagian, 1.3 m terakhir penuh.
+      const near = Math.abs(ahead) <= 1.3;
+      const rad = near ? clear : Math.max(0.16, clear * (1 - (Math.abs(ahead) - 1.3) / 2.4));
+      if (Math.abs(lat - d.lat) > rad + 0.5) continue; // jalur langkah masih bersih
+      blocks.push([d.lat - rad, d.lat + rad]);
+    }
+  }
+  // Orang yang sedang berdiri/menunggu (penyeberang) juga dihindari supaya pejalan kaki
+  // ambient tidak berjalan menembus badan orang lain di trotoar.
+  for (const m of engine.movers) {
+    if (m.kind !== "pedestrian" && m.kind !== "shibuya_animal") continue;
+    if (Math.abs(m.s - s) > 1.6 || Math.abs(lat - m.lat) > 1.1) continue;
+    blocks.push([m.lat - 0.55, m.lat + 0.55]);
+  }
+  const penOf = (c: number) => {
+    let pen = 0;
+    for (const [a, b] of blocks) {
+      if (c > a && c < b) pen = Math.max(pen, Math.min(c - a, b - c));
+    }
+    return pen;
+  };
+  // Kandidat: posisi sekarang + tepi tiap pita terlarang + batas koridor/batas trotoar
+  const cand: number[] = [clampHard(lat), cMin, cMax];
+  for (const [a, b] of blocks) cand.push(a - 0.02, b + 0.02);
+  let freeIn: number | null = null;   // bebas & di dalam koridor langkah
+  let freeOut: number | null = null;  // bebas, masih di atas trotoar (mengelak keluar koridor)
+  let minPen = Infinity;              // terpaksa: posisi paling dangkal menembusnya
+  let forced: number | null = null;
+  for (const c of cand) {
+    if (c < hMin - slackMin - 0.02 || c > hMax + slackMax + 0.02) continue;
+    const dist = Math.abs(c - lat);
+    const pen = penOf(c);
+    if (pen <= 0.001) {
+      const inCorridor = c >= cMin - 0.001 && c <= cMax + 0.001;
+      if (inCorridor) {
+        if (freeIn === null || dist < Math.abs(freeIn - lat)) freeIn = c;
+      } else if (freeOut === null || dist < Math.abs(freeOut - lat)) freeOut = c;
+    } else if (pen < minPen - 0.002 || (pen < minPen + 0.002 && forced !== null && dist < Math.abs(forced - lat))) {
+      minPen = pen;
+      forced = c;
+    }
+  }
+  return freeIn ?? freeOut ?? forced ?? clampHard(lat);
+}
+
 type WalkerKind = "adult" | "elder" | "suit" | "kid" | "kamen";
 
 const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, trackMode }: { w: Walker; all: Walker[]; variant: number; kind: WalkerKind; trackMode: TrackMode }) {
@@ -2541,17 +2667,18 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
     if (!w.seeded) {
       w.seeded = true;
       w.s = dist - 20 + Math.random() * 125;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     }
     // JAGA KELANCARAN & JARAK ALAMI: tidak dempet, tidak menumpuk jadi antrean macet
-    let v = w.speed;
+    // (langkah trotoar 1.5x lebih cepat: WALK_SPEED_MULT)
+    let v = w.speed * WALK_SPEED_MULT;
     for (const o of all) {
       if (o === w || !o.seeded || o.side !== w.side || o.dir !== w.dir) continue;
       if (Math.abs(o.lat - w.lat) > 0.42) continue;
       const gap = (o.s - w.s) * w.dir;
       if (gap > 0 && gap < 1.6) {
         // Sesuaikan kecepatan secara halus, tetap melangkah alami (tidak macet berhenti total)
-        v = Math.min(v, o.speed * 0.95);
+        v = Math.min(v, o.speed * WALK_SPEED_MULT * 0.95);
         // Geser ke samping secara halus bila mendekati orang di depan agar tidak dempet
         if (gap < 1.1) {
           const shift = w.lat >= o.lat ? 0.3 : -0.3;
@@ -2559,15 +2686,22 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
         }
       }
     }
+    // KORIDOR + HINDARI BENDA: pejalan kaki tidak boleh menembus pagar pipa di tepi curb,
+    // tiang lampu, pohon, planter, vending machine, atau dinding gedung. Pengelakan dibiarkan
+    // melebar keluar koridor bila perlu, tapi selalu dibatasi batas fisik trotoar.
+    const [hardMin, hardMax] = walkHardBand(trackMode, w.side);
+    const safeLat = safeWalkLat(trackMode, w.side, w.s, w.lat);
+    w.lat += Math.min(2.2 * dt, Math.max(-2.2 * dt, safeLat - w.lat)); // langkah menyamping cepat
+    w.lat = Math.min(hardMax, Math.max(hardMin, w.lat));
     w.s += w.dir * v * dt;
     let rel = w.s - dist;
     // Sirkulasi terus menerus di sekitar pemain agar trotoar selalu ramai merata tanpa zona kosong
     if (w.dir > 0 && rel > 98) {
       w.s = dist - 24 - Math.random() * 12;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     } else if (w.dir < 0 && rel < -24) {
       w.s = dist + 88 + Math.random() * 24;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     }
     rel = w.s - dist;
 

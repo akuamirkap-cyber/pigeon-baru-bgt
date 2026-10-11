@@ -767,6 +767,16 @@ export function treeParts(variant: number): Part[] {
       { x: 0, y: 2.45, z: 0, w: 0.35, h: 0.35, d: 0.35, color: "#68d391" },
     ]);
   }
+  if (variant === 3) {
+    // street tree trotoar: batang tinggi & kanopi DI ATAS kepala pejalan kaki supaya
+    // orang bisa berjalan lewat di bawah kanopi (dipakai pohon trotoar Shibuya).
+    return [
+      { x: 0, y: 1.05, z: 0, w: 0.34, h: 2.1, d: 0.34, color: trunk },
+      { x: 0, y: 2.72, z: 0, w: 1.55, h: 0.86, d: 1.55, color: "#22c55e" },
+      { x: 0, y: 3.34, z: 0, w: 1.1, h: 0.66, d: 1.1, color: "#34d399" },
+      { x: 0, y: 3.86, z: 0, w: 0.6, h: 0.48, d: 0.6, color: "#4ade80" },
+    ];
+  }
   if (variant === 2) {
     // round
     return scaled([
