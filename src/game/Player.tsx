@@ -413,24 +413,10 @@ export function Player() {
       const saltoCy = 0.6 * PS;
       const saltoX = saltoCy * Math.sin(saltoZ);
       const saltoY = saltoCy * (1 - Math.cos(saltoZ));
-      // ragdoll saat mendarat: tumble/guling ke depan (full roll saat jatuh keras), wobble settling
-      const lr = engine.landRollT;
-      let rollZ = 0;
-      let rollX = 0;
-      let landBounce = 0;
-      if (lr < 1.2) {
-        const amp = engine.landRollAmp;
-        const dir = engine.landRollDir;
-        if (engine.landRollFull && lr < 0.6) {
-          const u = Math.min(1, lr / 0.6);
-          rollZ += dir * Math.PI * 2 * (1 - Math.pow(1 - u, 3));
-        }
-        rollZ += dir * amp * 0.22 * Math.sin(lr * 20) * Math.exp(-lr * 6);
-        rollX = amp * 0.3 * Math.sin(lr * 15) * Math.exp(-lr * 5);
-        landBounce = amp * 0.22 * Math.exp(-lr * 7) * Math.abs(Math.sin(lr * 11));
-      }
-      pg.position.set(saltoX, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift + saltoY + landBounce, -0.03 * out);
-      pg.rotation.set(rollX, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ + rollZ);
+      // PENDARATAN BERSIH: saat menyentuh aspal rider TIDAK roll/guling ke depan lagi (request
+      // pemain). Rasa empuk pendaratan tetap datang dari squash + debu engine, bukan guling.
+      pg.position.set(saltoX, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift + saltoY, -0.03 * out);
+      pg.rotation.set(0, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ);
       pg.scale.set(PS * (1 + 0.26 * s), PS * (1 - 0.42 * s + idle), PS * (1 + 0.26 * s));
 
       if (friendModel.current && friendRig) {
