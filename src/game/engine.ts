@@ -183,6 +183,8 @@ const ROCKET_CLIMB = 9;
 const ROCKET_DESCEND = 7;
 /** Isi NOS minimum (fraksi 0..1) supaya roket bisa dinyalakan; durasi ikut sisa isi. */
 export const NOS_MIN_FIRE = 0.35;
+/** Durasi terbang roket = durasi NOS biasa x 1.8 (request pemain: "durasinya lebih lama 1.8x"). */
+export const ROCKET_DURATION_MULT = 1.8;
 
 export const NOS_PER_BREAD = 6;
 export const NOS_PER_TRICK = 10;
@@ -1554,7 +1556,7 @@ class Engine {
     }
     const charge = this.nos / NOS_MAX;
     this.nos = 0;
-    this.nosT = Math.max(0.9, NOS_DURATION * charge);
+    this.nosT = Math.max(0.9, NOS_DURATION * charge * ROCKET_DURATION_MULT);
     this.player.rocketDescend = false;
     // lepas dari rel / atap mobil / atap bus: roket langsung membawa pemain naik 3 m
     const p = this.player;
@@ -2249,6 +2251,8 @@ class Engine {
         minLat: LANE_LAT[0] - 0.35,
         maxLat: LANE_LAT[2] + 0.35,
         dt,
+        // TERBANG ROKET: pindah jalur melayang halus (bukan carve tajam seperti di aspal)
+        smooth: p.rocketFly,
       });
       p.lat = T.lat;
       p.latVel = T.latVel;
@@ -2266,7 +2270,8 @@ class Engine {
     } else {
       // ---- OLD: critically damped spring => smooth ease-in / ease-out with no snap,
       // slightly softer in the air (the pigeon "drifts" across) than on the ground (a quick carve)
-      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult); // natural frequency (rad/s), stiffer for faster boards
+      // terbang roket juga memperhalus mode lama: pegas lateral jadi jauh lebih lembut
+      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult) * (1 - 0.5 * p.rocketFly); // natural frequency (rad/s), stiffer for faster boards
       // exact integration of the critically damped spring x'' + 2ωx' + ω²(x - tl) = 0
       const x0 = p.lat - tl;
       const v0 = p.latVel;
@@ -2800,7 +2805,8 @@ class Engine {
       const T = this.turn;
       p.steer = -T.headingVis;
       p.boardTwist = 0;
-      const rollMax = TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend;
+      // Saat terbang roket, bank badan dikurangi (melayang mulus, tidak miring tajam)
+      const rollMax = (TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend) * (1 - 0.4 * p.rocketFly);
       // Saat nge-grind, roll mengikuti BENTUK REL (grindRoll), bukan sisa carve pindah lajur.
       p.roll = p.grinding && p.rail ? p.grindRoll : T.leanVis * rollMax;
       p.carve = -T.leanVis; // legacy convention (+ = left); only the old-mode poses read it
@@ -5533,6 +5539,49 @@ class Engine {
     }
     for (let i = 0; i < n; i++) this.addBread(s + i * 1.0, lane, h);
   }
+  /**
+   * Formasi roti MENGULAR ala huruf S: roti berkelok dari satu lajur ke lajur lain
+   * (tengah -> samping -> tengah -> samping lain -> tengah), jadi pemain diajak weave
+   * mulus. Kalau jalurnya tidak bebas rintangan, formasi dilewati (return 0).
+   */
+  private breadSnake(s: number, stepGap = 1.15, perStep = 3) {
+    // Beberapa bentuk kandidat (dari S paling panjang ke yang lebih pendek) supaya formasi
+    // mengular tetap sering muncul walau jalurnya kadang terhalang rintangan.
+    const candidates: number[][] = [
+      [1, 2, 1, 0, 1],
+      [1, 0, 1, 2, 1],
+      [1, 2, 1, 2, 1],
+      [1, 0, 1, 0, 1],
+      [1, 2, 1],
+      [1, 0, 1],
+      [1, 2, 1, 2],
+      [1, 0, 1, 0],
+    ];
+    // arah S diacak: kadang mulai ke kanan, kadang ke kiri (kandidat pertama sudah dua arah)
+    if (Math.random() < 0.5) {
+      const [a, b] = candidates;
+      candidates[0] = b;
+      candidates[1] = a;
+    }
+    for (const seq of candidates) {
+      const pts: { s: number; lane: number }[] = [];
+      let ok = true;
+      for (let k = 0; k < seq.length && ok; k++) {
+        for (let j = 0; j < perStep; j++) {
+          const bs = s + (k * perStep + j) * stepGap;
+          if (this.isNearObstacle(bs, seq[k], 10.0, 24.0) || this.isNearBonusItem(bs, seq[k], 4.0)) {
+            ok = false;
+            break;
+          }
+          pts.push({ s: bs, lane: seq[k] });
+        }
+      }
+      if (!ok) continue;
+      for (const pt of pts) this.addBread(pt.s, pt.lane, 0.5);
+      return (pts.length - 1) * stepGap + 2;
+    }
+    return 0;
+  }
   private breadArc(s: number, lane: number) {
     for (let k = -3; k <= 3; k++) {
       if (this.isNearObstacle(s + k * 0.75, lane, 10.0, 24.0)) return;
@@ -6115,7 +6164,8 @@ class Engine {
       ? [
           ["rail", 3.4],
           ["ramp", 2.6],
-          ["bread", 2.2],
+          ["bread", 2.8],
+          ["bread_snake", 5.5],
           ["single", 1.8],
           // Busway tetap hidup: orang-orang tetap tampak menunggu & menyeberang di trotoar
           // jalur bus, sama seperti di ruas jalan biasa (sebelumnya pola ini mati total di
@@ -6130,7 +6180,8 @@ class Engine {
           ["zigzag", 0.4 + 2.5 * t],
           ["ramp", 2.2],
           ["rail", 5.2], // rel dibuat jauh lebih sering di jalan (sebelumnya 2.2)
-          ["bread", 1.6],
+          ["bread", 2.4],
+          ["bread_snake", 5.5],
           ["oncoming", track.mode === "haruna" ? 3.2 + 2.4 * t : 10 + 4 * t],
           ["motorcycles", (track.mode === "shibuya" ? 6.5 : 2.5) + 1.2 * t],
           ["chickens", 2.2 + 0.8 * t],
@@ -6317,16 +6368,42 @@ class Engine {
         }
         break;
       }
+      case "bread_snake": {
+        // FORMASI MENGULAR (S) khusus: roti berkelok dari lajur tengah ke samping, balik ke
+        // tengah, lalu ke samping lain — pemain diajak weave mulus.
+        const snakeLen = this.breadSnake(x);
+        if (snakeLen > 0) len = snakeLen;
+        else {
+          // kalau jalurnya terhalang: barisan lurus sebagai gantinya
+          this.breadLine(x, randInt(0, 2), 6);
+          len = 6.5;
+        }
+        break;
+      }
       case "bread": {
         const lane = randInt(0, 2);
-        if (Math.random() < 0.4) this.breadLine(x, lane, 6);
-        else if (Math.random() < 0.7) this.breadArc(x + 2, lane);
-        else {
+        const roll = Math.random();
+        if (roll < 0.3) {
+          // LURUS: barisan roti sejajar jalur (kadang lebih panjang)
+          this.breadLine(x, lane, Math.random() < 0.4 ? 9 : 6);
+          len = 9;
+        } else if (roll < 0.6) {
+          // MENGULAR ala S: roti berkelok antar lajur
+          const snakeLen = this.breadSnake(x);
+          if (snakeLen > 0) len = snakeLen;
+          else {
+            this.breadLine(x, lane, 6);
+            len = 6.5;
+          }
+        } else if (roll < 0.8) {
+          this.breadArc(x + 2, lane);
+          len = 6.5;
+        } else {
           const l2 = this.otherLane([lane]);
           this.breadLine(x, lane, 3);
           this.breadLine(x + 3.5, l2, 3);
+          len = 6.5;
         }
-        len = 6.5;
         break;
       }
       case "oncoming": {

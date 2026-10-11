@@ -1147,9 +1147,11 @@ export function InGameTrailEffect({
     const latVel = p ? p.latVel : 0;
     const sp = engine?.speed ? engine.speed : 14;
     trailHistory.update(now, h, vh, lat, latVel, sp);
-    // Jatuh / nabrak / game over: trail auto mengecil ke 0, lalu kembali saat main lagi
-    const down = engine.phase === "crashed" || engine.phase === "gameover" || engine.trailDown;
-    fadeVal.current += ((down ? 0 : 1) - fadeVal.current) * Math.min(1, dt * (down ? 14 : 4));
+    // Jatuh / nabrak / game over: trail auto mengecil ke 0, lalu kembali saat main lagi.
+    // TERBANG ROKET: trail juga MEMENDEK JADI 0 (yang tampil hanya asap pelangi roket).
+    const flying = (p ? p.rocketFly : 0) > 0.04;
+    const down = flying || engine.phase === "crashed" || engine.phase === "gameover" || engine.trailDown;
+    fadeVal.current += ((down ? 0 : 1) - fadeVal.current) * Math.min(1, dt * (flying ? 30 : down ? 14 : 4));
     const g = fadeRef.current;
     if (g) {
       const s = Math.max(0, fadeVal.current);
