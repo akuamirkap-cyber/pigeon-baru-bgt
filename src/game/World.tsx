@@ -2008,7 +2008,7 @@ function RareFlash() {
 }
 
 /* ---------- Bread (instanced) ---------- */
-const MAX_BREAD = 140;
+const MAX_BREAD = 200; // cukup untuk roti aspal + roti langit (formasi terbang roket)
 const tmpObj = new THREE.Object3D();
 
 /* Bintang kilau (sparkle) bergaya Subway Surfers: sprite bintang 4 sudut, additive,

@@ -316,6 +316,8 @@ export interface Bread {
   wx: number;
   wy: number;
   wz: number;
+  /** true = roti LANGIT (formasi terbang roket), dibersihkan otomatis saat mendarat. */
+  sky?: boolean;
 }
 export interface TrackLetter {
   id: number;
@@ -828,6 +830,8 @@ function wrapPi(a: number) {
 }
 
 const tmpS: TrackSample = { x: 0, y: 0, z: 0, th: 0, g: 0, kappa: 0 };
+/** Buffer sample kedua: dipakai emisi asap roket yang mengambil beberapa titik jalur per frame. */
+const tmpS2: TrackSample = { x: 0, y: 0, z: 0, th: 0, g: 0, kappa: 0 };
 const tmpV = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 
@@ -906,6 +910,11 @@ class Engine {
 
   obstacles: Obstacle[] = [];
   breads: Bread[] = [];
+  /** Roti LANGIT (formasi terbang roket): roti melayang di ketinggian terbang, hanya ada
+   *  saat roket menyala. Punya bendera sky supaya bisa dibersihkan setelah mendarat. */
+  private skyBreadS = 0;
+  private skyBreadLane = 1;
+  private skyBreadStep = 0;
   chunks: Chunk[] = [];
   /** Actual transformed footprints for Shibuya source buildings still in the window. */
   private shibuyaFootprints: ShibuyaPlacedFootprint[] = [];
@@ -975,9 +984,11 @@ class Engine {
   particles: Particle[] = [];
   /** Asap roket warna-warni (NOS): puff pelangi + percikan; digambar di World.tsx. */
   rocketSmoke: RocketSmoke[] = [];
-  /** timer emisi asap/percipat roket */
-  private rocketSmokeT = 0;
-  private rocketSparkT = 0;
+  /** JADWAL emisi berbasis JARAK: posisi s tempat gumpalan asap/percikan berikutnya harus
+   *  lahir. Karena dijadwalkan per jarak (bukan per frame), pita asap tetap rapat & tidak
+   *  berlubang walau roket melesat 3.5x. */
+  private rocketSmokeS = 0;
+  private rocketSparkS = 0;
   private rocketSmokeHue = 0;
   /** gelombang "denyut" yang sedang aktif (lihat Pulse) */
   pulses: Pulse[] = [];
@@ -1122,6 +1133,9 @@ class Engine {
     this.menuPreview = null;
     this.obstacles = [];
     this.breads = [];
+    this.skyBreadS = 0;
+    this.skyBreadLane = 1;
+    this.skyBreadStep = 0;
     this.chunks = [];
     this.shibuyaFootprints = [];
     this.movers = [];
@@ -1177,8 +1191,8 @@ class Engine {
     this.nextSubwayTunnelS = START_S + 110;
     this.particles = [];
     this.rocketSmoke = [];
-    this.rocketSmokeT = 0;
-    this.rocketSparkT = 0;
+    this.rocketSmokeS = 0;
+    this.rocketSparkS = 0;
     this.reserved = [];
     this.nextChunkS = 0;
     this.nextObstacleS = this.distance + 40;
@@ -1573,6 +1587,9 @@ class Engine {
     p.bigAir = false;
     p.onRamp = false;
     this.shake = Math.max(this.shake, 0.35);
+    // jadwal emisi asap mulai dari posisi pemain sekarang
+    this.rocketSmokeS = this.distance;
+    this.rocketSparkS = this.distance + 0.1;
     // BURST roket: ledakan asap pelangi + percikan + dua cincin warna tepat di nosel
     this.rocketSmokeBurst();
     useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m di atas aspal!");
@@ -2565,6 +2582,8 @@ class Engine {
         p.rocketDescend = true;
         p.h += clamp(target - p.h, -ROCKET_CLIMB * dt, ROCKET_CLIMB * dt);
         p.airT += dt;
+        // ROTI LANGIT: formasi roti mengular di ketinggian terbang (3 m)
+        this.emitSkyBreads();
       } else if (p.rocketDescend) {
         if (p.grinding || p.subwayMover) {
           // saat meluncur turun pemain menyentuh rel / atap bus → serahkan ke mekanik grind biasa
@@ -2581,6 +2600,7 @@ class Engine {
             p.h = ground.y;
             p.rocketDescend = false;
             p.onRamp = !!ground.ramp;
+            this.clearSkyBreads(); // roti langit dibersihkan setelah mendarat
             this.land();
           }
         }
@@ -3106,7 +3126,7 @@ class Engine {
       if (b.taken) continue;
       if (Math.abs(b.s - d) > 0.9) continue;
       if (Math.abs(LANE_LAT[b.lane] - p.lat) > 1.0) continue;
-      if (!flyPick && Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
+      if (Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
       b.taken = true;
       this.breadCount++;
       buzz(14);
@@ -5591,6 +5611,41 @@ class Engine {
     }
     return 0;
   }
+  /**
+   * ROTI LANGIT: formasi roti melayang di KETINGGIAN TERBANG ROKET (3 m di atas aspal).
+   * Dipanggil tiap frame selama roket menyala: roti disemai di depan pemain dengan pola
+   * MENGULAR ala S (tengah -> samping -> tengah -> samping lain) — jadi terbangnya pun
+   * bisa nyerap roti yang ada di jalur langit. Roti langit dibersihkan otomatis saat mendarat.
+   */
+  private emitSkyBreads() {
+    const seq = [1, 2, 1, 0, 1]; // pola S di langit (dibaca berputar lewat penghitung, bukan indexOf)
+    const ahead = this.distance + 55;
+    if (this.skyBreadS < this.distance + 4) {
+      this.skyBreadS = this.distance + 8;
+      this.skyBreadStep = 0;
+      this.skyBreadLane = seq[0];
+    }
+    while (this.skyBreadS < ahead) {
+      track.frame(this.skyBreadS, LANE_LAT[this.skyBreadLane], ROCKET_FLY_H, tmpV);
+      this.breads.push({
+        id: this.nextId++, s: this.skyBreadS, lane: this.skyBreadLane, h: ROCKET_FLY_H,
+        taken: false, phase: Math.random() * Math.PI * 2,
+        wx: tmpV.x, wy: tmpV.y, wz: tmpV.z, sky: true,
+      });
+      this.skyBreadStep++;
+      // tiap 4 roti ganti lajur mengikuti pola S: 1 -> 2 -> 1 -> 0 -> 1 -> ...
+      this.skyBreadLane = seq[Math.floor(this.skyBreadStep / 4) % seq.length];
+      this.skyBreadS += 1.3;
+    }
+    // buang roti langit yang sudah terlewat jauh supaya daftar tetap ringkas
+    this.breads = this.breads.filter((b) => !b.sky || b.s > this.distance - 12);
+  }
+
+  /** Bersihkan sisa roti langit (dipanggil saat roket habis / mendarat). */
+  private clearSkyBreads() {
+    this.breads = this.breads.filter((b) => !b.sky);
+  }
+
   private breadArc(s: number, lane: number) {
     for (let k = -3; k <= 3; k++) {
       if (this.isNearObstacle(s + k * 0.75, lane, 10.0, 24.0)) return;
@@ -7047,47 +7102,62 @@ class Engine {
   }
 
   /** Semburan asap kontinu selama NOS menyala (puff pelangi + percikan terang). */
-  private emitRocketSmoke(dt: number) {
-    const c = this.rocketNozzle(this.distance - ROCKET_NOZZLE_BACK, rocketTmp);
-    const x = rocketTmp.x;
-    const y = rocketTmp.y;
-    const z = rocketTmp.z;
-    const fx = Math.cos(c.th);
-    const fz = Math.sin(c.th);
-    const lx = -Math.sin(c.th);
-    const lz = Math.cos(c.th);
-    // SATU LUBANG ROKET: semua gumpalan keluar dari titik nosel yang sama lalu menyusur
-    // lurus ke belakang — satu semburan pelangi yang padat, bukan tiga aliran terpisah.
-    // (Sebaran menyamping cuma sedikit dari turbulensi, bukan kipas.)
-    // Karena roket melesat 3.5x, laju emisi ikut dinaikkan supaya pita asapnya tetap rapat.
-    const rateScale = clamp(this.speed / 16, 1, 2.6);
-    this.rocketSmokeT -= dt;
-    for (let guard = 0; this.rocketSmokeT <= 0 && guard < 60; guard++) {
-      this.rocketSmokeT += 0.0085 / rateScale; // ~118-300 gumpalan/detik -> jejak nyambung & tebal
-      this.rocketSmokeHue = (this.rocketSmokeHue + 0.0125) % 1;
-      const jit = rand(0, 1);
+  private emitRocketSmoke(_dt: number) {
+    const p = this.player;
+    // ASAP TIDAK BOLEH PUTUS walau roket melesat 3.5x.
+    // Emisi dijadwalkan per JARAK: setiap gumpalan ditempatkan pada posisi s yang tepat
+    // (selisih `step` meter dari gumpalan sebelumnya, melewati batas frame). Jadi pita asap
+    // selalu rapat dari nosel sampai ekor — tidak ada lubang 1 m seperti kalau menumpuk
+    // gumpalan sekali per frame.
+    const step = Math.max(0.12, this.speed * 0.0045); // jarak antar gumpalan (m)
+    if (this.rocketSmokeS < this.distance - 3) this.rocketSmokeS = this.distance; // pengaman
+    let k = 0;
+    while (this.rocketSmokeS <= this.distance && k < 48) {
+      const c = track.sample(this.rocketSmokeS - ROCKET_NOZZLE_BACK, tmpS2);
+      this.rocketSmokeS += step;
+      k++;
+      const lx = -Math.sin(c.th);
+      const lz = Math.cos(c.th);
+      const fx = Math.cos(c.th);
+      const fz = Math.sin(c.th);
+      const x = c.x - Math.sin(c.th) * p.lat;
+      const z = c.z + Math.cos(c.th) * p.lat;
+      const y = c.y + p.h + ROCKET_NOZZLE_H;
+      this.rocketSmokeHue = (this.rocketSmokeHue + 0.011) % 1;
+      const jit = rand(-0.015, 0.015);
       this.rocketSmoke.push({
         x: x + lx * rand(-0.03, 0.03) + rand(-0.03, 0.03),
-        y: y + rand(-0.04, 0.06),
+        y: y + rand(-0.05, 0.07),
         z: z + lz * rand(-0.03, 0.03) + rand(-0.03, 0.03),
-        vx: -fx * rand(1.2, 2.8) + lx * rand(-0.4, 0.4),
+        vx: -fx * rand(1.0, 2.6) + lx * rand(-0.4, 0.4),
         vy: rand(0.05, 0.7),
-        vz: -fz * rand(1.2, 2.8) + lz * rand(-0.4, 0.4),
-        life: 0, max: rand(1.15, 1.9), size: rand(0.24, 0.46), grow: rand(2.0, 3.2),
-        hue: (this.rocketSmokeHue + jit * 0.03 - 0.015 + 1) % 1,
+        vz: -fz * rand(1.0, 2.6) + lz * rand(-0.4, 0.4),
+        life: 0, max: rand(1.15, 1.75), size: rand(0.26, 0.5), grow: rand(2.0, 3.0),
+        hue: (this.rocketSmokeHue + jit + 1) % 1,
         rot: rand(0, 6.28), spin: rand(-2.2, 2.2), spark: false,
       });
     }
-    // percikan warna-warni dari lubang yang sama, menyusur lalu jatuh ke aspal
-    this.rocketSparkT -= dt;
-    for (let guard = 0; this.rocketSparkT <= 0 && guard < 20; guard++) {
-      this.rocketSparkT += 0.016 / rateScale; // ~62-160/detik
-      this.rocketSmokeHue = (this.rocketSmokeHue + 0.02) % 1;
+    // percikan warna-warni: juga dijadwalkan per jarak
+    const sparkStep = Math.max(0.25, this.speed * 0.012);
+    if (this.rocketSparkS < this.distance - 4) this.rocketSparkS = this.distance;
+    let j = 0;
+    while (this.rocketSparkS <= this.distance && j < 32) {
+      const c = track.sample(this.rocketSparkS - ROCKET_NOZZLE_BACK, tmpS2);
+      this.rocketSparkS += sparkStep;
+      j++;
+      const lx = -Math.sin(c.th);
+      const lz = Math.cos(c.th);
+      const fx = Math.cos(c.th);
+      const fz = Math.sin(c.th);
+      const x = c.x - Math.sin(c.th) * p.lat;
+      const z = c.z + Math.cos(c.th) * p.lat;
+      const y = c.y + p.h + ROCKET_NOZZLE_H - 0.05;
+      this.rocketSmokeHue = (this.rocketSmokeHue + 0.023) % 1;
       this.rocketSmoke.push({
         x, y, z,
-        vx: -fx * rand(2.4, 6.5) + lx * rand(-1.1, 1.1),
-        vy: rand(0.6, 3.0),
-        vz: -fz * rand(2.4, 6.5) + lz * rand(-1.1, 1.1),
+        vx: -fx * rand(2.0, 5.5) + lx * rand(-1.1, 1.1),
+        vy: rand(0.5, 2.6),
+        vz: -fz * rand(2.0, 5.5) + lz * rand(-1.1, 1.1),
         life: 0, max: rand(0.3, 0.6), size: rand(0.09, 0.18), grow: 0.4,
         hue: (this.rocketSmokeHue + rand(-0.07, 0.07) + 1) % 1, rot: rand(0, 6.28), spin: rand(-10, 10), spark: true,
       });
