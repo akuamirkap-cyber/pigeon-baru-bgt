@@ -409,7 +409,7 @@ export function HUD() {
               <>
                 <span className="text-[4.2cqw]">NOS</span>
                 <span className="mt-[0.5cqw] hidden font-body text-[1.7cqw] font-extrabold tracking-wider opacity-85 [@media(hover:hover)]:block">
-                  R 🚀 · N = FULL
+                  R 🚀 FULL
                 </span>
               </>
             ) : sprintLevel > 0 ? (

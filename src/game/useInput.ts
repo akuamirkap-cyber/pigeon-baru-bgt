@@ -119,10 +119,9 @@ export function useInput(ref: RefObject<HTMLElement | null>) {
         KeyF: "double",
         KeyE: "salto",
         KeyS: "cycle",
-        // ROKET: R = nyalakan roket (butuh isi >= 35%), N = isi NOS otomatis PENUH lalu
-        // roket langsung menyala — dua-duanya membuat pemain terbang 3 m di atas aspal.
-        KeyR: "nos",
-        KeyN: "nosFull",
+        // ROKET: tekan R -> tangki NOS terisi otomatis PENUH dan roket langsung menyala
+        // (pemain terbang 3 m di atas aspal). Tidak perlu ngumpulin roti dulu.
+        KeyR: "nosFull",
         ShiftLeft: "boost",
         ShiftRight: "boost",
         KeyG: "holdStart",

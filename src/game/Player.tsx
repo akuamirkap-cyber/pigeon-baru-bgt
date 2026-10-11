@@ -6,7 +6,7 @@ import { engine, LANE_LAT } from "./engine";
 import { useUI } from "./store";
 import { charBodyParts, charHeadParts, charTailParts, charWingParts, deckParts, getSkin, truckParts, wheelParts, HIP_Y, LEG_Z, TAIL_ROOT } from "./skins";
 import { RIG, LegRig } from "./pigeonRig";
-import { backRocketParts, nosTankParts } from "./models";
+import { nosTankParts, rocketParts } from "./models";
 import { buildShibuyaAnimalRig } from "./shibuyaPacks";
 import { buildBuddyRig, VOXEL_BOARD_IDS } from "./buddiesSkins";
 import { Koi, Goldfish, Ufo, Broom, Drone } from "../buddies/characters";
@@ -203,7 +203,7 @@ export function Player() {
       truck: buildVoxelGeometry(truckParts()),
       tail: buildVoxelGeometry(charTailParts(skin)),
       tanks: buildVoxelGeometry(nosTankParts()),
-      backRocket: buildVoxelGeometry(backRocketParts()),
+      backRocket: buildVoxelGeometry(rocketParts()),
     }),
     [skin, deckOverride, wheelColor],
   );
@@ -939,10 +939,10 @@ export function Player() {
       const on = sup > 0.02;
       rp.visible = on;
       if (on) {
-        // getaran kecil mesin roket (skala dasar 0.62 sudah dipasang di JSX)
-        const pop = 0.62 * (0.55 + 0.45 * sup);
+        // getaran kecil mesin roket (skala dasar 0.5 sudah dipasang di JSX)
+        const pop = 0.5 * (0.55 + 0.45 * sup);
         rp.scale.set(pop, pop, pop);
-        rp.position.set(-0.29 + Math.sin(t * 52) * 0.006, 0.34 + Math.sin(t * 44 + 1) * 0.006, 0);
+        rp.position.set(-0.30 + Math.sin(t * 52) * 0.006, 0.30 + Math.sin(t * 44 + 1) * 0.006, 0);
       }
     }
     const rf = rocketFlame.current;
@@ -1182,19 +1182,21 @@ export function Player() {
                   ))}
                 </group>
               </group>
-              {/* ROKET PUNGGUNG: menempel di belakang badan (moncong ke arah laju).
-                  Sibling grup torso supaya tetap muncul untuk skin buddy/friend. */}
-              <group ref={rocketPack} position={[-0.29, 0.34, 0]} scale={0.62} visible={false}>
+              {/* ROKET PUNGGUNG = model ROKET yang sama persis dengan item yang diambil.
+                  Ditempel di punggung (sumbu model +y = moncong = arah laju saat badan rebah
+                  "Superman"), jadi noselnya menghadap ke belakang dan asap keluar dari
+                  SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy. */}
+              <group ref={rocketPack} position={[-0.30, 0.30, 0]} scale={0.5} visible={false}>
                 <mesh geometry={geos.backRocket} material={voxelMaterial} castShadow />
-                <group ref={rocketFlame} position={[0, -0.04, 0]} visible={false}>
-                  <mesh material={flameMats.outer} position={[0, -0.46, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.14, 0.85, 8]} />
+                <group ref={rocketFlame} position={[0, 0, 0]} visible={false}>
+                  <mesh material={flameMats.outer} position={[0, -0.47, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.13, 1.0, 10]} />
                   </mesh>
                   <mesh material={flameMats.mid} position={[0, -0.32, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.1, 0.62, 8]} />
+                    <coneGeometry args={[0.09, 0.7, 10]} />
                   </mesh>
-                  <mesh material={flameMats.core} position={[0, -0.19, 0]} rotation-x={Math.PI}>
-                    <coneGeometry args={[0.055, 0.42, 8]} />
+                  <mesh material={flameMats.core} position={[0, -0.195, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.055, 0.45, 10]} />
                   </mesh>
                 </group>
               </group>
