@@ -957,10 +957,11 @@ export function Player() {
       const on = sup > 0.02;
       rp.visible = on;
       if (on) {
-        // getaran kecil mesin roket (skala dasar 0.8 sudah dipasang di JSX -> hampir sebesar item)
-        const pop = 0.8 * (0.6 + 0.4 * sup);
+        // getaran kecil mesin roket (skala dasar 1.6 sudah dipasang di JSX -> 2x ukuran
+        // sebelumnya, lebih besar dari item di jalan; posisinya dinaikkan di atas punggung)
+        const pop = 1.6 * (0.6 + 0.4 * sup);
         rp.scale.set(pop, pop, pop);
-        rp.position.set(-0.38 + Math.sin(t * 52) * 0.006, 0.03 + Math.sin(t * 44 + 1) * 0.006, 0);
+        rp.position.set(-0.95 + Math.sin(t * 52) * 0.006, 0.03 + Math.sin(t * 44 + 1) * 0.006, 0);
       }
     }
     const rf = rocketFlame.current;
@@ -1203,12 +1204,16 @@ export function Player() {
               {/* ROKET PUNGGUNG = model ROKET yang sama persis dengan item yang diambil.
                   Ditempel di punggung (sumbu model +y = moncong = arah laju saat badan rebah
                   "Superman"), jadi noselnya menghadap ke belakang dan asap keluar dari
-                  SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy. */}
-              <group ref={rocketPack} position={[-0.38, 0.03, 0]} scale={0.8} visible={false}>
+                  SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy.
+                  UKURAN: skala 1.6 = 2x lipat ukuran sebelumnya (0.8) dan 1.6x ukuran item di
+                  jalan; POSISI: x -0.95 = dipasang LEBIH TINGGI (melayang di atas punggung)
+                  karena badan rebah -90 derajat -> sumbu lokal -x = atas dunia. */}
+              <group ref={rocketPack} position={[-0.95, 0.03, 0]} scale={1.6} visible={false}>
                 <mesh geometry={backRocketGeo} material={voxelMaterial} castShadow />
-                {/* aura emas additif — sama seperti kilau item ROCKET yang mengambang di jalan */}
+                {/* aura emas additif — sama seperti kilau item ROCKET yang mengambang di jalan
+                    (kotak aura ikut membesar mengikuti roket 2x) */}
                 <mesh position={[0, 0.58, 0]} material={rocketAuraMat}>
-                  <boxGeometry args={[0.52, 1.3, 0.52]} />
+                  <boxGeometry args={[0.98, 1.5, 0.98]} />
                 </mesh>
                 <group ref={rocketFlame} position={[0, 0.02, 0]} visible={false}>
                   <mesh material={flameMats.outer} position={[0, -0.5, 0]} rotation-x={Math.PI}>

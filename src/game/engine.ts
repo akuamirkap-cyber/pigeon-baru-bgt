@@ -170,11 +170,12 @@ export const NOS_DURATION = 2.6;
 export const NOS_SPEED_MULT = 1.75;
 /** Kecepatan roket = boost NOS x 2 (request pemain: "roketnya cepetin 2x"). */
 export const ROCKET_SPEED_MULT = 2;
-/** Posisi nosel roket punggung relatif pemain: 0.2 m di belakang, 0.66 m di atas jalan.
- *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635):
- *  saat membubung, punggung pemain + roket berada di tinggi itu. */
-export const ROCKET_NOZZLE_BACK = 0.21;
-export const ROCKET_NOZZLE_H = 0.70;
+/** Posisi nosel roket punggung relatif pemain: 0.18 m di belakang, 1.03 m di atas papan.
+ *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635,
+ *  pigeonScale 1.08, lift 0.62): roket punggung sekarang 2x lebih besar (skala grup 1.6)
+ *  dan dipasang lebih tinggi di atas punggung, jadi titik noselnya ikut naik. */
+export const ROCKET_NOZZLE_BACK = 0.18;
+export const ROCKET_NOZZLE_H = 1.03;
 /** Batas jumlah partikel asap roket yang hidup sekaligus. */
 const ROCKET_SMOKE_MAX = 560;
 
