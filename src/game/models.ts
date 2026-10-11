@@ -406,7 +406,8 @@ export function rampParts(): Part[] {
  * 40% sits 0.55 higher, then a sloped section brings it down to the standard height (a classic skatepark down-rail).
  * variant 2 = "ULAR": rel besi yang MELIKU kiri-kanan (kek garis kuning di jalan) + hop kecil — pemain yang
  *  nge-grind TERBAWA ayunan snake-nya. variant 3 = "ROLLERCOASTER": tanjakan besar, puncak, turunan, bukit
- *  kecil; tiang dipasang di KEDUA SISI (kek struktur rollercoaster) sehingga bisa dilewati dari bawahnya.
+ *  kecil. Tiang penyangga kedua varian ini SAMA: satu tiang ramping di garis tengah rel (kek tiang rel ular),
+ *  tingginya mengikuti profil — jadi tidak ada struktur lebar yang memakan lajur.
  * Top of the rail is at RAIL_H (0.6) — the extra height of the kink matches engine.railHeightAt.
  * `phase` (hanya variant 2) = fase gelombang dari railMath.railPhase — geometri & fisika harus sama persis.
  */
@@ -514,34 +515,18 @@ function curvedRailParts(length: number, variant: number, phase: number): Part[]
       color: steelDark,
     });
   }
-  // --- tiang penyangga ---
-  if (variant === COASTER_VARIANT) {
-    // ROLLERCOASTER: tiang GANDA di kedua sisi rel (kek struktur rollercoaster) + balok silang
-    // di bawah rel. Pemain bisa lewat DI BAWAH bagian yang tinggi (fisika mengizinkan, lihat engine).
-    const m = Math.max(2, Math.round(length / 2.4));
-    for (let i = 0; i <= m; i++) {
-      const x = -half + (i * length) / m;
-      const railBot = profTop(x) - th / 2 - 0.04;
-      for (const side of [-1, 1]) {
-        const zc = side * 0.85;
-        const h = Math.max(0.25, railBot);
-        parts.push({ x, y: h / 2, z: zc, w: 0.14, h, d: 0.14, color: post });
-        parts.push({ x, y: 0.03, z: zc, w: 0.34, h: 0.06, d: 0.34, color: base });
-      }
-      // balok silang menghubungkan kedua tiang tepat di bawah rel
-      parts.push({ x, y: Math.max(0.09, railBot - 0.03), z: 0, w: 0.12, h: 0.1, d: 1.7, color: post });
-    }
-  } else {
-    // ULAR: tiang di tengah mengikuti ayunan rel
-    const m = Math.max(2, Math.round(length / 1.5));
-    for (let i = 0; i <= m; i++) {
-      const x = -half + (i * length) / m;
-      const y = profY(x);
-      const z = profZ(x);
-      const h = Math.max(0.25, y - 0.04);
-      parts.push({ x, y: h / 2 - 0.01, z, w: 0.12, h: h - 0.02, d: 0.12, color: post });
-      parts.push({ x, y: 0.03, z, w: 0.3, h: 0.06, d: 0.3, color: base });
-    }
+  // --- tiang penyangga: SATU tiang ramping saja (kek tiang rel ULAR), bukan struktur lebar ---
+  // ULAR: tiang mengikuti ayunan rel. ROLLERCOASTER: tiang tetap di tengah rel (relnya lurus)
+  // tapi tingginya mengikuti bukit — pemain tetap bisa lewat DI BAWAH bagian yang tinggi
+  // (fisika mengizinkan, lihat engine) dan tiang kurus ini tidak menutupi lajur.
+  const m = Math.max(2, Math.round(length / 1.5));
+  for (let i = 0; i <= m; i++) {
+    const x = -half + (i * length) / m;
+    const y = profY(x);
+    const z = profZ(x);
+    const h = Math.max(0.25, y - 0.04);
+    parts.push({ x, y: h / 2 - 0.01, z, w: 0.12, h: h - 0.02, d: 0.12, color: post });
+    parts.push({ x, y: 0.03, z, w: 0.3, h: 0.06, d: 0.3, color: base });
   }
   return parts;
 }
