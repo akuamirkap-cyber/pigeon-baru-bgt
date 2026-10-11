@@ -124,8 +124,9 @@ export function TricksPanel() {
             🚀 ROKET: tekan <span className="text-[#ffd60a]">R</span> — tangki NOS otomatis terisi PENUH dan roket
             langsung menyala. Roket yang SAMA dengan item yang kamu ambil nempel di punggung, pemain terbang 3 meter di
             atas aspal sambil <span className="text-[#65d6ff]">melesat 2x lebih cepat</span>, dan asap pelangi menyembur
-            deras dari satu lubang nosel. Pindah jalurnya lebih gesit &amp; mulus (tanpa overshoot). Skate dikempit di
-            tangan kanan.
+            deras dari satu lubang nosel. Pindah jalurnya lebih gesit &amp; mulus (tanpa overshoot). Di jalur langit ada
+            <span className="text-[#ffd60a]"> roti formasi MENGULAR (S)</span> yang bisa diserap sambil terbang. Skate
+            dikempit di tangan kanan.
           </div>
         </div>
       </div>

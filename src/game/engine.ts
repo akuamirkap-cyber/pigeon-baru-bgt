@@ -1952,6 +1952,8 @@ class Engine {
     p.rocketDescend = false;
     this.nosT = 0;
     this.nosFlame = 0;
+    this.clearSkyBreads(); // kalau tabrakan saat terbang, roti langit jangan tertinggal ngambang
+
     p.carGrace = 0;
     p.grab = 0;
     const v = Math.max(this.speed, 8);
@@ -4696,7 +4698,7 @@ class Engine {
     // clear static obstacles & bread directly in the crossroads area (s - 8.5 to s + 8.5)
     const half = scramble ? 11 : wide ? 10.5 : 8.5;
     this.obstacles = this.obstacles.filter((o) => o.s < s - half || o.s > s + half);
-    this.breads = this.breads.filter((b) => b.s < s - (half - 1) || b.s > s + (half - 1));
+    this.breads = this.breads.filter((b) => b.sky || b.s < s - (half - 1) || b.s > s + (half - 1));
     this.nosCans = this.nosCans.filter((c) => c.s < s - half - 8 || c.s > s + half + 8);
     this.rockets = this.rockets.filter((r) => r.s < s - half - 8 || r.s > s + half + 8);
     this.letters = this.letters.filter((l) => l.s < s - half - 8 || l.s > s + half + 8);
@@ -4738,10 +4740,10 @@ class Engine {
       // jalur pendekatan perempatan sengaja dibuat tenang: bersihkan roti di koridor rel
       // (kalau tidak, addObstacle menolak karena aturan jarak roti)
       this.breads = this.breads.filter(
-        (b) => !(b.lane === lane && b.s > railCx - (railHalf + 24) && b.s < railCx + (railHalf + 14)),
+        (b) => b.sky || !(b.lane === lane && b.s > railCx - (railHalf + 24) && b.s < railCx + (railHalf + 14)),
       );
       // roti di lajur sebelah yang menempel titik rel juga ikut dibersihkan (aturan jarak addObstacle)
-      this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - railCx) < 5));
+      this.breads = this.breads.filter((b) => b.sky || !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - railCx) < 5));
       if (!this.addObstacle("rail", railCx, lane, false, railHalf, 0, true)) continue;
       this.reserved.push({ lane, from: railCx - railHalf - 4, until: railEnd + 4 });
       // buang rintangan kecil lama yang kebetulan ada di jalur rel (ramp darurat jangan dibuang)
@@ -4792,7 +4794,7 @@ class Engine {
     const lo = X - 24;
     const hi = X + 10;
     this.obstacles = this.obstacles.filter((o) => o.s < lo || o.s > hi);
-    this.breads = this.breads.filter((b) => b.s < lo || b.s > hi);
+    this.breads = this.breads.filter((b) => b.sky || b.s < lo || b.s > hi);
     this.nosCans = this.nosCans.filter((c) => c.s < lo - 8 || c.s > hi + 8);
     this.rockets = this.rockets.filter((r) => r.s < lo - 8 || r.s > hi + 8);
     this.letters = this.letters.filter((l) => l.s < lo - 8 || l.s > hi + 8);
@@ -5551,7 +5553,7 @@ class Engine {
       catVariant,
     });
     // Remove any bread that might somehow collide or be within the safety buffer of this obstacle
-    this.breads = this.breads.filter((b) => !(b.lane === lane && b.s >= s - (hLen + 20.0) && b.s <= s + (hLen + 10.0)));
+    this.breads = this.breads.filter((b) => b.sky || !(b.lane === lane && b.s >= s - (hLen + 20.0) && b.s <= s + (hLen + 10.0)));
     this.listVersion++;
     return true;
   }
@@ -5618,10 +5620,12 @@ class Engine {
    * bisa nyerap roti yang ada di jalur langit. Roti langit dibersihkan otomatis saat mendarat.
    */
   private emitSkyBreads() {
-    const seq = [1, 2, 1, 0, 1]; // pola S di langit (dibaca berputar lewat penghitung, bukan indexOf)
-    const ahead = this.distance + 55;
-    if (this.skyBreadS < this.distance + 4) {
-      this.skyBreadS = this.distance + 8;
+    // Pola MENGULAR ala S: 0 -> 1 -> 2 -> 1 -> 0 ... (gelombang sinus penuh, tanpa
+    // dua segmen tengah berurutan yang bikin bentuknya terlihat "lurus").
+    const seq = [0, 1, 2, 1];
+    const ahead = this.distance + 80; // runway panjang supaya formasi S-nya terbaca
+    if (this.skyBreadS < this.distance + 6) {
+      this.skyBreadS = this.distance + 10;
       this.skyBreadStep = 0;
       this.skyBreadLane = seq[0];
     }
@@ -5633,7 +5637,7 @@ class Engine {
         wx: tmpV.x, wy: tmpV.y, wz: tmpV.z, sky: true,
       });
       this.skyBreadStep++;
-      // tiap 4 roti ganti lajur mengikuti pola S: 1 -> 2 -> 1 -> 0 -> 1 -> ...
+      // tiap 4 roti ganti lajur mengikuti pola S: 0 -> 1 -> 2 -> 1 -> 0 -> ...
       this.skyBreadLane = seq[Math.floor(this.skyBreadStep / 4) % seq.length];
       this.skyBreadS += 1.3;
     }
@@ -6175,8 +6179,8 @@ class Engine {
         const lanes = [0, 1, 2].filter(laneOk);
         for (const lane of lanes) {
           // koridor rel dibersihkan dari roti (addObstacle menolak bila ada roti di dekatnya)
-          this.breads = this.breads.filter((b) => !(b.lane === lane && b.s > cx - (half + 24) && b.s < cx + (half + 14)));
-          this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - cx) < 5));
+          this.breads = this.breads.filter((b) => b.sky || !(b.lane === lane && b.s > cx - (half + 24) && b.s < cx + (half + 14)));
+          this.breads = this.breads.filter((b) => b.sky || !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - cx) < 5));
           if (!this.addObstacle("rail", cx, lane, false, half, isWave ? WAVE_VARIANT : COASTER_VARIANT, true)) continue;
           // koridor bebas: lajur ini di-reserve & rintangan kecil lama di jalur rel dibuang
           // (ramp darurat sengaja TIDAK dibuang — ia sarana keselamatan)
@@ -6651,7 +6655,7 @@ class Engine {
     const before = this.obstacles.length;
     this.obstacles = this.obstacles.filter((o) => o.s + obstacleHalf(o) > d - 16);
     if (this.obstacles.length !== before) changed = true;
-    if (this.breads.length && this.breads[0].s < d - 14) this.breads = this.breads.filter((b) => b.s > d - 14);
+    if (this.breads.length && this.breads[0].s < d - 14) this.breads = this.breads.filter((b) => b.sky || b.s > d - 14);
     if (this.puddles.length && this.puddles[0].s < d - 14) {
       this.puddles = this.puddles.filter((pu) => pu.s > d - 14);
       changed = true;
