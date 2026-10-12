@@ -110,7 +110,7 @@ import {
   SUBWAY_GAP,
 } from "./models";
 import { railPhase, WAVE_VARIANT } from "./railMath";
-import { SCRAMBLE_PATHS, scramblePathLength, scrambleWalkerPose, type ScramblePath } from "./scrambleCrossing";
+import { SCRAMBLE_PATHS, createScrambleWalkerState, stepScrambleWalker, type ScramblePath } from "./scrambleCrossing";
 import { useUI, type TrackMode } from "./store";
 import { getRayTexture } from "./rays";
 import { getAssetData } from "../shibuya/voxel/models";
@@ -606,33 +606,41 @@ const PedestrianMover = memo(function PedestrianMover({ m }: { m: Mover }) {
     } else {
       // ---- NATURAL WALKING / WAITING ANIMATION ----
       inner.position.set(0, PED_LIFT, 0);
-      inner.rotation.set(0, m.dir > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
+      // ARAH HADAP. Rig voxel menghadap +x lokal (probe140: +x lokal = +s dunia, +z lokal = +lat):
+      //  • penyeberang: jalan ke ±lat  -> yaw -pi/2 (ke +lat) / +pi/2 (ke -lat)
+      //  • pejalan trotoar (walkAlong): jalan SEPANJANG s -> yaw 0 (ke +s) / pi (ke -s).
+      // Dulu pejalan trotoar memakai yaw +pi/2, jadi mereka berjalan MENYAMPING (meluncur
+      // ke samping seperti bug) — sekarang menghadap arah jalannya.
+      const walkAlongYaw = m.walkAlong ? (m.walkAlong > 0 ? 0 : Math.PI) : null;
+      inner.rotation.set(0, walkAlongYaw ?? (m.dir > 0 ? -Math.PI / 2 : Math.PI / 2), 0);
       inner.scale.setScalar(PED_SCALE);
       torso.position.set(0, 0, 0);
 
+      // Kekuatan langkah: 0 saat orangnya berhenti (kaki tidak beku di tengah langkah).
+      const stepFade = m.walkFade ?? 1;
       if (m.phase === "hop") {
         if (isElder) {
           // Jalan santai teratur lansia dengan tongkat (langkah wajar, tidak kaku)
           const strideFreq = (m.speed / 0.75) * Math.PI;
           const step = Math.sin(m.hopT * strideFreq);
-          legL.rotation.set(0, 0, step * 0.48);
-          legR.rotation.set(0, 0, -step * 0.48);
-          armL.rotation.set(0, 0, -step * 0.36);
-          armR.rotation.set(0, 0, 0.16 + Math.abs(step) * 0.14);
-          headG.rotation.set(0.08, Math.sin(m.hopT * 2.4) * 0.08, Math.sin(m.hopT * 4.8) * 0.02);
+          legL.rotation.set(0, 0, step * 0.48 * stepFade);
+          legR.rotation.set(0, 0, -step * 0.48 * stepFade);
+          armL.rotation.set(0, 0, -step * 0.36 * stepFade);
+          armR.rotation.set(0, 0, 0.16 + Math.abs(step) * 0.14 * stepFade);
+          headG.rotation.set(0.08, Math.sin(m.hopT * 2.4) * 0.08 * stepFade, Math.sin(m.hopT * 4.8) * 0.02 * stepFade);
           torso.rotation.set(0, 0, 0.12);
-          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.016;
+          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.016 * stepFade;
         } else {
           // Langkah jalan kaki proporsional, santai, dan nyaman (panjang langkah pas, tidak kaku/shuffle)
           const strideFreq = (m.speed / 0.88) * Math.PI;
           const swing = Math.sin(m.hopT * strideFreq);
-          legL.rotation.set(0, 0, swing * 0.62);
-          legR.rotation.set(0, 0, -swing * 0.62);
-          armL.rotation.set(0, 0, -swing * 0.48);
-          armR.rotation.set(0, 0, swing * 0.48);
-          headG.rotation.set(0, 0, Math.sin(m.hopT * strideFreq * 2) * 0.02);
-          torso.rotation.set(0, 0, 0.04 + Math.sin(m.hopT * strideFreq * 2) * 0.01);
-          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.026;
+          legL.rotation.set(0, 0, swing * 0.62 * stepFade);
+          legR.rotation.set(0, 0, -swing * 0.62 * stepFade);
+          armL.rotation.set(0, 0, -swing * 0.48 * stepFade);
+          armR.rotation.set(0, 0, swing * 0.48 * stepFade);
+          headG.rotation.set(0, 0, Math.sin(m.hopT * strideFreq * 2) * 0.02 * stepFade);
+          torso.rotation.set(0, 0, 0.04 + Math.sin(m.hopT * strideFreq * 2) * 0.01 * stepFade);
+          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.026 * stepFade;
         }
       } else {
         legL.rotation.set(0, 0, 0);
@@ -722,8 +730,9 @@ const ShibuyaPedestrianMover = memo(function ShibuyaPedestrianMover({ m }: { m: 
       inner.scale.setScalar(1);
       if (m.phase === "hop") {
         const strideFreq = (m.speed / 0.88) * Math.PI;
-        inner.position.y = Math.abs(Math.sin(m.hopT * strideFreq)) * 0.04;
-        inner.rotation.z = Math.sin(m.hopT * strideFreq) * 0.05;
+        const stepFade = m.walkFade ?? 1; // diam = goyangan badan berhenti (tidak jalan di tempat)
+        inner.position.y = Math.abs(Math.sin(m.hopT * strideFreq)) * 0.04 * stepFade;
+        inner.rotation.z = Math.sin(m.hopT * strideFreq) * 0.05 * stepFade;
       }
     }
   });
@@ -1232,7 +1241,8 @@ function SubwayTrains() {
  * Penyeberang ambient Scramble Crossing (Shibuya). Murni visual: jalur pemain tetap hanya
  * diisi penyeberang SUNGGUHAN dari sistem mover.
  *
- * RAPI & MUDAH DIPERIKSA: semua jalurnya ada di src/game/scrambleCrossing.ts — tiap orang
+ * RAPI & MUDAH DIPERIKSA: semua jalur DAN siklus hidupnya ada di src/game/scrambleCrossing.ts
+ * (stepScrambleWalker, diuji .arena-tmp/probe142.ts) — tiap orang
  * berjalan di kolomnya sendiri di atas pita zebra (|x| = 4.25 / 5.75, lebar pita 2.25 m),
  * hanya melintasi paruh jauh (median ↔ trotoar jauh) sehingga jalur pemain tetap bersih,
  * menginjak permukaan yang benar (scramblePedH) dan menunggu DI ATAS TROTOAR/MEDIAN —
@@ -1258,56 +1268,35 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: In
   const armRGeo = useMemo(() => getGeometry(`ped-arm-${pedKey}-R`, () => pedestrianArmParts(variant, -1, false, false, snowW)), [pedKey, variant, snowW]);
   const legLGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-L`, () => pedestrianLegParts(variant, 1, false, snowW)), [pedKey, variant, snowW]);
   const legRGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-R`, () => pedestrianLegParts(variant, -1, false, snowW)), [pedKey, variant, snowW]);
-  const seed = useMemo(() => {
-    return {
-      dist: 0, // mulai DI TROTOAR JAUH (ujung jalur), bukan di tengah aspal
-      dir: 1 as 1 | -1,
-      moving: false,
-      wait: 0.2 + Math.random() * 0.9, // jeda kecil sebelum mulai menyeberang
-      t0: Math.random() * 20,
-    };
-  }, [path]);
+  // SIKLUS HIDUP PENYEBERANG VISUAL ada di scrambleCrossing.ts (stepScrambleWalker):
+  // menunggu di trotoar -> menyeberang ke median -> menunggu di median -> menyeberang balik
+  // -> menyusuri trotoar jauh -> kembali -> ulang. Tiap langkah punya tujuan, dan langkah
+  // menyeberang yang sudah mulai selalu diselesaikan (tidak jadi patung di tengah zebra).
+  const seed = useMemo(() => createScrambleWalkerState(), [path]);
 
   useFrame((_, dtRaw) => {
     const root = rootRef.current;
     const inner = innerRef.current;
     if (!root || !inner) return;
     const dt = Math.min(dtRaw, 0.05);
-    const dMax = scramblePathLength(path); // ujung jalur di median
-    const dMin = 0; // ujung jalur di trotoar jauh
-    // ---- berjalan / menunggu ----
-    if (seed.moving) {
-      seed.dist += path.speed * dt * seed.dir;
-      const done = seed.dist >= dMax ? dMax : seed.dist <= dMin ? dMin : null;
-      if (done !== null) {
-        seed.dist = done;
-        seed.dir = done >= dMax ? -1 : 1; // sampai ujung: hadap balik
-        seed.moving = false;
-        seed.wait = 0.3 + Math.random() * 0.9;
-      }
-    } else if (seed.wait > 0) {
-      seed.wait -= dt; // berdiri di trotoar/median dulu
-    } else if (inter.lightState === "red") {
-      // lampu kendaraan merah = penyeberangan dibuka (sama seperti penyeberang sungguhan)
-      seed.moving = true;
-    }
-    const pose = scrambleWalkerPose(path, seed.dist, seed.dir);
-    const sPos = inter.s + pose.x;
+    // ---- satu langkah siklus (logikanya di scrambleCrossing.ts) ----
+    const pose = stepScrambleWalker(seed, path, dt, inter.lightState === "red");
+    const sPos = inter.s + pose.sLocal;
     const h = scramblePedH(pose.lat); // permukaan yang benar: apron 0.03 / median 0.18 / dek 0.175
     track.frame(sPos, pose.lat, h, root.position);
     track.quat(sPos, root.quaternion);
     inner.rotation.y = pose.yaw;
     const scl = PED_SCALE * (kid ? 0.62 : 1);
     inner.scale.setScalar(scl);
-    // ---- animasi langkah ----
-    if (seed.moving) seed.t0 += dt * ((path.speed / (0.62 * scl)) * Math.PI);
+    // ---- animasi langkah (hanya saat benar-benar melangkah) ----
+    if (pose.walking) seed.t0 += dt * ((path.speed / (0.62 * scl)) * Math.PI);
     const t = seed.t0;
-    const swing = seed.moving ? Math.sin(t) * 0.4 : 0;
+    const swing = pose.walking ? Math.sin(t) * 0.4 : 0;
     if (legLRef.current) legLRef.current.rotation.z = swing;
     if (legRRef.current) legRRef.current.rotation.z = -swing;
     if (armLRef.current) armLRef.current.rotation.z = -swing * 0.55;
     if (armRRef.current) armRRef.current.rotation.z = swing * 0.55;
-    inner.position.y = PED_LIFT + (seed.moving ? Math.abs(Math.sin(t)) * 0.018 : 0);
+    inner.position.y = PED_LIFT + (pose.walking ? Math.abs(Math.sin(t)) * 0.018 : 0);
   });
   return (
     <group ref={rootRef}>

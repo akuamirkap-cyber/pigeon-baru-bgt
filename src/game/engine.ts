@@ -509,6 +509,9 @@ export interface Mover {
    *  Dipakai di tempat yang TIDAK ada zebra cross — jadi tidak ada yang menyeberang di
    *  tengah blok / di luar zebra. */
   walkAlong?: 1 | -1;
+  /** 0..1: kekuatan animasi langkah. Turun ke 0 saat pejalan kaki berhenti (mis. menunggu
+   *  pemain lewat) supaya kakinya TIDAK BEKU di tengah langkah seperti patung. */
+  walkFade?: number;
   /** Waving/bathing actors stay on this storefront sidewalk side. */
   shibuyaAnimalSide?: -1 | 1;
   /** Japan Vehicle Pack motorcycle (including explicit Honda/Harley route aliases). */
@@ -3594,9 +3597,15 @@ class Engine {
           // PEJALAN KAKI TROTOAR: jalan sepanjang trotoar, lat tidak berubah, jadi tidak
           // pernah masuk badan jalan. Dipakai di tempat tanpa zebra cross.
           m.s += m.walkAlong * m.speed * dt;
-          m.hopT += dt * 6.4; // langkah kaki (render memakai m.phase === "hop")
+          // CADENCE LANGKAH: render memutar kaki dengan sin(hopT * strideFreq) dan
+          // strideFreq = (speed/0.88)*pi (World.tsx). Jadi hopT harus maju 1.0 per detik
+          // supaya panjang langkah = 0.88 m — sama seperti penyeberang sungguhan.
+          // Dulu hopT maju 6.4x -> kaki bergetar ~10 Hz (pejalan tampak jalan di tempat).
+          m.hopT += dt;
           m.phase = "hop";
-          m.h = gh + Math.abs(Math.sin(m.hopT * 4)) * 0.035;
+          // Satu anggukan badan per langkah (|sin| = 2x frekuensi siklus kaki).
+          m.h = gh + Math.abs(Math.sin(m.hopT * ((m.speed / (m.elderly ? 0.75 : 0.88)) * Math.PI))) * 0.035;
+          m.walkFade = 1;
         } else if (m.phase === "wait") {
           m.delay -= dt;
           m.h = lerp(m.h, gh, Math.min(1, dt * 8));
@@ -3636,9 +3645,13 @@ class Engine {
           }
           m.lat += m.dir * v * dt;
           const ghNow = this.pedSurfaceAt(m.lat, m.s);
+          // Animasi langkah dilembutkan saat orangnya berhenti (menunggu pemain lewat,
+          // menunggu di median): kaki kembali ke posisi berdiri, bukan beku di tengah langkah.
+          const fadeTarget = v > 0.01 ? 1 : 0;
+          m.walkFade = clamp((m.walkFade ?? fadeTarget) + (fadeTarget - (m.walkFade ?? fadeTarget)) * Math.min(1, dt * 6), 0, 1);
           if (v > 0.01) {
             m.hopT += dt * (v / m.speed);
-            m.h = ghNow + Math.abs(Math.sin(m.hopT * 9)) * 0.06;
+            m.h = ghNow + Math.abs(Math.sin(m.hopT * 9)) * 0.06 * m.walkFade;
           } else {
             m.h = Math.max(ghNow, m.h - dt * 0.3); // berdiri tenang menunggu
           }
