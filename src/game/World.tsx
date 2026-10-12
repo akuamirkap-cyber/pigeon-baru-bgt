@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { buildVoxelPair, getGeometry, getGeometryPair, glossyGroundMaterial, glowMaterial, pick, transparentVoxelMaterial, voxelMaterial, type GeoPair } from "./voxel";
 import { applyCurve } from "./curve";
+import { BREAD_HALO_PEAK, BREAD_HALO_SIZE, BREAD_HALO_STOPS, BREAD_HALO_Y, breadHaloBrightness } from "./breadGlow";
 import {
   CHUNK_LEN,
   barrierParts,
@@ -1996,6 +1997,8 @@ function RareFlash() {
 /* ---------- Bread (instanced) ---------- */
 const MAX_BREAD = 200; // cukup untuk roti aspal + roti langit (formasi terbang roket)
 const tmpObj = new THREE.Object3D();
+const tmpGlowPos = new THREE.Vector3();
+const tmpGlowColor = new THREE.Color();
 
 /* Bintang kilau (sparkle) bergaya Subway Surfers: sprite bintang 4 sudut, additive,
  * membesar lalu memudar sambil berputar. Menghadap kamera. */
@@ -2322,7 +2325,10 @@ function BurstFx() {
   );
 }
 
-/* Halo emas radial (additive, selalu menghadap kamera) untuk glow roti. */
+/* Aura emas roti (additive, selalu menghadap kamera).
+ * Bentuk & kecerahannya ada di breadGlow.ts: INTI TRANSPARAN + cincin lembut di pinggir
+ * siluet roti, jadi rotinya tetap tajam dan glow-nya terbaca sebagai aura (bukan noda emas
+ * yang menutupi roti sampai pucat). */
 let breadHaloTex: THREE.CanvasTexture | null = null;
 function getBreadHaloTex(): THREE.CanvasTexture {
   if (!breadHaloTex) {
@@ -2330,9 +2336,7 @@ function getBreadHaloTex(): THREE.CanvasTexture {
     c.width = c.height = 128;
     const g = c.getContext("2d")!;
     const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grd.addColorStop(0, "rgba(255,236,170,1)");
-    grd.addColorStop(0.35, "rgba(255,200,90,0.55)");
-    grd.addColorStop(1, "rgba(255,170,40,0)");
+    for (const [stop, color] of BREAD_HALO_STOPS) grd.addColorStop(stop, color);
     g.fillStyle = grd;
     g.fillRect(0, 0, 128, 128);
     breadHaloTex = new THREE.CanvasTexture(c);
@@ -2346,9 +2350,9 @@ function Breads() {
   const haloRef = useRef<THREE.InstancedMesh>(null);
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
-  const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.0, 1.0), []);
+  const haloGeo = useMemo(() => new THREE.PlaneGeometry(BREAD_HALO_SIZE, BREAD_HALO_SIZE), []);
   const haloMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: BREAD_HALO_PEAK, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
   );
   useFrame(() => {
@@ -2357,6 +2361,13 @@ function Breads() {
     let i = 0;
     const t = engine.time;
     const hm = haloRef.current;
+    // instanceColor dipakai untuk meredupkan glow per butir roti; isi dulu dengan putih
+    // supaya tidak ada instance yang tidak sengaja hitam pada frame pertama.
+    if (hm && !hm.instanceColor) {
+      for (let k = 0; k < MAX_BREAD; k++) hm.setColorAt(k, tmpGlowColor.setScalar(1));
+      const ic = (hm as THREE.InstancedMesh).instanceColor as THREE.InstancedBufferAttribute | null;
+      if (ic) ic.needsUpdate = true;
+    }
     for (const b of engine.breads) {
       if (b.taken || i >= MAX_BREAD) continue;
       const bob = Math.sin(t * 3 + b.phase) * 0.08;
@@ -2366,13 +2377,19 @@ function Breads() {
       tmpObj.updateMatrix();
       m.setMatrixAt(i, tmpObj.matrix);
       if (hm) {
-        // halo: billboard menghadap kamera, berdenyut pelan
-        const pulse = 1 + 0.05 * Math.sin(t * 2.2 + b.phase);
-        tmpObj.position.set(b.wx, b.wy + bob + 0.35, b.wz);
+        // halo: billboard menghadap kamera, TERPUSAT di tengah visual roti, ukuran tetap
+        // (tidak lagi berdenyut skalanya). Kecerahan per butir: memudar saat sangat dekat
+        // kamera (tidak memutihkan layar saat terbang melewatinya) dan di kejauhan.
+        const hcy = b.wy + bob + BREAD_HALO_Y;
+        tmpGlowPos.set(b.wx, hcy, b.wz);
+        const dist = tmpGlowPos.distanceTo(camera.position);
+        const bright = breadHaloBrightness(dist, t, b.phase);
+        tmpObj.position.set(b.wx, hcy, b.wz);
         tmpObj.quaternion.copy(camera.quaternion);
-        tmpObj.scale.setScalar(pulse);
+        tmpObj.scale.setScalar(1);
         tmpObj.updateMatrix();
         hm.setMatrixAt(i, tmpObj.matrix);
+        hm.setColorAt(i, tmpGlowColor.setScalar(bright));
       }
       i++;
     }
@@ -2387,6 +2404,7 @@ function Breads() {
     if (hm) {
       hm.count = i;
       hm.instanceMatrix.needsUpdate = true;
+      if (hm.instanceColor) hm.instanceColor.needsUpdate = true;
     }
   });
   return (
