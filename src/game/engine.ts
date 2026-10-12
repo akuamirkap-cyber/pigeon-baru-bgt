@@ -168,8 +168,11 @@ export type CrashCause = "obstacle" | "car" | "oncoming" | "motorcycle" | "chick
 export const NOS_MAX = 100;
 export const NOS_DURATION = 2.6;
 export const NOS_SPEED_MULT = 1.75;
-/** Kecepatan roket = boost NOS x 2 (request pemain: "roketnya cepetin 2x"). */
-export const ROCKET_SPEED_MULT = 2;
+/** Kecepatan roket = boost NOS x 1.4.
+ *  Awalnya x2 (3.5x kecepatan normal), lalu pemain minta "lambatin roketnya 30 persen"
+ *  -> 2 x 0.7 = 1.4, jadi sekarang 1.75 x 1.4 = 2.45x kecepatan normal (30% lebih lambat
+ *  dari sebelumnya, tapi masih jelas terasa sebagai roket). */
+export const ROCKET_SPEED_MULT = 1.4;
 /** Posisi nosel roket punggung relatif pemain: 0.18 m di belakang, 1.03 m di atas papan.
  *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635,
  *  pigeonScale 1.08, lift 0.62): roket punggung sekarang 2x lebih besar (skala grup 1.6)
