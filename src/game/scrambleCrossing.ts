@@ -8,7 +8,7 @@
  *     berjarak 0.75 m: kolom LUAR (|x| = 4.25 dan 5.75) untuk penyeberang visual, kolom TENGAH
  *     (|x| = 5.0) untuk penyeberang sungguhan dari sistem mover (engine). Dua sistem itu jadi
  *     tidak pernah berdiri di titik yang sama (jarak kolom 0.75 m > lebar badan ~0.45 m).
- *  2. Penyeberang visual hanya melintasi PARUH JAUH: median (lat 4.3) ↔ trotoar jauh (12.9).
+ *  2. Penyeberang visual hanya melintasi PARUH JAUH: median (lat 4.3) ↔ trotoar jauh (13.05).
  *     Jalur pemain (|lat| ≤ 2.4, saat bebas terbang ±2.9) karena itu TIDAK pernah ditempati
  *     penyeberang visual — jalur pemain tetap hanya berisi penyeberang sungguhan (mover),
  *     persis seperti rancangan aslinya.
@@ -39,10 +39,12 @@ export const SCRAMBLE_FAR_LAT = 12.3;
 /** Tempat tunggu di median (sisi dalam, masih di atas pulau median 3.55..5.15). */
 export const SCRAMBLE_MED_LAT = 4.3;
 /** Ujung/tempat tunggu di trotoar jauh (masih di atas dek trotoar 12.6..16.1).
- *  Ditaruh di 12.9 (jalur trotoar yang BEBAS dekorasi: vending 13.75+, lampu 12.55,
- *  pengunjung toko ~15.05, pohon 16.2 — lihat .arena-tmp/probe141.ts). Dulu 15.2:
- *  penyeberang berdiri/berjalan DI ANTARA lampion, pengunjung toko, dan vending. */
-export const SCRAMBLE_FAR_WALK = 12.9;
+ *  Jalur trotoar 13.05 (dekat tepi trotoar 12.6, tapi masih 0.3 m dari batas luar lampu 12.75),
+ *  TERPISAH dari jalur langkah pejalan trotoar ambient (13.7 searah / 14.25 berlawanan arah,
+ *  lihat sidewalkWalkerLat) supaya dua sistem pejalan tidak pernah berpapasan < 0.5 m.
+ *  Bebas dekorasi: lampu 12.55, pengunjung toko/lampion ~15.05, vending >=13.75 (di ujung
+ *  dalam jalur), pohon 16.2 — lihat .arena-tmp/probe141.ts. */
+export const SCRAMBLE_FAR_WALK = 13.05;
 
 /** Panjang langkah menyusuri trotoar jauh (m) tiap kolom sebelum kembali ke perempatan.
  *  Membuat penyeberang visual punya TUJUAN yang jelas (pergi & pulang menyusuri trotoar),
@@ -136,12 +138,20 @@ export function stepScrambleWalker(
   path: ScramblePath,
   dt: number,
   lightRed: boolean,
+  /** Ada pejalan trotoar tepat di jalur yang akan dilewati? Kalau ya, penyeberang BERHENTI
+   *  sebentar (orang tidak menabrak orang) dan melanjutkan begitu jalurnya lengang. */
+  blocked?: () => boolean,
 ): { sLocal: number; lat: number; yaw: number; walking: boolean } {
   const len = scramblePathLength(path);
   const step = path.speed * dt;
   if (st.leg === "toMedian" || st.leg === "toFar") {
     const dir: 1 | -1 = st.leg === "toMedian" ? 1 : -1;
     st.dir = dir;
+    if (blocked?.()) {
+      // tunggu di tempat (bukan berjalan di tempat): langkah berhenti, sikap badan tenang
+      const waiting = scrambleWalkerPose(path, st.dist, dir);
+      return { sLocal: waiting.x, lat: waiting.lat, yaw: waiting.yaw, walking: false };
+    }
     st.dist += step * dir;
     if (st.leg === "toMedian" && st.dist >= len) {
       st.dist = len; // tiba di pulau median

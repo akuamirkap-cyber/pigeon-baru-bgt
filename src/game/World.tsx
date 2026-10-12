@@ -111,7 +111,7 @@ import {
   SUBWAY_GAP,
 } from "./models";
 import { railPhase, WAVE_VARIANT } from "./railMath";
-import { SCRAMBLE_PATHS, createScrambleWalkerState, stepScrambleWalker, type ScramblePath } from "./scrambleCrossing";
+import { SCRAMBLE_PATHS, createScrambleWalkerState, scrambleWalkerPose, stepScrambleWalker, type ScramblePath } from "./scrambleCrossing";
 import { useUI, type TrackMode } from "./store";
 import { getRayTexture } from "./rays";
 import { getAssetData } from "../shibuya/voxel/models";
@@ -128,6 +128,7 @@ import {
   type Chunk,
   type Crossing,
   crossCarH,
+  pedGroundH,
   scramblePedH,
   trafficSignalApproach,
   RARE_FLASH_T,
@@ -727,7 +728,11 @@ const ShibuyaPedestrianMover = memo(function ShibuyaPedestrianMover({ m }: { m: 
       inner.scale.setScalar(1);
     } else {
       inner.position.set(0, 0, 0);
-      inner.rotation.set(0, m.dir > 0 ? 0 : Math.PI, 0); // rig Shibuya menghadap +z: 0 = ke kanan (+lat), PI = ke kiri
+      // rig Shibuya menghadap +z: 0 = ke kanan (+s dunia, lihat probe140), PI = ke kiri.
+      // Pejalan TROTOAR (walkAlong) berjalan menyusuri trotoar, jadi menghadap arah jalannya
+      // (dulu memakai m.dir penyeberang -> meluncur menyamping seperti bug).
+      const shibuyaWalkYaw = m.walkAlong ? (m.walkAlong > 0 ? 0 : Math.PI) : m.dir > 0 ? 0 : Math.PI;
+      inner.rotation.set(0, shibuyaWalkYaw, 0);
       inner.scale.setScalar(1);
       if (m.phase === "hop") {
         const strideFreq = (m.speed / 0.88) * Math.PI;
@@ -1281,9 +1286,26 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: In
     if (!root || !inner) return;
     const dt = Math.min(dtRaw, 0.05);
     // ---- satu langkah siklus (logikanya di scrambleCrossing.ts) ----
-    const pose = stepScrambleWalker(seed, path, dt, inter.lightState === "red");
+    // Posisi SEKARANG di dunia (untuk cek: ada pejalan trotoar tepat di jalur penyeberangan?
+    // Kalau ya, penyeberang menunggu — persis orang asli yang tidak menabrak orang).
+    const curPose = scrambleWalkerPose(path, seed.dist, seed.dir);
+    const onWalkLeg = seed.leg === "walkAway" || seed.leg === "walkBack";
+    const curS = inter.s + (onWalkLeg ? path.xA + seed.sidewalk * seed.sidewalkDir : curPose.x);
+    const curLat = onWalkLeg ? path.latA : curPose.lat;
+    const sidewalkBusy = () => {
+      for (const m of engine.movers) {
+        if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+        if (Math.abs(m.s - curS) < 1.3 && Math.abs(m.lat - curLat) < 0.5) return true;
+      }
+      return false;
+    };
+    const pose = stepScrambleWalker(seed, path, dt, inter.lightState === "red", sidewalkBusy);
     const sPos = inter.s + pose.sLocal;
-    const h = scramblePedH(pose.lat); // permukaan yang benar: apron 0.03 / median 0.18 / dek 0.175
+    // Permukaan yang benar: DI DALAM apron perempatan pakai dek perempatan (apron 0.03 /
+    // median 0.18 / dek jalan lintas 0.175); DI LUAR apron (saat menyusuri trotoar jauh)
+    // pakai tinggi trotoar asli (0.12) — dulu selalu scramblePedH, jadi kaki melayang 5.5 cm
+    // begitu penyeberang menyusuri trotoar di luar perempatan.
+    const h = Math.abs(pose.sLocal) <= 6.7 ? scramblePedH(pose.lat) : pedGroundH(pose.lat, track.mode);
     track.frame(sPos, pose.lat, h, root.position);
     track.quat(sPos, root.quaternion);
     inner.rotation.y = pose.yaw;

@@ -512,6 +512,9 @@ export interface Mover {
   /** 0..1: kekuatan animasi langkah. Turun ke 0 saat pejalan kaki berhenti (mis. menunggu
    *  pemain lewat) supaya kakinya TIDAK BEKU di tengah langkah seperti patung. */
   walkFade?: number;
+  /** true kalau pejalan trotoar ini berada di trotoar TEROWONGAN BUSWAY (lat ±8.5).
+   *  Mereka tidak boleh keluar dari terowongan (di luar terowongan lat itu = badan jalan). */
+  tunnelWalker?: boolean;
   /** Waving/bathing actors stay on this storefront sidewalk side. */
   shibuyaAnimalSide?: -1 | 1;
   /** Japan Vehicle Pack motorcycle (including explicit Honda/Harley route aliases). */
@@ -657,6 +660,10 @@ export interface Intersection {
 
 /** Center-of-car position that keeps its nose just behind the painted scramble stop bars. */
 export const TRAFFIC_STOP_LINE_OFFSET = 8.2;
+
+/** Jendela pandang tempat pejalan kaki TROTOAR dijaga tetap hidup (lihat updateSidewalkCrowd). */
+const SIDEWALK_WINDOW_BACK = 14;
+const SIDEWALK_WINDOW_AHEAD = 140;
 
 /** Smooth approach policy for through-traffic: green passes, red/yellow stop at the bar. */
 export function trafficSignalApproach(
@@ -978,6 +985,8 @@ class Engine {
   trains: Train[] = [];
   intersections: Intersection[] = [];
   crossCars: CrossTrafficCar[] = [];
+  /** timer penjaga populasi pejalan kaki TROTOAR (lihat updateSidewalkCrowd) */
+  private sidewalkCrowdT = 0;
   /** Efek roti tersedot ke badan merpati saat diambil — disimpan di ruang track
    *  (rel terhadap pemain) supaya ikut maju bersama pemain dan tidak "nembus bablas". */
   breadFx: { rel: number; lat: number; h: number; age: number }[] = [];
@@ -2226,6 +2235,7 @@ class Engine {
     if (this.phase === "playing") while (this.nextObstacleS < this.distance + 70) this.spawnGroup();
     this.cull();
 
+    this.updateSidewalkCrowd(dt);
     this.updateMovers(dt);
     this.updateOverpass(dt);
     this.updateCrossings(dt);
@@ -3596,16 +3606,39 @@ class Engine {
         if (m.walkAlong) {
           // PEJALAN KAKI TROTOAR: jalan sepanjang trotoar, lat tidak berubah, jadi tidak
           // pernah masuk badan jalan. Dipakai di tempat tanpa zebra cross.
-          m.s += m.walkAlong * m.speed * dt;
-          // CADENCE LANGKAH: render memutar kaki dengan sin(hopT * strideFreq) dan
-          // strideFreq = (speed/0.88)*pi (World.tsx). Jadi hopT harus maju 1.0 per detik
-          // supaya panjang langkah = 0.88 m — sama seperti penyeberang sungguhan.
-          // Dulu hopT maju 6.4x -> kaki bergetar ~10 Hz (pejalan tampak jalan di tempat).
-          m.hopT += dt;
-          m.phase = "hop";
-          // Satu anggukan badan per langkah (|sin| = 2x frekuensi siklus kaki).
-          m.h = gh + Math.abs(Math.sin(m.hopT * ((m.speed / (m.elderly ? 0.75 : 0.88)) * Math.PI))) * 0.035;
-          m.walkFade = 1;
+          // JARAK AMAN: trotoar punya dua lajur (searah/berlawanan arah) dan jalur penyeberang
+          // visual. Kalau ada pejalan lain tepat di DEPAN pada lajur yang sama, orang ini
+          // BERHENTI (kaki ikut berhenti lewat walkFade, jadi tidak "jalan di tempat") sampai
+          // jalur di depannya kosong. Orang yang datang dari arah berlawanan di lajur sama
+          // dipecah oleh tie-break id supaya tidak saling kunci (deadlock) berdua.
+          const held = this.walkerBlockedAhead(m);
+          if (held) {
+            // berdiri menunggu jalur depan kosong: tetap di tempat, kaki berhenti
+            // (walkFade turun -> World.tsx memulihkan pose berdiri, bukan beku di tengah langkah)
+            const curFade = m.walkFade ?? 0;
+            m.walkFade = clamp(curFade + (0 - curFade) * Math.min(1, dt * 6), 0, 1);
+            m.h = lerp(m.h, this.pedSurfaceAt(m.lat, m.s), Math.min(1, dt * 8));
+            m.phase = "hop";
+          } else {
+            m.s += m.walkAlong * m.speed * dt;
+            // TROTOAR TEROWONGAN BUSWAY hanya ada DI DALAM terowongan (|lat| 7.4..9.6). Begitu
+            // masuk/keluar terowongan, lat trotoar itu jatuh di badan jalan — jadi pejalan itu
+            // "turun" di mulut terowongan (dihilangkan) supaya tidak ada yang jalan di jalur bus.
+            const inTunnelNow = this.isInSubwayTunnel(m.s, 0);
+            if (m.tunnelWalker ? !inTunnelNow : inTunnelNow) remove = true;
+            // CADENCE LANGKAH: render memutar kaki dengan sin(hopT * strideFreq) dan
+            // strideFreq = (speed/0.88)*pi (World.tsx). Jadi hopT harus maju 1.0 per detik
+            // supaya panjang langkah = 0.88 m — sama seperti penyeberang sungguhan.
+            // Dulu hopT maju 6.4x -> kaki bergetar ~10 Hz (pejalan tampak jalan di tempat).
+            m.hopT += dt;
+            m.phase = "hop";
+            // Tinggi dihitung dari posisi SESUDAH melangkah (bukan sebelum): kalau dihitung
+            // sebelum, satu frame di tepi apron perempatan kakinya meleset ~5 cm.
+            const ghNowWalk = this.pedSurfaceAt(m.lat, m.s);
+            // Satu anggukan badan per langkah (|sin| = 2x frekuensi siklus kaki).
+            m.h = ghNowWalk + Math.abs(Math.sin(m.hopT * ((m.speed / (m.elderly ? 0.75 : 0.88)) * Math.PI))) * 0.035;
+            m.walkFade = 1;
+          }
         } else if (m.phase === "wait") {
           m.delay -= dt;
           m.h = lerp(m.h, gh, Math.min(1, dt * 8));
@@ -4004,6 +4037,10 @@ class Engine {
 
   /** Permukaan yang diinjak pejalan kaki: trotoar/median/curb, plus dek perempatan / scramble. */
   private pedSurfaceAt(lat: number, s: number): number {
+    // TROTOAR TEROWONGAN BUSWAY: model subwayTrackParts() meletakkan trotoar tepi di
+    // |lat| 7.4..9.6 dengan atas 0.24 m (di luar jalur bus). Tanpa ini, pejalan di trotoar
+    // terowongan berdiri di ketinggian plaza (0.1) dan tampak tenggelam di lantai.
+    if (Math.abs(lat) >= 7.2 && Math.abs(lat) <= 9.8 && this.isInSubwayTunnel(s, 1)) return 0.24;
     let h = pedGroundH(lat, track.mode);
     for (const it of this.intersections) {
       const ds = Math.abs(s - it.s);
@@ -4941,7 +4978,9 @@ class Engine {
     this.nosCans = this.nosCans.filter((c) => c.s < lo - 8 || c.s > hi + 8);
     this.rockets = this.rockets.filter((r) => r.s < lo - 8 || r.s > hi + 8);
     this.letters = this.letters.filter((l) => l.s < lo - 8 || l.s > hi + 8);
-    this.movers = this.movers.filter((m) => m.s < lo || m.s > hi);
+    // Pejalan TROTOAR tetap boleh ada di area perlintasan (mereka di trotoar, bukan rel);
+    // yang dibersihkan hanya yang berada di jalur jalan.
+    this.movers = this.movers.filter((m) => (m.kind === "pedestrian" && m.walkAlong) || m.s < lo || m.s > hi);
     // PASTIKAN SEMUA 3 LAJUR (0 = kiri, 1 = tengah, 2 = kanan) SELALU MEMILIKI RAMP!
     // Pemain di lajur mana pun dijamin 100% selalu menemukan ramp untuk melompati kereta dengan aman.
     cr.rampLanes = [0, 1, 2];
@@ -6059,6 +6098,146 @@ class Engine {
     return { dx, dLat };
   }
 
+  /** Target pejalan kaki TROTOAR yang harus terlihat di jendela pandang, per sisi trotoar. */
+  private sidewalkTargetPerSide(): number {
+    if (track.mode === "shibuya") return 7;
+    if (track.mode === "haruna") return 3;
+    return 5;
+  }
+
+  /** Titik trotoar (lat) untuk pejalan kaki: trotoar biasa atau trotoar tepi terowongan busway. */
+  private sidewalkWalkerLat(side: -1 | 1, inTunnel: boolean, dir: 1 | -1): number {
+    if (inTunnel) return side * ((dir > 0 ? 8.85 : 8.15) + rand(-0.1, 0.1)); // trotoar terowongan (7.4..9.6)
+    if (side > 0) {
+      if (track.mode !== "shibuya") return clamp(5.3 + (dir > 0 ? 0.35 : -0.35) + rand(-0.1, 0.1), 5.0, 5.65);
+      // Jalur trotoar jauh Shibuya (bebas dekorasi: lampu 12.55 paling luar 12.75, pengunjung
+      // toko/lampion ~15.05, vending >=13.75). Searah 13.7 / berlawanan 14.25, dan jalur
+      // penyeberang visual scramble 13.05 -> tidak ada dua pejalan di titik yang sama.
+      return clamp((dir > 0 ? 13.7 : 14.25) + rand(-0.1, 0.1), 13.6, 14.35);
+    }
+    return clamp((dir > 0 ? -5.65 : -5.05) + rand(-0.1, 0.1), -5.75, -4.95);
+  }
+
+  /**
+   * PENJAGA POPULASI PEJALAN KAKI TROTOAR.
+   *
+   * Dulu pejalan trotoar hanya muncul kalau pola chunk yang keluar kebetulan "pedestrians" DAN
+   * tidak ada perempatan dalam 18 m; terukur cuma 112 orang lahir dalam 900 detik dan
+   * 86% waktu trotoar KOSONG sama sekali (pemain melaju ~28 m/s, orang yang sudah dilewati
+   * hilang 16 m di belakang). Sekarang populasinya dijaga: begitu ada yang tertinggal, orang
+   * baru muncul di depan pada trotoar yang sama, jadi trotoar selalu hidup — termasuk trotoar
+   * tepi terowongan busway (mode banyak bus).
+   */
+  private updateSidewalkCrowd(dt: number) {
+    if (this.phase !== "playing") return;
+    this.sidewalkCrowdT -= dt;
+    if (this.sidewalkCrowdT > 0) return;
+    this.sidewalkCrowdT = 0.25;
+    const d = this.distance;
+    let near = 0;
+    let far = 0;
+    for (const m of this.movers) {
+      if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+      const rel = m.s - d;
+      if (rel < -SIDEWALK_WINDOW_BACK || rel > SIDEWALK_WINDOW_AHEAD) continue;
+      if (m.lat < 0) near++;
+      else far++;
+    }
+    const target = this.sidewalkTargetPerSide();
+    let budget = 2; // maksimal 2 orang per tik supaya munculnya mengalir, tidak meledak
+    const need: (-1 | 1)[] = [];
+    if (near < target) need.push(-1);
+    if (far < target) need.push(1);
+    for (const side of need) {
+      if (budget <= 0) break;
+      const s = this.pickSidewalkWalkerS(d, side);
+      if (s === null) continue;
+      this.spawnSidewalkWalker(s, side);
+      budget--;
+    }
+  }
+
+  /** Titik s yang aman untuk pejalan trotoar baru (tidak menempel orang lain, bukan mulut
+   *  terowongan, bukan perlintasan kereta). */
+  private pickSidewalkWalkerS(d: number, side: -1 | 1): number | null {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const s0 = d + rand(40, SIDEWALK_WINDOW_AHEAD - 6);
+      const inTun = this.isInSubwayTunnel(s0, 0);
+      // jangan di mulut terowongan: pejalan tidak boleh keluar/masuk lewat lat yang berbeda
+      if (this.isInSubwayTunnel(s0 - 12, 0) !== inTun) continue;
+      if (this.isInSubwayTunnel(s0 + 12, 0) !== inTun) continue;
+      // jangan di area perlintasan kereta (trotoar terpotong rel & palang pintu)
+      if (this.crossings.some((cr) => Math.abs(cr.s - s0) < 10)) continue;
+      let clash = false;
+      for (const m of this.movers) {
+        if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+        if (m.lat < 0 !== side < 0) continue;
+        if (Math.abs(m.s - s0) < 3.2) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      const s = this.clearSidewalkPoleS(s0); // jangan menembus tiang lampu trotoar
+      const tunnelNow = this.isInSubwayTunnel(s, 0);
+      if (this.isInSubwayTunnel(s - 12, 0) !== tunnelNow || this.isInSubwayTunnel(s + 12, 0) !== tunnelNow) continue;
+      return s;
+    }
+    return null;
+  }
+
+  /**
+   * Apakah ada pejalan lain tepat di depan pejalan trotoar `m` pada lajur yang sama?
+   * Dipakai untuk berhenti melangkah (bukan menembus) — lihat komentar di updateMovers.
+   */
+  private walkerBlockedAhead(m: Mover): boolean {
+    const dir = m.walkAlong;
+    if (!dir) return false;
+    for (const o of this.movers) {
+      if (o === m || o.kind !== "pedestrian" || o.phase === "hit") continue;
+      const ds = o.s - m.s;
+      const ad = Math.abs(ds);
+      if (ad > 1.0 || ad < 1e-4) continue;
+      if (Math.abs(o.lat - m.lat) > 0.5) continue; // beda lajur: aman, silakan lewat
+      if (ds * dir > 0) return true; // ada orang di depan pada lajur saya
+      // orang dari arah berlawanan pada lajur yang sama (kasus langka: mulut terowongan /
+      // kelompok yang muncul persis berdampingan): yang id-nya lebih besar mengalah dulu
+      if (o.walkAlong && o.walkAlong !== dir && (m.id ?? 0) > (o.id ?? 0)) return true;
+    }
+    return false;
+  }
+
+  /** Ada pejalan trotoar lain yang sudah berdiri dekat titik ini (satu lajur)? */
+  private walkAlongNear(s: number, lat: number): boolean {
+    for (const m of this.movers) {
+      if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+      if (Math.abs(m.s - s) < 1.8 && Math.abs(m.lat - lat) < 0.55) return true;
+    }
+    return false;
+  }
+
+  /** Pejalan kaki trotoar baru (bukan penyeberang): jalannya menyusuri trotoar, lat tetap. */
+  private spawnSidewalkWalker(s: number, side: -1 | 1) {
+    const inTunnel = this.isInSubwayTunnel(s, 0);
+    const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+    const m = this.newMover("pedestrian", s, -1, this.sidewalkWalkerLat(side, inTunnel, dir));
+    m.walkAlong = dir;
+    m.elderly = Math.random() < 0.12;
+    m.speed = m.elderly ? 1.5 : rand(2.4, 3.2); // 1.5x langkah penyeberang (aturan lama)
+    m.phase = "hop";
+    m.variant = m.elderly ? randInt(0, 2) : Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
+    if (inTunnel) m.tunnelWalker = true;
+    if (track.mode === "shibuya" && !m.elderly && Math.random() < 0.55) {
+      // Sebagian memakai rig Shibuya yang asli (sama seperti penyeberang) supaya trotoar
+      // terasa seperti Shibuya, bukan jalan generik.
+      const sumoDue = this.shibuyaPedestrianIndex % 3 === 0;
+      m.shibuyaChar = sumoDue ? "sumo" : Math.random() < 0.8 ? "salaryman" : pick(SHIBUYA_CHARACTERS);
+      this.shibuyaPedestrianIndex += 1;
+    }
+    this.movers.push(m);
+    this.moverVersion++;
+  }
+
   /**
    * Geser titik tunggu/seberang sedikit kalau tepat ada tiang lampu (atau dekor trotoar sejenis)
    * di lintasannya, supaya penyeberang tidak berjalan menembus tiang saat menunggu/menyeberang.
@@ -6136,17 +6315,32 @@ class Engine {
     // TANPA zebra cross di dekat sini (celah pagar hanya karena perlintasan kereta / terowongan
     // busway): jangan menyeberang di tengah blok — cukup jalan kaki sepanjang trotoar.
     // Pemain hanya melihat orang menyeberang DI ZEBRA CROSS perempatan.
-    if (!inter) {
-      const farSide = Math.random() < 0.5;
-      const lat = farSide ? (track.mode === "shibuya" ? 13.45 : 5.3) : -5.3;
+    // Di dalam TEROWONGAN BUSWAY tidak ada zebra cross -> kelompok ini tidak menyeberang,
+    // hanya menyusuri trotoar tepi terowongan (|lat| 8.5). Itu juga sebabnya cabang trotoar
+    // dipakai saat inTun, bukan hanya saat tidak ada perempatan.
+    const inTun = this.isInSubwayTunnel(x, 4);
+    if (!inter || inTun) {
+      const side: -1 | 1 = Math.random() < 0.5 ? 1 : -1;
       for (let i = 0; i < n; i++) {
-        const m = this.newMover("pedestrian", x + i * rand(2.2, 4.2), -1, lat + rand(-0.35, 0.35));
-        m.walkAlong = (Math.random() < 0.5 ? 1 : -1) as 1 | -1;
+        // Zona ditentukan per ORANG (bukan per kelompok): kalau kelompok ini tepat di mulut
+        // terowongan, orang di dalam terowongan memakai trotoar terowongan dan yang di luar
+        // memakai trotoar biasa — jadi tidak ada yang langsung hilang sesudah muncul.
+        const sI = x + i * rand(2.2, 4.2);
+        const mInTun = this.isInSubwayTunnel(sI, 0);
+        // jangan tepat di mulut terowongan: trotoarnya berganti lat di situ
+        if (this.isInSubwayTunnel(sI - 3, 0) !== mInTun || this.isInSubwayTunnel(sI + 3, 0) !== mInTun) continue;
+        const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+        const lat = this.sidewalkWalkerLat(side, mInTun, dir);
+        // jangan muncul menempel pejalan trotoar yang sudah ada (satu lajur)
+        if (this.walkAlongNear(sI, lat)) continue;
+        const m = this.newMover("pedestrian", sI, -1, lat);
+        m.walkAlong = dir;
         m.speed = rand(2.4, 3.2); // trotoar: 1.5x lebih cepat dari langkah penyeberang
         m.phase = "hop";
         m.variant = Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
         m.elderly = i === 0 && Math.random() < 0.25;
         if (m.elderly) m.speed = 1.5;
+        if (mInTun) m.tunnelWalker = true;
         this.movers.push(m);
       }
       this.moverVersion++;
@@ -6274,9 +6468,11 @@ class Engine {
             (!o.keepRail || !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20)) &&
             (!o.keepRail || !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 8))
         );
+        // Pejalan TROTOAR (walkAlong) tidak pernah ada di koridor item (jalur jalan), jadi
+        // mereka TIDAK ikut dihapus — dulu loro semua dihapus dan trotoar jadi kosong.
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                 !(m.kind === "pedestrian" && Math.abs(m.s - x) < 14) &&
+                 !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 14) &&
                  !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 14)
         );
         for (let b = 1; b <= 3; b++) {
@@ -6312,7 +6508,7 @@ class Engine {
         );
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                 !(m.kind === "pedestrian" && Math.abs(m.s - x) < 16) &&
+                 !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "chicken" && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "cat" && Math.abs(m.s - x) < 16)
@@ -6371,7 +6567,7 @@ class Engine {
           // Bersihkan kendaraan/hewan yang melintas di sekitar huruf
           this.movers = this.movers.filter(
             (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                   !(m.kind === "pedestrian" && Math.abs(m.s - x) < 18) &&
+                   !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "chicken" && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "cat" && Math.abs(m.s - x) < 18)
