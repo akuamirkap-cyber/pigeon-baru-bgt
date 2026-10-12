@@ -504,6 +504,10 @@ export interface Mover {
   shibuyaAnimal?: ShibuyaAnimalId;
   /** Source-character activity: crossing, waving toward the player, or bathing beside a shop. */
   shibuyaAnimalActivity?: ShibuyaAnimalActivity;
+  /** Pejalan kaki TROTOAR (bukan penyeberang): berjalan sepanjang trotoar, arahnya ±1.
+   *  Dipakai di tempat yang TIDAK ada zebra cross — jadi tidak ada yang menyeberang di
+   *  tengah blok / di luar zebra. */
+  walkAlong?: 1 | -1;
   /** Waving/bathing actors stay on this storefront sidewalk side. */
   shibuyaAnimalSide?: -1 | 1;
   /** Japan Vehicle Pack motorcycle (including explicit Honda/Harley route aliases). */
@@ -3566,6 +3570,9 @@ class Engine {
           m.lat += m.dir * m.speed * dt;
           m.hopT += dt;
           m.h = Math.abs(Math.sin(m.hopT * 12)) * 0.035;
+          // Shibuya: hewan berhenti di MEDIAN (sama seperti penyeberang), bukan menerobos
+          // aspal jalur seberang 5.0..12.3 yang dilewati mobil.
+          if (Math.abs(m.lat) > (track.mode === "shibuya" ? SHIBUYA_MEDIAN_LAT + 0.45 : 6.8)) remove = true;
           if (!m.warned && Math.abs(m.s - d) < 18) {
             m.warned = true;
             if (m.kind === "shibuya_animal") {
@@ -3576,14 +3583,20 @@ class Engine {
               sfx.meow();
             }
           }
-          if (Math.abs(m.lat) > 6.8) remove = true;
         }
         if (m.s < d - 16) remove = true;
       } else if (m.kind === "pedestrian") {
         // Kaki penyeberang selalu menapak permukaan yang benar (trotoar/median/dek
         // perempatan) — tidak lagi melayang di atas trotoar atau tenggelam ke aspal.
         const gh = this.pedSurfaceAt(m.lat, m.s);
-        if (m.phase === "wait") {
+        if (m.walkAlong) {
+          // PEJALAN KAKI TROTOAR: jalan sepanjang trotoar, lat tidak berubah, jadi tidak
+          // pernah masuk badan jalan. Dipakai di tempat tanpa zebra cross.
+          m.s += m.walkAlong * m.speed * dt;
+          m.hopT += dt * 6.4; // langkah kaki (render memakai m.phase === "hop")
+          m.phase = "hop";
+          m.h = gh + Math.abs(Math.sin(m.hopT * 4)) * 0.035;
+        } else if (m.phase === "wait") {
           m.delay -= dt;
           m.h = lerp(m.h, gh, Math.min(1, dt * 8));
           const signal = m.signalIntersectionId == null
@@ -5961,9 +5974,18 @@ class Engine {
       // pipa putih di -4.12, dan hanya menyeberang di celah pagar (perempatan/perlintasan) —
       // jadi tidak ada lagi yang berjalan menembus pagar.
       let animalS = this.distance + 46 + i * 5.6;
-      const gap = activity === "crossing" ? this.railingGapRange(animalS, 400) : null;
-      const crossing = activity === "crossing" && !!gap;
-      if (crossing && gap) animalS = clamp(animalS, gap[0], gap[1]);
+      // RAPI — hewan hanya menyeberang DI ZEBRA CROSS perempatan (pita zebra yang sama dipakai
+      // penyeberang), bukan di celah pagar perlintasan kereta / tengah blok.
+      const crossInter = activity === "crossing"
+        ? this.intersections
+            .filter((it) => !it.scramble && it.s > this.distance + 20)
+            .sort((a, b) => a.s - b.s)[0]
+        : undefined;
+      const crossing = activity === "crossing" && !!crossInter;
+      if (crossing && crossInter) {
+        const bandX = (crossInter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
+        animalS = crossInter.s + (dir > 0 ? -bandX : bandX);
+      }
       const startLat = crossing ? -dir * 4.93 : side > 0 ? 13.45 : -5.3;
       const m = this.newMover("shibuya_animal", animalS, -1, startLat);
       m.dir = dir;
@@ -5992,7 +6014,9 @@ class Engine {
   private crosserSpotBusy(signalId: number | undefined, s: number, lat: number): boolean {
     if (signalId === undefined) return false;
     for (const m of this.movers) {
-      if (m.kind !== "pedestrian" || m.phase === "hit" || m.signalIntersectionId !== signalId) continue;
+      if (m.phase === "hit") continue;
+      const sameCrossing = m.kind === "pedestrian" && m.signalIntersectionId === signalId;
+      if (!sameCrossing && m.kind !== "shibuya_animal") continue;
       if (Math.hypot(m.s - s, m.lat - lat) < 0.75) return true;
     }
     return false;
@@ -6092,6 +6116,25 @@ class Engine {
     const inter = this.intersections
       .filter((it) => Math.abs(it.s - x) < 18)
       .sort((a, b) => Math.abs(a.s - x) - Math.abs(b.s - x))[0];
+    // TANPA zebra cross di dekat sini (celah pagar hanya karena perlintasan kereta / terowongan
+    // busway): jangan menyeberang di tengah blok — cukup jalan kaki sepanjang trotoar.
+    // Pemain hanya melihat orang menyeberang DI ZEBRA CROSS perempatan.
+    if (!inter) {
+      const farSide = Math.random() < 0.5;
+      const lat = farSide ? (track.mode === "shibuya" ? 13.45 : 5.3) : -5.3;
+      for (let i = 0; i < n; i++) {
+        const m = this.newMover("pedestrian", x + i * rand(2.2, 4.2), -1, lat + rand(-0.35, 0.35));
+        m.walkAlong = (Math.random() < 0.5 ? 1 : -1) as 1 | -1;
+        m.speed = rand(2.4, 3.2); // trotoar: 1.5x lebih cepat dari langkah penyeberang
+        m.phase = "hop";
+        m.variant = Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
+        m.elderly = i === 0 && Math.random() < 0.25;
+        if (m.elderly) m.speed = 1.5;
+        this.movers.push(m);
+      }
+      this.moverVersion++;
+      return n * 2.8 + 3.5;
+    }
     const bandX = inter ? (inter.scramble ? 5.0 : (inter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1) : 0;
     const leftFirst = Math.random() < 0.5;
     const bandSlot: [number, number] = [0, 0];
@@ -6788,24 +6831,40 @@ class Engine {
         const dir = Math.random() < 0.5 ? 1 : -1;
         const est = Math.max(this.speed, START_SPEED);
         const eta = Math.max(0.1, (x - d) / est);
+        // RAPI — hewan/karakter Shibuya hanya MENYEBERANG kalau memang ada zebra cross
+        // (perempatan biasa yang pitanya dipakai penyeberang). Di tempat lain mereka hanya
+        // berjalan/berdiri di trotoar: tidak ada lagi yang menyeberang di tengah blok, dan
+        // tidak ada lagi yang MENUNGGU DI DALAM LAJUR MOBIL (dulu lat ±3.6 = tengah jalan).
+        const crossInter = this.intersections
+          .filter((it) => !it.scramble && Math.abs(it.s - x) < 10)
+          .sort((a, b) => Math.abs(a.s - x) - Math.abs(b.s - x))[0];
+        const crossBandX = crossInter ? (crossInter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1 : 0;
+        const crossWait = track.mode === "shibuya" ? 4.93 : 6.8;
         for (let i = 0; i < n; i++) {
           const animalSpeed = rand(2.2, 3.2);
           const targetLat = LANE_LAT[(i + 1) % 3];
-          const startEdge = 3.6;
-          const distToTarget = Math.abs(targetLat - (-dir * startEdge));
+          const distToTarget = Math.abs(targetLat - -dir * crossWait);
           const tWalk = distToTarget / animalSpeed;
           const delay = Math.max(0.05, eta - tWalk + (i - (n - 1) / 2) * 0.3);
           const slot = this.shibuyaAnimalRosterIndex % PIGEON_SHIBUYA_ANIMALS.length;
           const animal = track.mode === "shibuya" ? this.nextShibuyaAnimal() : pick(PIGEON_SHIBUYA_ANIMALS);
-          const activity = track.mode !== "shibuya"
-            ? "crossing"
-            : animal === "monkey" || animal === "capybara"
-              ? "bathing"
-              : slot % 2 === 0 ? "waving" : "crossing";
+          const bath = track.mode === "shibuya" && (animal === "monkey" || animal === "capybara");
+          const wantsCross = !bath && (track.mode !== "shibuya" || slot % 2 === 1);
+          const activity: ShibuyaAnimalActivity = bath
+            ? "bathing"
+            : wantsCross && crossInter
+              ? "crossing" // HANYA di zebra cross perempatan
+              : "waving";
           const side: -1 | 1 = i % 2 === 0 ? -1 : 1;
           // Sisi +1 = trotoar jauh (12.6..16.1), bukan aspal jalur seberang yang dilewati mobil
-          const sidewalkLat = side > 0 ? 13.45 : -5.3;
-          const m = this.newMover("shibuya_animal", x + (i - (n - 1) / 2) * 1.8, -1, activity === "crossing" ? -dir * startEdge : sidewalkLat);
+          const sidewalkLat = side > 0 ? (track.mode === "shibuya" ? 13.45 : 5.3) : -5.3;
+          const crossS = crossInter ? crossInter.s + (dir > 0 ? -crossBandX : crossBandX) + (i === 0 ? -0.35 : 0.35) : x;
+          const m = this.newMover(
+            "shibuya_animal",
+            activity === "crossing" && crossInter ? crossS : x + (i - (n - 1) / 2) * 1.8,
+            -1,
+            activity === "crossing" ? -dir * crossWait : sidewalkLat,
+          );
           m.dir = dir;
           m.speed = activity === "crossing" ? animalSpeed : 0;
           m.delay = activity === "crossing" ? delay : 0;
