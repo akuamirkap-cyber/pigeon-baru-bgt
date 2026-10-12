@@ -120,6 +120,14 @@ export function TricksPanel() {
           <div className="mt-1 rounded-2xl bg-[#1f2430]/85 px-3 py-2 font-body text-[3cqw] font-bold leading-snug text-white/85">
             Tips: tombol S ungu (atau keyboard S) memainkan semua trick aktif berurutan — di darat dia ollie dulu, di udara lanjut trick berikutnya, jadi bisa chain 2–3 per lompatan. Gerakan swipe tetap jalan. Mendarat sebelum animasi selesai = SKETCHY!
           </div>
+          <div className="mt-1 rounded-2xl bg-[#0b3a52]/85 px-3 py-2 font-body text-[3cqw] font-bold leading-snug text-white/85">
+            🚀 ROKET: tekan <span className="text-[#ffd60a]">R</span> — tangki NOS otomatis terisi PENUH dan roket
+            langsung menyala. Roket yang SAMA dengan item yang kamu ambil nempel di punggung, pemain terbang 3 meter di
+            atas aspal sambil <span className="text-[#65d6ff]">melesat 2x lebih cepat</span>, dan asap pelangi menyembur
+            deras dari satu lubang nosel. Saat terbang geraknya <span className="text-[#7CFFB2]">BEBAS kiri/kanan (free move)</span> — geser terus aja, nggak ngunci lajur — jadi jalur lengkung roti di langit gampang diikuti. Di jalur langit ada
+            <span className="text-[#ffd60a]"> roti formasi MENGULAR (S)</span> yang bisa diserap sambil terbang. Skate
+            dikempit di tangan kanan.
+          </div>
         </div>
       </div>
     </div>

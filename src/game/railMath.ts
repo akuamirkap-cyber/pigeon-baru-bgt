@@ -5,7 +5,8 @@
  *  variant 2 = "ULAR"    : rel besi meliku kiri-kanan (kek garis kuning di jalan) + hop kecil.
  *                          Pemain yang nge-grind akan TERBAWA ayunan snake-nya.
  *  variant 3 = "ROLLERCOASTER" : rel dengan tanjakan besar, puncak, turunan, dan bukit kecil
- *                          (kek rollercoaster). Tiang dipasang di KEDUA SISI rel sehingga pemain
+ *                          (kek rollercoaster). Tiang penyangganya sama kek rel ULAR: satu tiang
+ *                          ramping di tengah, tingginya mengikuti bukit — sehingga pemain
  *                          bisa lewat DI BAWAH bagian yang tinggi.
  */
 

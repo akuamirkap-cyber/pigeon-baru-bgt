@@ -1,4 +1,6 @@
 import * as THREE from "three";
+/** Kecepatan penyeberang per arah pita zebra (deterministik; lihat Engine.crosserSpeed). */
+const crosserSpeed = (dir: 1 | -1): number => (dir > 0 ? 2.0 : 1.9);
 import {
   ARM_LEN,
   CHUNK_LEN,
@@ -12,6 +14,8 @@ import {
   SUBWAY_CAR_LEN,
   SUBWAY_GAP,
   SUBWAY_ROOF_H,
+  INTERSECTION_W,
+  INTERSECTION_W_WIDE,
   type BuildingSpec,
   type ShibuyaBuildingId,
 } from "./models";
@@ -24,6 +28,7 @@ import {
   type ShibuyaCharacterId,
   type ShibuyaMotorcycleId,
 } from "./shibuyaPacks";
+import { SCRAMBLE_BAND_X } from "./scrambleCrossing";
 import { TRICK_MAP, TRICKS, type TrickKind } from "./tricks";
 import { RailTrickDeck, RAIL_POSE, RAIL_POSE_NONE, type RailTrickDef } from "./railTricks";
 import { useUI, type Phase } from "./store";
@@ -168,6 +173,43 @@ export type CrashCause = "obstacle" | "car" | "oncoming" | "motorcycle" | "chick
 export const NOS_MAX = 100;
 export const NOS_DURATION = 2.6;
 export const NOS_SPEED_MULT = 1.75;
+/** Kecepatan roket = boost NOS x 1.4.
+ *  Awalnya x2 (3.5x kecepatan normal), lalu pemain minta "lambatin roketnya 30 persen"
+ *  -> 2 x 0.7 = 1.4, jadi sekarang 1.75 x 1.4 = 2.45x kecepatan normal (30% lebih lambat
+ *  dari sebelumnya, tapi masih jelas terasa sebagai roket). */
+export const ROCKET_SPEED_MULT = 1.4;
+/** Posisi nosel roket punggung relatif pemain: 0.18 m di belakang, 1.03 m di atas papan.
+ *  Angka ini mengikuti pose terbang "Superman" di Player.tsx (rig rootScale 0.5635,
+ *  pigeonScale 1.08, lift 0.62): roket punggung sekarang 2x lebih besar (skala grup 1.6)
+ *  dan dipasang lebih tinggi di atas punggung, jadi titik noselnya ikut naik. */
+export const ROCKET_NOZZLE_BACK = 0.18;
+export const ROCKET_NOZZLE_H = 1.03;
+/** Batas jumlah partikel asap roket yang hidup sekaligus. */
+const ROCKET_SMOKE_MAX = 560;
+/**
+ * GERAK BEBAS (free move) saat terbang roket — request pemain: "pas naik roket gerak pindah
+ * jalur ga pindah jalur alias free move kanan kiri nyaman". Jadi selama roket menyala pemain
+ * TIDAK lagi pindah lajur penuh (2.4 m sekali pencet), tapi bisa menggeser posisinya BEBAS ke
+ * mana saja di badan jalan — pakai swipe berulang atau tahan tombol arah (keyboard). Ini yang
+ * bikin jalur roti formasi S di langit bisa diikuti dengan nyaman.
+ *   FREE_LAT_STEP = geseran lateral tiap swipe / pencet (langkah lebih jauh = langsung gesit)
+ *   FREE_LAT_VEL  = kecepatan geser kalau tombol arah DITAHAN (m/s)
+ *   FREE_LAT_MAX  = batas kiri/kanan (badan jalan; masih di dalam aspal +-3.75 m & roti
+ *                   formasi terjangkau karena radius serap roti 1 m) */
+const FREE_LAT_STEP = 1.6;
+const FREE_LAT_VEL = 9.0;
+const FREE_LAT_MAX = LANE_LAT[2] + 0.35;
+
+/** Ketinggian terbang roket/NOS di atas aspal (request pemain: 3 METER). */
+export const ROCKET_FLY_H = 3;
+/** Kecepatan naik ke ketinggian terbang & turun kembali ke aspal (m/s). */
+const ROCKET_CLIMB = 9;
+const ROCKET_DESCEND = 7;
+/** Isi NOS minimum (fraksi 0..1) supaya roket bisa dinyalakan; durasi ikut sisa isi. */
+export const NOS_MIN_FIRE = 0.35;
+/** Durasi terbang roket = durasi NOS biasa x 1.8 (request pemain: "durasinya lebih lama 1.8x"). */
+export const ROCKET_DURATION_MULT = 1.8;
+
 export const NOS_PER_BREAD = 6;
 export const NOS_PER_TRICK = 10;
 export const NOS_CAN_S = 50;
@@ -296,6 +338,11 @@ export interface Bread {
   wx: number;
   wy: number;
   wz: number;
+  /** Posisi lateral bebas (m dari garis tengah jalan). Kalau ada, ini yang dipakai untuk
+   *  penyerapan & efek hisap, bukan pusat lajur — dipakai formasi MENGULAR halus di langit. */
+  lat?: number;
+  /** true = roti LANGIT (formasi terbang roket), dibersihkan otomatis saat mendarat. */
+  sky?: boolean;
 }
 export interface TrackLetter {
   id: number;
@@ -359,6 +406,13 @@ export interface Decor {
   spec?: BuildingSpec;
   /** placed on the camera side of the road (positive lat) => model is turned to face the road */
   frontSide?: boolean;
+  /** Titik tumbuh decor di koordinat jalan (s = jarak, lat = posisi menyamping) —
+   *  dipakai pejalan kaki trotoar supaya tidak menembus tiang/pohon/vending/pagar. */
+  s?: number;
+  lat?: number;
+  /** Tapak nyata gedung Shibuya (sMin..sMax, latMin..latMax) — pejalan kaki memakai ini
+   *  agar tidak berjalan menembus dinding gedung yang menjorok ke trotoar. */
+  bounds?: { sMin: number; sMax: number; latMin: number; latMax: number };
 }
 
 export interface SubwayTrain {
@@ -451,6 +505,16 @@ export interface Mover {
   shibuyaAnimal?: ShibuyaAnimalId;
   /** Source-character activity: crossing, waving toward the player, or bathing beside a shop. */
   shibuyaAnimalActivity?: ShibuyaAnimalActivity;
+  /** Pejalan kaki TROTOAR (bukan penyeberang): berjalan sepanjang trotoar, arahnya ±1.
+   *  Dipakai di tempat yang TIDAK ada zebra cross — jadi tidak ada yang menyeberang di
+   *  tengah blok / di luar zebra. */
+  walkAlong?: 1 | -1;
+  /** 0..1: kekuatan animasi langkah. Turun ke 0 saat pejalan kaki berhenti (mis. menunggu
+   *  pemain lewat) supaya kakinya TIDAK BEKU di tengah langkah seperti patung. */
+  walkFade?: number;
+  /** true kalau pejalan trotoar ini berada di trotoar TEROWONGAN BUSWAY (lat ±8.5).
+   *  Mereka tidak boleh keluar dari terowongan (di luar terowongan lat itu = badan jalan). */
+  tunnelWalker?: boolean;
   /** Waving/bathing actors stay on this storefront sidewalk side. */
   shibuyaAnimalSide?: -1 | 1;
   /** Japan Vehicle Pack motorcycle (including explicit Honda/Harley route aliases). */
@@ -567,7 +631,9 @@ export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): n
 /** Permukaan scramble crossing: apron datar, median di-aspal (0.18), jalan lintas naik 0.175. */
 export function scramblePedH(lat: number): number {
   if (lat < -4.0) return 0.175;
-  if (lat >= 3.5 && lat <= 5.3) return 0.18; // median yang di-pave
+  // dek median di geometri scramble menutup lat 3.55..5.15 (dulu ditulis 5.3, jadi kaki
+  // penyeberang melayang 15 cm tepat setelah ujung median)
+  if (lat >= 3.55 && lat <= 5.15) return 0.18; // median yang di-pave
   if (lat > 12.3) return 0.175;
   return 0.03; // apron persimpangan
 }
@@ -594,6 +660,10 @@ export interface Intersection {
 
 /** Center-of-car position that keeps its nose just behind the painted scramble stop bars. */
 export const TRAFFIC_STOP_LINE_OFFSET = 8.2;
+
+/** Jendela pandang tempat pejalan kaki TROTOAR dijaga tetap hidup (lihat updateSidewalkCrowd). */
+const SIDEWALK_WINDOW_BACK = 14;
+const SIDEWALK_WINDOW_AHEAD = 140;
 
 /** Smooth approach policy for through-traffic: green passes, red/yellow stop at the bar. */
 export function trafficSignalApproach(
@@ -725,6 +795,28 @@ function stepRagdoll(r: Ragdoll, dt: number, floor: number, friction = 4.2, boun
   }
 }
 
+/**
+ * Asap roket punggung (NOS): puff besar yang MENGEMBANG sambil memudar, warna pelangi
+ * bergilir khas Subway Surfers, plus percikan kecil terang yang jatuh. Dirender di
+ * World.tsx sebagai billboard additive (RocketSmokeFx).
+ */
+export interface RocketSmoke {
+  x: number; y: number; z: number;
+  vx: number; vy: number; vz: number;
+  life: number;
+  max: number;
+  /** ukuran awal (m) */
+  size: number;
+  /** pengali pembesaran sepanjang umur */
+  grow: number;
+  /** 0..1 warna pelangi */
+  hue: number;
+  rot: number;
+  spin: number;
+  /** true = kilau kecil tajam, false = puff asap */
+  spark: boolean;
+}
+
 export interface Particle {
   x: number;
   y: number;
@@ -767,7 +859,24 @@ export interface Pulse {
   cb: number;
 }
 
-export type InputAction = "tap" | "up" | "down" | "left" | "right" | "double" | "salto" | "holdStart" | "holdEnd" | "nos" | "boost" | "cycle";
+export type InputAction =
+  | "tap"
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "double"
+  | "salto"
+  | "holdStart"
+  | "holdEnd"
+  | "nos"
+  | "nosFull"
+  | "boost"
+  | "cycle"
+  // GERAK BEBAS saat terbang roket: tombol arah DITAHAN = geser lateral terus-menerus
+  | "steerL"
+  | "steerR"
+  | "steerStop";
 
 const TRICK_INFO = TRICK_MAP;
 
@@ -779,6 +888,8 @@ function wrapPi(a: number) {
 }
 
 const tmpS: TrackSample = { x: 0, y: 0, z: 0, th: 0, g: 0, kappa: 0 };
+/** Buffer sample kedua: dipakai emisi asap roket yang mengambil beberapa titik jalur per frame. */
+const tmpS2: TrackSample = { x: 0, y: 0, z: 0, th: 0, g: 0, kappa: 0 };
 const tmpV = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 
@@ -857,6 +968,15 @@ class Engine {
 
   obstacles: Obstacle[] = [];
   breads: Bread[] = [];
+  /** Roti LANGIT (formasi terbang roket): roti melayang di ketinggian terbang, hanya ada
+   *  saat roket menyala. Punya bendera sky supaya bisa dibersihkan setelah mendarat. */
+  private skyBreadS = 0;
+  /** posisi s tempat gelombang S dimulai (acuan fase). */
+  private skyBreadPhase = 0;
+  /** panjang gelombang S yang sedang dipakai (mengikuti kecepatan saat formasi dimulai). */
+  private skyBreadWave = 24;
+  /** arah gelombang S formasi langit (+1 mulai ke kanan, -1 mulai ke kiri). */
+  private skyBreadDir: 1 | -1 = 1;
   chunks: Chunk[] = [];
   /** Actual transformed footprints for Shibuya source buildings still in the window. */
   private shibuyaFootprints: ShibuyaPlacedFootprint[] = [];
@@ -865,6 +985,8 @@ class Engine {
   trains: Train[] = [];
   intersections: Intersection[] = [];
   crossCars: CrossTrafficCar[] = [];
+  /** timer penjaga populasi pejalan kaki TROTOAR (lihat updateSidewalkCrowd) */
+  private sidewalkCrowdT = 0;
   /** Efek roti tersedot ke badan merpati saat diambil — disimpan di ruang track
    *  (rel terhadap pemain) supaya ikut maju bersama pemain dan tidak "nembus bablas". */
   breadFx: { rel: number; lat: number; h: number; age: number }[] = [];
@@ -924,6 +1046,14 @@ class Engine {
   private interCount = 0;
   crashCause: CrashCause = "obstacle";
   particles: Particle[] = [];
+  /** Asap roket warna-warni (NOS): puff pelangi + percikan; digambar di World.tsx. */
+  rocketSmoke: RocketSmoke[] = [];
+  /** JADWAL emisi berbasis JARAK: posisi s tempat gumpalan asap/percikan berikutnya harus
+   *  lahir. Karena dijadwalkan per jarak (bukan per frame), pita asap tetap rapat & tidak
+   *  berlubang walau roket melesat 3.5x. */
+  private rocketSmokeS = 0;
+  private rocketSparkS = 0;
+  private rocketSmokeHue = 0;
   /** gelombang "denyut" yang sedang aktif (lihat Pulse) */
   pulses: Pulse[] = [];
   /** Pickup burst (roti/NOS/huruf): ring + flash + partikel emas + teks reward. */
@@ -931,11 +1061,6 @@ class Engine {
     x: number; y: number; z: number; t: number; max: number; reward: boolean;
     parts: { px: number; py: number; pz: number; vx: number; vy: number; vz: number; size: number; rot: number; spin: number; hue: number; star: boolean }[];
   }[] = [];
-  /** Ragdoll saat mendarat: roll/tumble visual (dibaca Player.tsx). */
-  landRollT = 99;
-  landRollDir = 1;
-  landRollFull = false;
-  landRollAmp = 0.5;
   /** Trail skate ikut mengecil ke 0 setelah trik gagal (SKETCHY) sampai mendarat normal lagi. */
   trailDown = false;
   /** Kilau bintang (sparkle) saat ambil item: seperti efek pickup Subway Surfers. */
@@ -963,6 +1088,14 @@ class Engine {
     lat: 0,
     h: 0,
     vh: 0,
+    /** Blend terbang roket 0..1 (pose Superman di Player.tsx + ketinggian di engine). */
+    rocketFly: 0,
+    /** true = setelah roket mati, pemain meluncur turun halus sampai menyentuh aspal. */
+    rocketDescend: false,
+    /** GERAK BEBAS terbang: target lateral bebas (bukan pusat lajur) 0..FREE_LAT_MAX. */
+    freeLat: 0,
+    /** arah geser yang sedang DITAHAN (-1 kiri, 0 diam, +1 kanan) untuk gerak bebas terbang. */
+    freeDir: 0,
     grounded: true,
     grinding: false,
     rail: null as Obstacle | null,
@@ -1068,6 +1201,10 @@ class Engine {
     this.menuPreview = null;
     this.obstacles = [];
     this.breads = [];
+    this.skyBreadS = 0;
+    this.skyBreadPhase = 0;
+    this.skyBreadWave = 24;
+    this.skyBreadDir = 1;
     this.chunks = [];
     this.shibuyaFootprints = [];
     this.movers = [];
@@ -1096,6 +1233,8 @@ class Engine {
     this.nos = 0;
     this.nosT = 0;
     this.nosFlame = 0;
+    this.player.rocketFly = 0;
+    this.player.rocketDescend = false;
     this.nosCans = [];
     this.rockets = [];
     this.rocketTaken = 0;
@@ -1120,6 +1259,9 @@ class Engine {
     this.subwayTunnels = [];
     this.nextSubwayTunnelS = START_S + 110;
     this.particles = [];
+    this.rocketSmoke = [];
+    this.rocketSmokeS = 0;
+    this.rocketSparkS = 0;
     this.reserved = [];
     this.nextChunkS = 0;
     this.nextObstacleS = this.distance + 40;
@@ -1132,6 +1274,8 @@ class Engine {
     p.lane = 1;
     p.targetLane = 1;
     p.lat = 0;
+    p.freeLat = 0;
+    p.freeDir = 0;
     p.h = 0;
     p.vh = 0;
     p.grounded = true;
@@ -1183,7 +1327,6 @@ class Engine {
     this.pulses = [];
     this.sparkles = [];
     this.bursts = [];
-    this.landRollT = 99;
     this.trailDown = false;
     this.downhillFlag = false;
     while (this.nextChunkS < this.distance + 90) this.spawnChunk();
@@ -1306,6 +1449,12 @@ class Engine {
           this.grindDodge(dir);
           break;
         }
+        // TERBANG ROKET = GERAK BEBAS: geser lateral bebas, bukan pindah lajur penuh.
+        if (this.freeFlight) {
+          p.freeLat = clamp(p.freeLat + dir * FREE_LAT_STEP, -FREE_LAT_MAX, FREE_LAT_MAX);
+          sfx.swish();
+          break;
+        }
         // Swipe ↔ = lane change (also in the air: a smooth carve/drift). The 360 spin is a deliberate move:
         // a second swipe in the same direction within 0.3 s, or a swipe toward the edge when no lane is left.
         const now = this.time;
@@ -1370,6 +1519,19 @@ class Engine {
         break;
       case "nos":
         this.fireNos();
+        break;
+      case "nosFull":
+        // TOMBOL R: isi tangki NOS otomatis PENUH lalu roket langsung menyala
+        this.fireNosFull();
+        break;
+      case "steerL":
+      case "steerR":
+        // TOMBOL ARAH DITAHAN saat terbang roket = geser lateral terus-menerus (gerak bebas).
+        // Di darat tidak berpengaruh (pindah lajur tetap pakai case "left"/"right").
+        if (this.freeFlight) p.freeDir = a === "steerL" ? -1 : 1;
+        break;
+      case "steerStop":
+        p.freeDir = 0;
         break;
       case "boost":
         this.boost();
@@ -1485,14 +1647,57 @@ class Engine {
     sfx.sprint();
   }
 
+  /** true = pemain sedang TERBANG ROKET (naik 3 m atau meluncur turun) → gerak lateral BEBAS
+   *  (free move kiri/kanan), bukan pindah lajur. Dipakai engine + layer input. */
+  get freeFlight() {
+    return this.nosT > 0 || this.player.rocketDescend;
+  }
+
   /** Activate NOS: 2.6 s of boost, flames, camera FOV kick. */
   fireNos() {
-    if (this.phase !== "playing" || this.nosT > 0 || this.nos < NOS_MAX * 0.99) return;
+    if (this.phase !== "playing" || this.nosT > 0) return;
+    // ROKET (tombol R / N / tombol NOS): cukup isi 35% saja, durasi terbang ikut sisa isi.
+    // Tangki penuh (missal dari item ROCKET LANGKA) = durasi terbang penuh.
+    if (this.nos < NOS_MAX * NOS_MIN_FIRE) {
+      useUI.getState().addPopup("NOS BELUM CUKUP", "#9aa2b5", `isi ${Math.round(NOS_MIN_FIRE * 100)}% dulu · makan roti / trik / roket 🚀`);
+      return;
+    }
+    const charge = this.nos / NOS_MAX;
     this.nos = 0;
-    this.nosT = NOS_DURATION;
+    this.nosT = Math.max(0.9, NOS_DURATION * charge * ROCKET_DURATION_MULT);
+    this.player.rocketDescend = false;
+    // lepas dari rel / atap mobil / atap bus: roket langsung membawa pemain naik 3 m
+    const p = this.player;
+    if (p.subwayMover) {
+      p.subwayMover = null;
+    }
+    if (p.carMover || p.carObstacle) this.endCarGrind();
+    else if (p.grinding) this.endGrind();
+    p.railGrace = 0.35;
+    p.carGrace = 0.35;
+    p.subwayGrace = 0.35;
+    p.bigAir = false;
+    p.onRamp = false;
     this.shake = Math.max(this.shake, 0.35);
-    useUI.getState().addPopup("NOS!", "#4cc9f0", "hold on!");
+    // jadwal emisi asap mulai dari posisi pemain sekarang
+    this.rocketSmokeS = this.distance;
+    this.rocketSparkS = this.distance + 0.1;
+    // BURST roket: ledakan asap pelangi + percikan + dua cincin warna tepat di nosel
+    this.rocketSmokeBurst();
+    useUI.getState().addPopup("ROCKET! 🚀", "#4cc9f0", "terbang 3 m · geser BEBAS kiri/kanan (free move) 🕹️");
     sfx.nos();
+  }
+
+  /**
+   * TOMBOL N: isi NOS otomatis penuh, lalu roket langsung menyala (request pemain).
+   * Jadi tidak perlu lagi ngumpulin roti dulu — pencet N, tangki penuh, terbang 3 m.
+   */
+  fireNosFull() {
+    if (this.phase !== "playing") return;
+    if (this.nosT > 0) return; // roket sedang menyala
+    this.nos = NOS_MAX;
+    useUI.getState().addPopup("NOS PENUH! ⛽", "#65d6ff", "roket siap · terbang 3 m 🚀");
+    this.fireNos();
   }
 
   addNos(v: number) {
@@ -1778,14 +1983,8 @@ class Engine {
 
   private land() {
     const p = this.player;
-    const impact = -p.vh;
-    if (impact > 2) {
-      // ragdoll style: terguling saat mendarat keras (full roll), tapi ringan untuk pendaratan kecil
-      this.landRollT = 0;
-      this.landRollDir = Math.random() < 0.5 ? 1 : -1;
-      this.landRollFull = impact >= 8;
-      this.landRollAmp = Math.min(1, impact / 10);
-    }
+    // PENDARATAN BERSIH: tidak ada roll/guling depan-belakang saat menyentuh aspal (request
+    // pemain). Pendaratan tetap terasa empuk dari squash & debu yang sudah ada.
     p.grounded = true;
     p.vh = 0;
     p.squash = 1;
@@ -1842,6 +2041,11 @@ class Engine {
     p.carMover = null;
     p.carObstacle = null;
     p.subwayMover = null;
+    p.rocketDescend = false;
+    this.nosT = 0;
+    this.nosFlame = 0;
+    this.clearSkyBreads(); // kalau tabrakan saat terbang, roti langit jangan tertinggal ngambang
+
     p.carGrace = 0;
     p.grab = 0;
     const v = Math.max(this.speed, 8);
@@ -1968,8 +2172,15 @@ class Engine {
       if (this.nosT > 0) {
         // nitro: shoot to the boosted speed, then decay back once it runs out
         this.nosT = Math.max(0, this.nosT - dt);
-        const boosted = target * NOS_SPEED_MULT;
+        const boosted = target * NOS_SPEED_MULT * ROCKET_SPEED_MULT;
         this.speed += clamp(boosted - this.speed, -dt * 2.5, dt * 40);
+        // ASAP ROKET: semburan warna-warni dari nosel roket punggung sepanjang boost
+        this.emitRocketSmoke(dt);
+      } else if (p.rocketDescend) {
+        // Habis roket: kecepatan turun cepat tapi mulus ke kecepatan normal, supaya pemain
+        // tidak "nyelonong" 3.5x kencang begitu roda menyentuh aspal (roket = semburan, bukan
+        // kecepatan permanen). Turun 3 m butuh ~0.43 s, cukup untuk mendarat di kecepatan wajar.
+        this.speed += (target - this.speed) * (1 - Math.exp(-dt * 6));
       } else {
         const decayRate = this.sprintTimer > 0 ? -dt * 1.5 : -dt * 2.4;
         this.speed += clamp(target - this.speed, decayRate, up);
@@ -2024,6 +2235,7 @@ class Engine {
     if (this.phase === "playing") while (this.nextObstacleS < this.distance + 70) this.spawnGroup();
     this.cull();
 
+    this.updateSidewalkCrowd(dt);
     this.updateMovers(dt);
     this.updateOverpass(dt);
     this.updateCrossings(dt);
@@ -2042,6 +2254,7 @@ class Engine {
     }
 
     this.updateParticles(dt);
+    this.updateRocketSmoke(dt);
     this.updatePulses(dt);
     this.updatePetals(dt);
     this.updateTransform();
@@ -2121,7 +2334,24 @@ class Engine {
       if (Math.abs(p.showYaw) < 0.005) p.showYaw = 0;
     }
 
-    const tl = LANE_LAT[p.targetLane];
+    // ---- GERAK BEBAS SAAT TERBANG ROKET ------------------------------------------------
+    // Di darat: freeLat selalu disamakan dengan posisi sekarang (titik awal saat roket nyala,
+    // jadi roket menyala TANPA lompatan). Saat terbang: freeLat digeser oleh input.
+    const freeFly = this.freeFlight;
+    if (!freeFly) {
+      // di darat: target bebas selalu disamakan dengan posisi sekarang (titik awal saat roket
+      // menyala, jadi roket menyala TANPA lompatan). Lajur saat mendarat dipilih di momen
+      // pendaratan (lihat blok rocketDescend) supaya input pindah lajur langsung normal.
+      p.freeLat = p.lat;
+      p.freeDir = 0;
+    } else {
+      if (p.freeDir !== 0) {
+        p.freeLat = clamp(p.freeLat + p.freeDir * FREE_LAT_VEL * dt, -FREE_LAT_MAX, FREE_LAT_MAX);
+      }
+      // lajur terdekat ikut target bebas (dipakai buat logika lajur & saat mendarat nanti)
+      p.targetLane = p.freeLat < -1.2 ? 0 : p.freeLat > 1.2 ? 2 : 1;
+    }
+    const tl = freeFly ? p.freeLat : LANE_LAT[p.targetLane];
     const airborneNow = !p.grounded && !p.grinding;
     const newTurn = this.newTurn;
     const prevVel = p.latVel;
@@ -2154,9 +2384,11 @@ class Engine {
         grindHeading: waveRail
           ? railHeading(WAVE_VARIANT, this.distance - waveRail.s, railPhase(waveRail.s))
           : undefined,
-        minLat: LANE_LAT[0] - 0.35,
-        maxLat: LANE_LAT[2] + 0.35,
+        minLat: freeFly ? -FREE_LAT_MAX : LANE_LAT[0] - 0.35,
+        maxLat: freeFly ? FREE_LAT_MAX : LANE_LAT[2] + 0.35,
         dt,
+        // TERBANG ROKET: pindah jalur melayang halus (bukan carve tajam seperti di aspal)
+        smooth: p.rocketFly,
       });
       p.lat = T.lat;
       p.latVel = T.latVel;
@@ -2174,7 +2406,8 @@ class Engine {
     } else {
       // ---- OLD: critically damped spring => smooth ease-in / ease-out with no snap,
       // slightly softer in the air (the pigeon "drifts" across) than on the ground (a quick carve)
-      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult); // natural frequency (rad/s), stiffer for faster boards
+      // terbang roket: pegas lateral lebih gesit supaya pindah jalur responsif & tetap mulus
+      const omega = (airborneNow ? 10.5 : 11) * Math.sqrt(this.speedMult) * (1 + 0.6 * p.rocketFly); // natural frequency (rad/s), stiffer for faster boards
       // exact integration of the critically damped spring x'' + 2ωx' + ω²(x - tl) = 0
       const x0 = p.lat - tl;
       const v0 = p.latVel;
@@ -2194,6 +2427,8 @@ class Engine {
     p.subwayGrace = Math.max(0, p.subwayGrace - dt);
 
     const ground = this.groundInfo(p.lat);
+    // ROKET: selama NOS menyala pemain TERBANG di ketinggian tetap (bukan lagi soal lompatan)
+    const rocketFlying = this.nosT > 0;
     const prevH = p.h;
 
     if (p.grinding && p.subwayMover) {
@@ -2370,7 +2605,7 @@ class Engine {
             p.vh = Math.max(0, p.vh);
           }
         }
-        if (p.railGrace <= 0) {
+        if (!rocketFlying && p.railGrace <= 0) {
           for (const o of this.obstacles) {
             if (o.kind !== "rail") continue;
             const rel = d - o.s;
@@ -2388,7 +2623,7 @@ class Engine {
             }
           }
         }
-        if (!p.grinding && p.carGrace <= 0) {
+        if (!rocketFlying && !p.grinding && p.carGrace <= 0) {
           // Landing on oncoming cars ("mobil yg arah depan") only if physically touching down onto the roof
           const isFalling = p.vh <= 0.05 && prevH >= p.h;
           for (const m of this.movers) {
@@ -2419,7 +2654,7 @@ class Engine {
           }
         }
         // Mendarat di atas atap bus saat pemain turun menyentuh ketinggian atap (SUBWAY_ROOF_H):
-        if (!p.grinding && p.subwayGrace <= 0 && (p.vh <= 0.5 || prevH >= p.h)) {
+        if (!rocketFlying && !p.grinding && p.subwayGrace <= 0 && (p.vh <= 0.5 || prevH >= p.h)) {
           for (const st of this.subwayTrains) {
             const relS = d - st.s;
             if (relS < -0.8 || relS > st.length + 0.8) continue;
@@ -2431,12 +2666,62 @@ class Engine {
             }
           }
         }
-        if (!p.grinding && p.h <= ground.y) {
+        if (!rocketFlying && !p.rocketDescend && !p.grinding && p.h <= ground.y) {
           p.h = ground.y;
           this.land();
           p.onRamp = !!ground.ramp;
         }
       }
+    }
+
+    // ---- TERBANG ROKET: 3 METER DI ATAS ASPAL SELAMA NOS MENYALA ----
+    // Ketinggian dijaga pakai kontrol halus (naik 9 m/s, tahan, lalu turun halus 7 m/s
+    // setelah roket mati) supaya pemain benar-benar melayang 3 m di atas aspal, bukan
+    // melompat balistik. Semua bentuk grind/atap dilepas supaya roket yang menentukan.
+    {
+      const target = ground.y + ROCKET_FLY_H;
+      if (rocketFlying) {
+        if (p.grinding) {
+          if (p.carMover || p.carObstacle) this.endCarGrind();
+          else this.endGrind();
+        }
+        p.subwayMover = null;
+        p.grounded = false;
+        p.rail = null;
+        p.onRamp = false;
+        p.vh = 0;
+        p.bigAir = false;
+        p.rocketDescend = true;
+        p.h += clamp(target - p.h, -ROCKET_CLIMB * dt, ROCKET_CLIMB * dt);
+        p.airT += dt;
+        // ROTI LANGIT: formasi roti mengular di ketinggian terbang (3 m)
+        this.emitSkyBreads();
+      } else if (p.rocketDescend) {
+        if (p.grinding || p.subwayMover) {
+          // saat meluncur turun pemain menyentuh rel / atap bus → serahkan ke mekanik grind biasa
+          p.rocketDescend = false;
+        } else {
+          p.grounded = false;
+          p.vh = 0;
+          p.airT += dt;
+          const remain = p.h - ground.y;
+          if (remain > 0.1) {
+            p.h = Math.max(ground.y, p.h - ROCKET_DESCEND * dt);
+          } else {
+            // pendaratan bersih: turun pelan lalu menyentuh aspal tanpa guling
+            p.h = ground.y;
+            p.rocketDescend = false;
+            p.onRamp = !!ground.ramp;
+            this.clearSkyBreads(); // roti langit dibersihkan setelah mendarat
+            // lajur dipilih SEKALI dari posisi nyata saat mendarat: kalau pemain lagi meluncur,
+            // transisi ke pusat lajur jadi pendek (maks ~1.2 m) & input pindah lajur langsung normal
+            p.targetLane = p.lat < -1.2 ? 0 : p.lat > 1.2 ? 2 : 1;
+            this.land();
+          }
+        }
+      }
+      // blend untuk pose terbang (Player.tsx): naik cepat, turun halus
+      p.rocketFly = lerp(p.rocketFly, rocketFlying ? 1 : 0, 1 - Math.exp(-dt * (rocketFlying ? 16 : 4.5)));
     }
 
     // queued "S" trick: fire as soon as we are airborne
@@ -2662,7 +2947,8 @@ class Engine {
       const T = this.turn;
       p.steer = -T.headingVis;
       p.boardTwist = 0;
-      const rollMax = TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend;
+      // Saat terbang roket, bank badan dikurangi sedikit (tetap mulus & nyaman, tidak miring tajam)
+      const rollMax = (TURN.ROLL_GROUND + (TURN.ROLL_AIR - TURN.ROLL_GROUND) * T.airBlend) * (1 - 0.25 * p.rocketFly);
       // Saat nge-grind, roll mengikuti BENTUK REL (grindRoll), bukan sisa carve pindah lajur.
       p.roll = p.grinding && p.rail ? p.grindRoll : T.leanVis * rollMax;
       p.carve = -T.leanVis; // legacy convention (+ = left); only the old-mode poses read it
@@ -2769,6 +3055,8 @@ class Engine {
       if (Math.abs(rel) > obstacleHalf(o) + PLAYER_HALF) continue;
       if (Math.abs(this.railLat(o, d) - p.lat) > 1.05) continue;
       if (o.kind === "rail") {
+        // saat terbang roket, rel tinggi (rollercoaster) tidak boleh "menyedot" pemain — biarkan lewat
+        if (rocketFlying) continue;
         if (p.grinding || p.railGrace > 0) continue;
         const rh = this.railHeightAt(o, d);
         if (p.h >= rh - 0.5) continue;
@@ -2906,10 +3194,14 @@ class Engine {
       }
     }
 
+    // MAGNET ROKET: selama terbang, item di aspal tetap tersedot ke badan pemain
+    // (roti/NOS/huruf/roket tetap bisa dikumpulkan walau badan 3 m di atas aspal).
+    const flyPick = p.rocketFly > 0.5;
+
     // NOS canisters
     for (const c of this.nosCans) {
       if (c.taken) continue;
-      if (Math.abs(c.s - d) > 0.9 || Math.abs(LANE_LAT[c.lane] - p.lat) > 1.0 || p.h > 1.6) continue;
+      if (Math.abs(c.s - d) > 0.9 || Math.abs(LANE_LAT[c.lane] - p.lat) > 1.0 || (p.h > 1.6 && !flyPick)) continue;
       c.taken = true;
       this.addNos(NOS_MAX * 0.5);
       this.spawnBurst(c.wx, c.wy + 0.4, c.wz, false);
@@ -2919,14 +3211,14 @@ class Engine {
     // item LANGKA: ROCKET — sekali ambil langsung NOS penuh + skor besar + kilatan sinar
     for (const r of this.rockets) {
       if (r.taken) continue;
-      if (Math.abs(r.s - d) > 1.0 || Math.abs(LANE_LAT[r.lane] - p.lat) > 1.05 || p.h > 1.7) continue;
+      if (Math.abs(r.s - d) > 1.0 || Math.abs(LANE_LAT[r.lane] - p.lat) > 1.05 || (p.h > 1.7 && !flyPick)) continue;
       this.collectRocket(r);
     }
 
     // Daily Word Hunt letters
     for (const l of this.letters) {
       if (l.taken) continue;
-      if (Math.abs(l.s - d) > 1.0 || Math.abs(LANE_LAT[l.lane] - p.lat) > 1.05 || p.h > 1.8) continue;
+      if (Math.abs(l.s - d) > 1.0 || Math.abs(LANE_LAT[l.lane] - p.lat) > 1.05 || (p.h > 1.8 && !flyPick)) continue;
       this.collectLetter(l);
     }
 
@@ -2948,13 +3240,13 @@ class Engine {
     for (const b of this.breads) {
       if (b.taken) continue;
       if (Math.abs(b.s - d) > 0.9) continue;
-      if (Math.abs(LANE_LAT[b.lane] - p.lat) > 1.0) continue;
+      if (Math.abs((b.lat ?? LANE_LAT[b.lane]) - p.lat) > 1.0) continue;
       if (Math.abs(b.h - (p.h + 0.55)) > 0.95) continue;
       b.taken = true;
       this.breadCount++;
       buzz(14);
       this.addNos(NOS_PER_BREAD);
-      this.breadFx.push({ rel: b.s - d, lat: LANE_LAT[b.lane], h: b.h, age: 0 });
+      this.breadFx.push({ rel: b.s - d, lat: b.lat ?? LANE_LAT[b.lane], h: b.h, age: 0 });
       if (this.breadFx.length > 8) this.breadFx.shift();
       this.emitWorld("crumb", b.wx, b.wy, b.wz, b.wy - b.h, 5, 0, 0);
       this.spawnBurst(b.wx, b.wy + 0.2, b.wz, false);
@@ -3292,6 +3584,9 @@ class Engine {
           m.lat += m.dir * m.speed * dt;
           m.hopT += dt;
           m.h = Math.abs(Math.sin(m.hopT * 12)) * 0.035;
+          // Shibuya: hewan berhenti di MEDIAN (sama seperti penyeberang), bukan menerobos
+          // aspal jalur seberang 5.0..12.3 yang dilewati mobil.
+          if (Math.abs(m.lat) > (track.mode === "shibuya" ? SHIBUYA_MEDIAN_LAT + 0.45 : 6.8)) remove = true;
           if (!m.warned && Math.abs(m.s - d) < 18) {
             m.warned = true;
             if (m.kind === "shibuya_animal") {
@@ -3302,21 +3597,61 @@ class Engine {
               sfx.meow();
             }
           }
-          if (Math.abs(m.lat) > 6.8) remove = true;
         }
         if (m.s < d - 16) remove = true;
       } else if (m.kind === "pedestrian") {
         // Kaki penyeberang selalu menapak permukaan yang benar (trotoar/median/dek
         // perempatan) — tidak lagi melayang di atas trotoar atau tenggelam ke aspal.
         const gh = this.pedSurfaceAt(m.lat, m.s);
-        if (m.phase === "wait") {
+        if (m.walkAlong) {
+          // PEJALAN KAKI TROTOAR: jalan sepanjang trotoar, lat tidak berubah, jadi tidak
+          // pernah masuk badan jalan. Dipakai di tempat tanpa zebra cross.
+          // JARAK AMAN: trotoar punya dua lajur (searah/berlawanan arah) dan jalur penyeberang
+          // visual. Kalau ada pejalan lain tepat di DEPAN pada lajur yang sama, orang ini
+          // BERHENTI (kaki ikut berhenti lewat walkFade, jadi tidak "jalan di tempat") sampai
+          // jalur di depannya kosong. Orang yang datang dari arah berlawanan di lajur sama
+          // dipecah oleh tie-break id supaya tidak saling kunci (deadlock) berdua.
+          const held = this.walkerBlockedAhead(m);
+          if (held) {
+            // berdiri menunggu jalur depan kosong: tetap di tempat, kaki berhenti
+            // (walkFade turun -> World.tsx memulihkan pose berdiri, bukan beku di tengah langkah)
+            const curFade = m.walkFade ?? 0;
+            m.walkFade = clamp(curFade + (0 - curFade) * Math.min(1, dt * 6), 0, 1);
+            m.h = lerp(m.h, this.pedSurfaceAt(m.lat, m.s), Math.min(1, dt * 8));
+            m.phase = "hop";
+          } else {
+            m.s += m.walkAlong * m.speed * dt;
+            // TROTOAR TEROWONGAN BUSWAY hanya ada DI DALAM terowongan (|lat| 7.4..9.6). Begitu
+            // masuk/keluar terowongan, lat trotoar itu jatuh di badan jalan — jadi pejalan itu
+            // "turun" di mulut terowongan (dihilangkan) supaya tidak ada yang jalan di jalur bus.
+            const inTunnelNow = this.isInSubwayTunnel(m.s, 0);
+            if (m.tunnelWalker ? !inTunnelNow : inTunnelNow) remove = true;
+            // CADENCE LANGKAH: render memutar kaki dengan sin(hopT * strideFreq) dan
+            // strideFreq = (speed/0.88)*pi (World.tsx). Jadi hopT harus maju 1.0 per detik
+            // supaya panjang langkah = 0.88 m — sama seperti penyeberang sungguhan.
+            // Dulu hopT maju 6.4x -> kaki bergetar ~10 Hz (pejalan tampak jalan di tempat).
+            m.hopT += dt;
+            m.phase = "hop";
+            // Tinggi dihitung dari posisi SESUDAH melangkah (bukan sebelum): kalau dihitung
+            // sebelum, satu frame di tepi apron perempatan kakinya meleset ~5 cm.
+            const ghNowWalk = this.pedSurfaceAt(m.lat, m.s);
+            // Satu anggukan badan per langkah (|sin| = 2x frekuensi siklus kaki).
+            m.h = ghNowWalk + Math.abs(Math.sin(m.hopT * ((m.speed / (m.elderly ? 0.75 : 0.88)) * Math.PI))) * 0.035;
+            m.walkFade = 1;
+          }
+        } else if (m.phase === "wait") {
           m.delay -= dt;
           m.h = lerp(m.h, gh, Math.min(1, dt * 8));
           const signal = m.signalIntersectionId == null
             ? undefined
             : this.intersections.find((inter) => inter.id === m.signalIntersectionId);
           // Scramble pedestrians wait at the curb until the vehicle light is fully red.
-          if (m.delay <= 0 && (!signal || signal.lightState === "red")) m.phase = "hop";
+          // BUSWAY: bus melaju kencang ke arah -s dan tidak bisa mengerem — penyeberang
+          // menunggu dulu di tepi sampai jalur bus benar-benar lengang.
+          const busNear = this.subwayTrains.some(
+            (st) => st.speed > 0 && !st.isStopped && st.s - m.s > -18 && st.s - m.s < 42,
+          );
+          if (m.delay <= 0 && (!signal || signal.lightState === "red") && !busNear) m.phase = "hop";
         } else if (m.phase === "hop") {
           // PENYEBERANG HATI-HATI: kalau merpati melaju mendekat, tunggu dulu di tepi
           // jalan (tengok kanan-kiri); kalau terlanjur di jalur main, buru-buru menepi.
@@ -3327,11 +3662,29 @@ class Engine {
             if (inLanes) v = m.speed * 1.55; // lari kecil biar cepat keluar jalur
             else if (Math.abs(m.lat) < 4.8) v = 0; // berhenti dulu di tepi / median
           }
+          // Bus melaju dekat (busway): jangan berdiri di jalur bus — cepat menepi.
+          if (Math.abs(m.lat) < 4.2 && this.subwayTrains.some((st) => st.speed > 0 && st.s - m.s > -18 && st.s - m.s < 30)) {
+            v = Math.max(v, m.speed * 1.6);
+          }
+          // JANGAN melangkah ke badan penyeberang lain yang tepat di depan (satu pita = satu
+          // barisan). Ini jaring pengaman terakhir supaya tidak ada dua orang saling menembus.
+          if (v > 0.01) {
+            for (const other of this.movers) {
+              if (other === m || other.kind !== "pedestrian" || other.phase === "hit") continue;
+              if (Math.abs(other.s - m.s) > 1.0) continue;
+              const ahead = (other.lat - m.lat) * m.dir;
+              if (ahead > 0 && ahead < 1.45) { v = 0; break; }
+            }
+          }
           m.lat += m.dir * v * dt;
           const ghNow = this.pedSurfaceAt(m.lat, m.s);
+          // Animasi langkah dilembutkan saat orangnya berhenti (menunggu pemain lewat,
+          // menunggu di median): kaki kembali ke posisi berdiri, bukan beku di tengah langkah.
+          const fadeTarget = v > 0.01 ? 1 : 0;
+          m.walkFade = clamp((m.walkFade ?? fadeTarget) + (fadeTarget - (m.walkFade ?? fadeTarget)) * Math.min(1, dt * 6), 0, 1);
           if (v > 0.01) {
             m.hopT += dt * (v / m.speed);
-            m.h = ghNow + Math.abs(Math.sin(m.hopT * 9)) * 0.06;
+            m.h = ghNow + Math.abs(Math.sin(m.hopT * 9)) * 0.06 * m.walkFade;
           } else {
             m.h = Math.max(ghNow, m.h - dt * 0.3); // berdiri tenang menunggu
           }
@@ -3652,8 +4005,11 @@ class Engine {
       );
       inter.lightState = pedestrianInJunction || crossTrafficInJunction ? "red" : scheduledLight;
 
-      // Jendela pendekatan: munculkan mobil penyeberang yang akan melintas tepat saat pemain tiba
-      if (this.phase === "playing" && dist > -16 && dist < 65) {
+      // Jendela pendekatan: munculkan mobil penyeberang yang akan melintas tepat saat pemain tiba.
+      // SCRAMBLE (khas Shibuya) DIKECUALIKAN: seluruh kendaraan berhenti dan hanya pejalan kaki
+      // yang menyeberang (semua arah). Dulu mobil jalan lintas tetap melaju di tengah kerumunan
+      // yang sedang menyeberang, jadi tampak seperti orang berdiri di antara mobil.
+      if (!inter.scramble && this.phase === "playing" && dist > -16 && dist < 65) {
         if (!inter.signalStarted) {
           inter.signalStarted = true;
           // Spawn mobil pertama segera agar langsung melintas di depan pemain
@@ -3681,6 +4037,10 @@ class Engine {
 
   /** Permukaan yang diinjak pejalan kaki: trotoar/median/curb, plus dek perempatan / scramble. */
   private pedSurfaceAt(lat: number, s: number): number {
+    // TROTOAR TEROWONGAN BUSWAY: model subwayTrackParts() meletakkan trotoar tepi di
+    // |lat| 7.4..9.6 dengan atas 0.24 m (di luar jalur bus). Tanpa ini, pejalan di trotoar
+    // terowongan berdiri di ketinggian plaza (0.1) dan tampak tenggelam di lantai.
+    if (Math.abs(lat) >= 7.2 && Math.abs(lat) <= 9.8 && this.isInSubwayTunnel(s, 1)) return 0.24;
     let h = pedGroundH(lat, track.mode);
     for (const it of this.intersections) {
       const ds = Math.abs(s - it.s);
@@ -4471,38 +4831,46 @@ class Engine {
     };
     this.intersections.push(inter);
     if (track.mode !== "haruna") {
-      // Every urban crosswalk gets a real, signal-controlled pedestrian wave. Scrambles
-      // are busier, while random longitudinal offsets keep the group from marching in a row.
+      // Every urban crosswalk gets a real, signal-controlled pedestrian wave.
       const n = scramble ? 4 + randInt(0, 2) : 2 + randInt(0, 2);
       const edge = 6.8;
       const est = Math.max(this.speed, START_SPEED);
       const elderIndex = Math.random() < 0.28 ? randInt(0, n - 1) : -1;
-      const offsets: number[] = [];
+      // RAPI — penyeberang selalu menyeberang DI ATAS pita zebra yang tergambar:
+      //   scramble  : pita zebra avenue di |x| = 5.0 (lebar 2.25 m)
+      //   perempatan: pita zebra di |x| = halfW + 1.1 (lebar 2.2 m)
+      // Pita kiri dipakai satu arus, pita kanan arus balik, jadi dua arah tidak bertabrakan
+      // dan tidak ada lagi orang menyeberang di tengah perempatan (di luar zebra).
+      const bandX = scramble ? SCRAMBLE_BAND_X : (wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
+      const leftFirst = Math.random() < 0.5;
+      // kecepatan SAMA untuk semua orang dalam satu pita: jarak antrean tetap rata
+      // (kalau kecepatannya beda, yang cepat menyusul yang lambat lalu saling menembus)
+      const bandSpeed: [number, number] = [crosserSpeed(1), crosserSpeed(-1)];
+      const bandCount: [number, number] = [0, 0];
       for (let i = 0; i < n; i++) {
-        let offset = rand(-7.0, 7.0);
-        for (let attempt = 0; attempt < 12 && offsets.some((other) => Math.abs(other - offset) < 2.4); attempt++) {
-          offset = rand(-7.0, 7.0);
-        }
-        offsets.push(offset);
-      }
-      offsets.sort((a, b) => a - b);
-      const firstDir = Math.random() < 0.5 ? 1 : -1;
-      for (let i = 0; i < n; i++) {
-        const dir = i === 0 ? firstDir : i === 1 ? -firstDir : Math.random() < 0.5 ? 1 : -1;
-        const px = s + offsets[i];
+        const useLeft = (i % 2 === 0) === leftFirst;
+        const dir: 1 | -1 = useLeft ? 1 : -1;
+        const bandIdx = useLeft ? 0 : 1;
+        const slot = bandCount[bandIdx]++;
         // Shibuya: penyeberang arah sebaliknya MENUNGGU DI MEDIAN (bukan di aspal jalur
         // seberang 5.0..12.3). Penyeberang dari trotoar dekat juga selesai di median.
-        const m = this.newMover("pedestrian", px, -1, track.mode === "shibuya" && dir < 0 ? SHIBUYA_MEDIAN_LAT : -dir * edge);
+        const baseLat = track.mode === "shibuya" && dir < 0 ? SHIBUYA_MEDIAN_LAT : -dir * edge;
+        const spot = this.pedQueueSpot(slot, baseLat, scramble);
+        const px = s + (useLeft ? -bandX : bandX) + spot.dx;
+        if (this.crosserSpotBusy(inter.id, px, baseLat + spot.dLat)) continue;
+        const m = this.newMover("pedestrian", px, -1, baseLat + spot.dLat);
         m.dir = dir;
         m.crossingEdge = edge;
         m.signalIntersectionId = inter.id;
         const elderly = i === elderIndex;
         m.elderly = elderly;
-        m.speed = elderly ? rand(0.85, 1.25) : rand(1.7, 2.4);
+        m.speed = elderly ? 0.95 : bandSpeed[bandIdx];
         m.variant = elderly ? randInt(0, 2) : Math.random() < 0.4 ? randInt(5, 7) : randInt(0, 4);
         const eta = (px - this.distance) / est;
         const walk = (edge - 1.2) / m.speed;
-        m.delay = Math.max(0.1, eta - walk + rand(-0.8, 0.8) + i * 0.35);
+        // masuk antrean satu per satu: orang ke-k di pita itu berangkat k * 1.25 s lebih lambat
+        // supaya mereka menyeberang berurutan (jarak tetap rata, tidak menumpuk/menembus)
+        m.delay = Math.max(0.1, eta - walk + rand(-0.3, 0.3) + slot * 1.25);
         this.movers.push(m);
       }
       this.moverVersion++;
@@ -4510,7 +4878,7 @@ class Engine {
     // clear static obstacles & bread directly in the crossroads area (s - 8.5 to s + 8.5)
     const half = scramble ? 11 : wide ? 10.5 : 8.5;
     this.obstacles = this.obstacles.filter((o) => o.s < s - half || o.s > s + half);
-    this.breads = this.breads.filter((b) => b.s < s - (half - 1) || b.s > s + (half - 1));
+    this.breads = this.breads.filter((b) => b.sky || b.s < s - (half - 1) || b.s > s + (half - 1));
     this.nosCans = this.nosCans.filter((c) => c.s < s - half - 8 || c.s > s + half + 8);
     this.rockets = this.rockets.filter((r) => r.s < s - half - 8 || r.s > s + half + 8);
     this.letters = this.letters.filter((l) => l.s < s - half - 8 || l.s > s + half + 8);
@@ -4552,10 +4920,10 @@ class Engine {
       // jalur pendekatan perempatan sengaja dibuat tenang: bersihkan roti di koridor rel
       // (kalau tidak, addObstacle menolak karena aturan jarak roti)
       this.breads = this.breads.filter(
-        (b) => !(b.lane === lane && b.s > railCx - (railHalf + 24) && b.s < railCx + (railHalf + 14)),
+        (b) => b.sky || !(b.lane === lane && b.s > railCx - (railHalf + 24) && b.s < railCx + (railHalf + 14)),
       );
       // roti di lajur sebelah yang menempel titik rel juga ikut dibersihkan (aturan jarak addObstacle)
-      this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - railCx) < 5));
+      this.breads = this.breads.filter((b) => b.sky || !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - railCx) < 5));
       if (!this.addObstacle("rail", railCx, lane, false, railHalf, 0, true)) continue;
       this.reserved.push({ lane, from: railCx - railHalf - 4, until: railEnd + 4 });
       // buang rintangan kecil lama yang kebetulan ada di jalur rel (ramp darurat jangan dibuang)
@@ -4606,11 +4974,13 @@ class Engine {
     const lo = X - 24;
     const hi = X + 10;
     this.obstacles = this.obstacles.filter((o) => o.s < lo || o.s > hi);
-    this.breads = this.breads.filter((b) => b.s < lo || b.s > hi);
+    this.breads = this.breads.filter((b) => b.sky || b.s < lo || b.s > hi);
     this.nosCans = this.nosCans.filter((c) => c.s < lo - 8 || c.s > hi + 8);
     this.rockets = this.rockets.filter((r) => r.s < lo - 8 || r.s > hi + 8);
     this.letters = this.letters.filter((l) => l.s < lo - 8 || l.s > hi + 8);
-    this.movers = this.movers.filter((m) => m.s < lo || m.s > hi);
+    // Pejalan TROTOAR tetap boleh ada di area perlintasan (mereka di trotoar, bukan rel);
+    // yang dibersihkan hanya yang berada di jalur jalan.
+    this.movers = this.movers.filter((m) => (m.kind === "pedestrian" && m.walkAlong) || m.s < lo || m.s > hi);
     // PASTIKAN SEMUA 3 LAJUR (0 = kiri, 1 = tengah, 2 = kanan) SELALU MEMILIKI RAMP!
     // Pemain di lajur mana pun dijamin 100% selalu menemukan ramp untuk melompati kereta dengan aman.
     cr.rampLanes = [0, 1, 2];
@@ -4658,7 +5028,7 @@ class Engine {
       const dy = rand(0.02, 0.1);
       const variant = big ? 2 : Math.random() < 0.35 ? 3 : randInt(0, 3);
       const pl = this.place(absS, lat, dy);
-      decor.push({ kind: "snow_drift", pos: pl.pos, rotY: pl.rotY + (Math.random() * 0.5 - 0.25), variant, frontSide: lat > 0 });
+      decor.push({ kind: "snow_drift", pos: pl.pos, rotY: pl.rotY + (Math.random() * 0.5 - 0.25), variant, frontSide: lat > 0, s: absS, lat });
     }
   }
 
@@ -4709,6 +5079,27 @@ class Engine {
       }
     }
     return null;
+  }
+
+  /**
+   * Lat muka gedung yang PALING MAJU (paling dekat jalan) di titik s untuk satu sisi jalan.
+   * Dipakai vending machine supaya mesin menempel dinding yang benar-benar ada di titik itu
+   * (tidak menembus gedung) tapi tetap tidak berdiri di tengah jalur langkah pejalan kaki.
+   * null kalau tidak ada gedung di titik tersebut.
+   */
+  private shibuyaWallLat(absS: number, side: -1 | 1): number | null {
+    let edge: number | null = null;
+    for (const f of this.shibuyaFootprints) {
+      if (absS < f.sMin - 0.4 || absS > f.sMax + 0.4) continue;
+      if (side < 0) {
+        if (f.latMax >= -0.5) continue;
+        edge = edge === null ? f.latMax : Math.max(edge, f.latMax);
+      } else {
+        if (f.latMin <= 0.5) continue;
+        edge = edge === null ? f.latMin : Math.min(edge, f.latMin);
+      }
+    }
+    return edge;
   }
 
   private spawnChunk() {
@@ -4802,7 +5193,10 @@ class Engine {
         spec.assetScale = placement.scale;
       }
       const pl = this.place(placedS, placedLat, dy);
-      decor.push({ kind: k, pos: pl.pos, rotY: pl.rotY, variant, spec, frontSide: placedLat > 0 });
+      decor.push({
+        kind: k, pos: pl.pos, rotY: pl.rotY, variant, spec, frontSide: placedLat > 0,
+        s: placedS, lat: placedLat, bounds: placement ? placement.bounds : undefined,
+      });
       return placement;
     };
 
@@ -4905,6 +5299,27 @@ class Engine {
         ? buildingLat + 4.85   // sisi dekat: trotoar dalam lebar, pengunjung berdiri ~depan toko
         : buildingLat - 1.15;  // sisi seberang: rapat di muka etalase, tetap ATAS trotoar jauh (12.6..16.1)
 
+      // VENDING MACHINE: SELALU DI TEPI KIRI TROTOAR (sisi gedung), bukan di tengah jalur
+      // langkah pejalan kaki. Lat dihitung dari muka gedung nyata di titik itu sehingga
+      // mesin menempel dinding (tidak menembus gedung) dan tetap di tepi luar trotoar.
+      // Trotoar dekat -8.2..-4.0 (gedung mulai <= -6.8) | trotoar jauh 12.6..16.1 (gedung >= 12.75).
+      const placeVending = (lx: number, side: -1 | 1) => {
+        const absS = s0 + lx;
+        const wall = this.shibuyaWallLat(absS, side);
+        const lat = side < 0
+          ? Math.max(-8.2 + 0.5, (wall ?? -99) + 0.62)
+          : Math.min(16.1 - 0.5, (wall ?? 99) - 0.62);
+        // Mesin tidak boleh berdiri di jalur langkah (dekat) / di tepi curb (jauh) —
+        // lebih baik tidak ada mesin daripada mesin menghalangi trotoar.
+        if (side < 0 && lat > -6.45) return null;
+        if (side > 0 && lat < 13.75) return null;
+        return add("vending", lx, lat, 0.12, randInt(0, 3));
+      };
+
+      // PENTING: buildingS di sini adalah S LOKAL chunk (buildingS - s0), sebab add()
+      // menambahkan s0 lagi (absS = s0 + lx). Dulu S absolut dikirim ke sini, jadi
+      // lampu lampion, pelanggan ramen, shopper, vending, dan planter toko mendarat
+      // puluhan meter dari tokonya dan tampak berdiri sendiri di trotoar.
       const addRamenCustomers = (buildingS: number, buildingLat: number) => {
         // The exact Shibuya Blocks Eat rig is rendered by World.tsx. Two customers
         // sit at the frontage; the second one is the streetwear sumo requested by the user.
@@ -4920,7 +5335,7 @@ class Engine {
         const sidewalkLat = frontageSidewalkLat(buildingLat);
         add("shopper", buildingS - 1.05, sidewalkLat, 0.14, 0);
         add("shopper", buildingS + 1.15, sidewalkLat + (buildingLat < 0 ? 0.32 : -0.32), 0.14, 2);
-        add("vending", buildingS - 2.25, sidewalkLat, 0.12, 0);
+        placeVending(buildingS - 2.25, buildingLat < 0 ? -1 : 1);
         add("mamachari", buildingS + 2.15, sidewalkLat, 0.12, 0);
         add("sidewalk_planter", buildingS + 2.65, sidewalkLat, 0.12, 1);
       };
@@ -4938,11 +5353,11 @@ class Engine {
 
       // 1. Near frontage: one exact transferred Shibuya Blocks asset every chunk.
       const nearPlacement = add("building", 6, -10.2, 0.1, 0, makeShibuyaTowerSpec(10.5, undefined, nearBld));
-      if (nearPlacement) addShibuyaShopFrontage(nearBld, nearPlacement.s, nearPlacement.lat);
+      if (nearPlacement) addShibuyaShopFrontage(nearBld, nearPlacement.s - s0, nearPlacement.lat);
 
       // 2. Far frontage: the next exact asset, visible across the full Shibuya avenue.
       const farPlacement = add("building", 6, farLat, -0.14, 0, makeShibuyaTowerSpec(14.0, undefined, farBld));
-      if (farPlacement) addShibuyaShopFrontage(farBld, farPlacement.s, farPlacement.lat);
+      if (farPlacement) addShibuyaShopFrontage(farBld, farPlacement.s - s0, farPlacement.lat);
 
       // 3. A third skyline copy is optional. It is attempted in a reserve row,
       // but the planner skips it when the source diorama cannot fit with a real
@@ -4951,7 +5366,11 @@ class Engine {
       const skylinePlacement = add("building", 6, skylineLat, -0.15, 0, makeShibuyaTowerSpec(16.0, 14, skyBld));
       // The reserve skyline is still a real storefront copy: do not leave a
       // ramen facade without its visible Eat rig (or a konbini without frontage).
-      if (skylinePlacement) addShibuyaShopFrontage(skyBld, skylinePlacement.s, skylinePlacement.lat);
+      if (skylinePlacement) addShibuyaShopFrontage(skyBld, skylinePlacement.s - s0, skylinePlacement.lat);
+
+      // 3b. Vending machine trotoar: menempel tepi kiri trotoar (sisi gedung) di kedua sisi.
+      if (Math.random() < 0.45) placeVending(rand(2.5, 9.5), -1);
+      if (Math.random() < 0.3) placeVending(rand(2.5, 9.5), 1);
 
       // Keep a recognizable standalone house in the route in addition to Machiya and Townhouse.
       // It is placed on the opposite skyline side so it never masks the exact transfer asset.
@@ -4968,27 +5387,30 @@ class Engine {
         return this.crossings.some((cr) => Math.abs(cr.s - sAbs) < 9) || Math.abs(sAbs - this.nextCrossingS) < 9;
       };
 
-      // 5. Tree-lined centre median: hanya saat bukan di jalur bus khusus agar lajur bus tetap bersih
-      if (!curTunnel) {
-        for (const lx of [3, 9]) {
-          if (!nearCrossing(lx)) add("tree", lx, 4.35, 0.16, randInt(0, 2));
-        }
-        if (id % 2 === 1 && !nearCrossing(6)) add("lamp", 6, 4.35, 0.16);
+      // 5. Tree-lined centre median: SELALU ada — termasuk di jalur bus khusus (busway).
+      // Pohon & lampu ini berdiri di median yang ditinggikan (lat 4.35), BUKAN di lajur bus
+      // (lajur bus ada di lat -2.4 / 0 / 2.4), jadi lajur bus tetap bersih & pemain tetap
+      // melihat barisan pohon di sisi kanan walau sedang melintasi jalur bus.
+      for (const lx of [3, 9]) {
+        if (!nearCrossing(lx)) add("tree", lx, 4.35, 0.16, randInt(0, 2));
       }
+      if (id % 2 === 1 && !nearCrossing(6)) add("lamp", 6, 4.35, 0.16);
+      if (id % 2 === 0 && !nearCrossing(6.5)) add("avenue_lamp", 6.5, 4.35, 0.16);
 
       // 6. Sidewalk atmosphere: pleasantly spaced out (not packed edge-to-edge)
-      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -5.2, 0.12, randInt(0, 3));
+      // (Vending machine trotoar ditambahkan di blok "etalase" di bawah, setelah gedung
+      //  chunk ini berdiri, supaya tepi kirinya benar-benar menempel muka gedung.)
       if (Math.random() < 0.35) add("neon_sign", rand(2.5, 9.5), -4.8, 0.12, randInt(0, 2));
       if (Math.random() < 0.3) add("mamachari", rand(2.5, 9.5), -4.9, 0.12, randInt(0, 3));
-      if (Math.random() < 0.4) add("tree", rand(2.5, 9.5), -6.6, 0.12, randInt(0, 2));
+      // Pohon trotoar = pohon jalan (varian 3): kanopi tinggi, pejalan kaki lewat di bawahnya.
+      if (Math.random() < 0.4) add("tree", rand(2.5, 9.5), -6.6, 0.12, 3);
       // Pohon sisi seberang juga harus di trotoar jauh, bukan di aspal jalur seberang (12.0 -> 15.6)
-      if (Math.random() < 0.35) add("tree", rand(2.5, 9.5), curTunnel ? 15.6 : 16.2, 0.12, randInt(0, 2));
+      if (Math.random() < 0.35) add("tree", rand(2.5, 9.5), curTunnel ? 15.6 : 16.2, 0.12, 3);
 
       // 7. Lampu jalan: di kedua trotoar (sisi seberang SELALU di atas trotoar jauh
       // 12.6..16.1 — lat 10.5 dulu masih aspal jalur mobil seberang 5.0..12.3)
       add("lamp", id % 2 === 0 ? 3 : 9, -4.3, 0.12);
       add("lamp", id % 2 === 0 ? 9 : 3, curTunnel ? 12.75 : 12.55, 0.14);
-      if (!curTunnel && id % 2 === 0 && !nearCrossing(6.5)) add("avenue_lamp", 6.5, 4.35, 0.16);
 
       // 8. Pagar pembatas trotoar pipa putih khas Jepang kini disapu mulus & kontinu di ground.ts mengikuti kontur jalan tanpa patah/anak tangga
 
@@ -5039,9 +5461,10 @@ class Engine {
         lot(6); // One grand, spacious lot per 12m chunk
       }
 
-      // Vending machines (Jihanki) on sidewalk
-      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -4.8, 0.12, randInt(0, 3));
-      if (Math.random() < 0.3) add("vending", rand(2.5, 9.5), 4.8, 0.12, randInt(0, 3));
+      // Vending machine (Jihanki) DI TEPI KIRI trotoar dekat (sisi gedung, bukan jalur
+      // langkah orang): trotoar Tokyo -7..-4, jadi mesin berdiri di -6.45 menghadap jalan.
+      // (Mesin sisi seberang ditambahkan di bawah setelah sakura/hydrant trotoar jauh.)
+      if (Math.random() < 0.45) add("vending", rand(2.5, 9.5), -6.45, 0.12, randInt(0, 3));
 
       // Mamachari commuter bicycles parked along sidewalks
       if (Math.random() < 0.4) add("mamachari", rand(2.5, 9.5), -4.55, 0.12, randInt(0, 3));
@@ -5055,8 +5478,8 @@ class Engine {
 
       // Illuminated sidewalk neon / ramen lantern signboards
       if (Math.random() < 0.35) add("neon_sign", rand(2.5, 9.5), -4.4, 0.12, randInt(0, 2));
-      // a sakura in front of the shops now and then
-      if (Math.random() < 0.4) add("sakura", rand(2.5, 9.5), -5.2, 0.12, randInt(0, 3));
+      // a sakura in front of the shops now and then (di tepi kiri trotoar, bukan jalur langkah)
+      if (Math.random() < 0.4) add("sakura", rand(2.5, 9.5), -6.3, 0.12, randInt(0, 3));
       // Front sidewalk buildings & houses (facing the street)
       const rFront = Math.random();
       if (rFront < 0.22) add("house", 6, 11.2, -0.1, randInt(0, 1));
@@ -5089,6 +5512,15 @@ class Engine {
     }
     if (Math.random() < 0.4) add("sakura", rand(1, 11), 5.1, 0.12, randInt(0, 3));
     for (let i = 0; i < randInt(1, 2); i++) add("bush", rand(0.5, 11.5), rand(6.6, 11), 0.05, randInt(0, 1));
+    // Vending mesin tepi kanan trotoar jauh (sisi gedung, 5.75 dari trotoar 4..6.3) — hanya
+    // kalau mulut trotoar di titik itu masih lapang, supaya jalur langkah pejalan kaki tetap ada.
+    if (kind === "street" && Math.random() < 0.3) {
+      const vx = rand(2.5, 9.5);
+      const blocked = decor.some(
+        (d) => d.lat !== undefined && d.lat > 0 && d.lat < 7.5 && Math.abs((d.s ?? 0) - (s0 + vx)) < 2.6,
+      );
+      if (!blocked) add("vending", vx, 5.75, 0.12, randInt(0, 3));
+    }
     for (let i = 0; i < randInt(1, 3); i++) add("flowers", rand(0.5, 11.5), rand(6.4, 11.5), 0.08, randInt(0, 1));
     this.addSnowDrifts(s0, decor);
     this.chunks.push({ id, s0, kind, decor });
@@ -5303,7 +5735,7 @@ class Engine {
       catVariant,
     });
     // Remove any bread that might somehow collide or be within the safety buffer of this obstacle
-    this.breads = this.breads.filter((b) => !(b.lane === lane && b.s >= s - (hLen + 20.0) && b.s <= s + (hLen + 10.0)));
+    this.breads = this.breads.filter((b) => b.sky || !(b.lane === lane && b.s >= s - (hLen + 20.0) && b.s <= s + (hLen + 10.0)));
     this.listVersion++;
     return true;
   }
@@ -5320,6 +5752,97 @@ class Engine {
     }
     for (let i = 0; i < n; i++) this.addBread(s + i * 1.0, lane, h);
   }
+  /**
+   * Formasi roti MENGULAR ala huruf S: roti berkelok dari satu lajur ke lajur lain
+   * (tengah -> samping -> tengah -> samping lain -> tengah), jadi pemain diajak weave
+   * mulus. Kalau jalurnya tidak bebas rintangan, formasi dilewati (return 0).
+   */
+  private breadSnake(s: number, stepGap = 1.15, perStep = 3) {
+    // Beberapa bentuk kandidat (dari S paling panjang ke yang lebih pendek) supaya formasi
+    // mengular tetap sering muncul walau jalurnya kadang terhalang rintangan.
+    const candidates: number[][] = [
+      [1, 2, 1, 0, 1],
+      [1, 0, 1, 2, 1],
+      [1, 2, 1, 2, 1],
+      [1, 0, 1, 0, 1],
+      [1, 2, 1],
+      [1, 0, 1],
+      [1, 2, 1, 2],
+      [1, 0, 1, 0],
+    ];
+    // arah S diacak: kadang mulai ke kanan, kadang ke kiri (kandidat pertama sudah dua arah)
+    if (Math.random() < 0.5) {
+      const [a, b] = candidates;
+      candidates[0] = b;
+      candidates[1] = a;
+    }
+    for (const seq of candidates) {
+      const pts: { s: number; lane: number }[] = [];
+      let ok = true;
+      for (let k = 0; k < seq.length && ok; k++) {
+        for (let j = 0; j < perStep; j++) {
+          const bs = s + (k * perStep + j) * stepGap;
+          if (this.isNearObstacle(bs, seq[k], 10.0, 24.0) || this.isNearBonusItem(bs, seq[k], 4.0)) {
+            ok = false;
+            break;
+          }
+          pts.push({ s: bs, lane: seq[k] });
+        }
+      }
+      if (!ok) continue;
+      for (const pt of pts) this.addBread(pt.s, pt.lane, 0.5);
+      return (pts.length - 1) * stepGap + 2;
+    }
+    return 0;
+  }
+  /**
+   * ROTI LANGIT: formasi roti melayang di KETINGGIAN TERBANG ROKET (3 m di atas aspal).
+   * Dipanggil tiap frame selama roket menyala: roti disemai di depan pemain dengan pola
+   * MENGULAR ala S (tengah -> samping -> tengah -> samping lain) — jadi terbangnya pun
+   * bisa nyerap roti yang ada di jalur langit. Roti langit dibersihkan otomatis saat mendarat.
+   */
+  private emitSkyBreads() {
+    // FORMASI MENGULAR ALA S YANG SEBENARNYA:
+    // roti ditempatkan pada KURVA SINUS menerus — lat = A * sin(2π s / λ) — jadi jalur roti
+    // benar-benar melengkung mulus dari lajur kiri ke kanan dan balik lagi (bukan pindah
+    // lajur putus-putus). Amplitudo A = 2.4 m (menjangkau lajur 0..2). Panjang gelombang λ
+    // DIPATOK saat formasi dimulai (tidak dikejar tiap frame) supaya gelombangnya utuh dan
+    // tidak di-refill terus; nilainya ikut kecepatan roket biar bentuk S-nya tetap terbaca.
+    // Amplitudo dilebarkan sampai 2.9 m (masih di dalam badan jalan +-3.75 m, dan masih
+    // terjangkau pemain karena batas menyamping lajur +-2.75 m + radius serap 1 m).
+    const amp = 2.9;
+    const step = 1.2; // jarak antar roti di sepanjang jalan (m)
+    const ahead = this.distance + 150; // runway SANGAT panjang: lebih dari 2 gelombang sekaligus
+    if (this.skyBreadS < this.distance + 6) {
+      // mulai formasi baru: gelombang mulai dari lat 0 di 10 m depan pemain
+      this.skyBreadS = this.distance + 10;
+      this.skyBreadPhase = this.skyBreadS;
+      // panjang gelombang dilebarkan (S lebih memanjang): 45-80 m per gelombang penuh
+      this.skyBreadWave = clamp(this.speed * 1.0, 45, 80);
+      // arah S diacak: kadang gelombangnya mulai ke kanan, kadang ke kiri
+      this.skyBreadDir = Math.random() < 0.5 ? 1 : -1;
+    }
+    while (this.skyBreadS < ahead) {
+      const u = ((this.skyBreadS - this.skyBreadPhase) / this.skyBreadWave) * Math.PI * 2;
+      const lat = amp * this.skyBreadDir * Math.sin(u);
+      track.frame(this.skyBreadS, lat, ROCKET_FLY_H, tmpV);
+      this.breads.push({
+        id: this.nextId++, s: this.skyBreadS, lane: lat < -1.2 ? 0 : lat > 1.2 ? 2 : 1,
+        lat, h: ROCKET_FLY_H,
+        taken: false, phase: Math.random() * Math.PI * 2,
+        wx: tmpV.x, wy: tmpV.y, wz: tmpV.z, sky: true,
+      });
+      this.skyBreadS += step;
+    }
+    // buang roti langit yang sudah terlewat jauh supaya daftar tetap ringkas
+    this.breads = this.breads.filter((b) => !b.sky || b.s > this.distance - 12);
+  }
+
+  /** Bersihkan sisa roti langit (dipanggil saat roket habis / mendarat). */
+  private clearSkyBreads() {
+    this.breads = this.breads.filter((b) => !b.sky);
+  }
+
   private breadArc(s: number, lane: number) {
     for (let k = -3; k <= 3; k++) {
       if (this.isNearObstacle(s + k * 0.75, lane, 10.0, 24.0)) return;
@@ -5503,18 +6026,255 @@ class Engine {
       const dir = i % 2 === 0 ? 1 : -1;
       // Hewan pinggir jalan berdiri di trotoar: sisi +1 di trotoar JAUH (12.6..16.1),
       // bukan di aspal jalur seberang (5.0..12.3) seperti lat 5.3 sebelumnya.
-      const m = this.newMover("shibuya_animal", this.distance + 46 + i * 5.6, -1, activity === "crossing" ? -dir * 4.15 : side > 0 ? 13.45 : -5.3);
+      // Penyeberang (termasuk hewan) berangkat dari 0.8 m DI DALAM trotoar, bukan dari garis pagar
+      // pipa putih di -4.12, dan hanya menyeberang di celah pagar (perempatan/perlintasan) —
+      // jadi tidak ada lagi yang berjalan menembus pagar.
+      let animalS = this.distance + 46 + i * 5.6;
+      // RAPI — hewan hanya menyeberang DI ZEBRA CROSS perempatan (pita zebra yang sama dipakai
+      // penyeberang), bukan di celah pagar perlintasan kereta / tengah blok.
+      const crossInter = activity === "crossing"
+        ? this.intersections
+            .filter((it) => !it.scramble && it.s > this.distance + 20)
+            .sort((a, b) => a.s - b.s)[0]
+        : undefined;
+      const crossing = activity === "crossing" && !!crossInter;
+      if (crossing && crossInter) {
+        const bandX = (crossInter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
+        animalS = crossInter.s + (dir > 0 ? -bandX : bandX);
+      }
+      const startLat = crossing ? -dir * 4.93 : side > 0 ? 13.45 : -5.3;
+      const m = this.newMover("shibuya_animal", animalS, -1, startLat);
       m.dir = dir;
-      m.speed = activity === "crossing" ? 2.35 : 0;
-      m.delay = activity === "crossing" ? Math.max(0.25, (m.s - this.distance) / Math.max(this.speed, START_SPEED) - 3.4) : 0;
-      m.crossingEdge = activity === "crossing" ? 5.2 : undefined;
+      m.speed = crossing ? 2.35 : 0;
+      m.delay = crossing ? Math.max(0.25, (m.s - this.distance) / Math.max(this.speed, START_SPEED) - 3.4) : 0;
+      m.crossingEdge = crossing ? 5.2 : undefined;
       m.shibuyaAnimal = this.nextShibuyaAnimal();
-      m.shibuyaAnimalActivity = activity;
+      m.shibuyaAnimalActivity = crossing ? "crossing" : "waving";
       m.shibuyaAnimalSide = side;
-      if (activity !== "crossing") m.phase = "pause";
+      if (!crossing) m.phase = "pause";
       this.movers.push(m);
     }
     this.moverVersion++;
+  }
+
+  /**
+   * Kecepatan penyeberang per pita zebra: SATU nilai untuk satu arah pita, bukan acak per
+   * kelompok. Kalau berbeda-beda, penyeberang dari kelompok lain bisa menyusul orang di depannya
+   * lalu saling menembus (terukur 0.00 m). Dengan kecepatan sama, jarak antrean tetap selamanya.
+   */
+  /**
+   * Sudah ada penyeberang lain yang menunggu/menyeberang di titik itu? Dipakai sebelum
+   * menaruh penyeberang baru: dua kelompok yang berbeda tidak boleh memakai titik tunggu yang
+   * sama (terukur 0.23 m -> saling menembus). Beda 0.75 m sudah cukup aman.
+   */
+  private crosserSpotBusy(signalId: number | undefined, s: number, lat: number): boolean {
+    if (signalId === undefined) return false;
+    for (const m of this.movers) {
+      if (m.phase === "hit") continue;
+      const sameCrossing = m.kind === "pedestrian" && m.signalIntersectionId === signalId;
+      if (!sameCrossing && m.kind !== "shibuya_animal") continue;
+      if (Math.hypot(m.s - s, m.lat - lat) < 0.75) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Tempat tunggu penyeberang ke-`slot` di dalam SATU pita zebra.
+   * Sebelum ini semua orang memakai geseran acak ±0.5 m, jadi dua orang bisa berdiri di titik
+   * yang sama persis (terukur 0.01 m -> saling menembus). Sekarang tempatnya DETERMINISTIK:
+   * orang ke-`slot` mundur 0.6 m ke belakang dari tempat tunggu dasar, dan kalau perlu
+   * berselang-seling 0.45 m ke samping — minimum 0.6 m, jadi tidak ada yang bertumpuk.
+   */
+  private pedQueueSpot(slot: number, baseLat: number, centered = false): { dx: number; dLat: number } {
+    // Kolom LUAR pita zebra dipakai penyeberang visual (|x| = band ∓0.75 m), jadi penyeberang
+    // sungguhan memakai KOLOM TENGAH pita (dx = 0) di perempatan scramble supaya dua sistem
+    // tidak pernah berdiri di titik yang sama. Di perempatan biasa kolom luar bebas dipakai.
+    const dx = centered ? 0 : slot % 2 === 0 ? -0.45 : 0.45;
+    const deep = centered ? slot : Math.floor(slot / 2);
+    const onMedian = baseLat > 4 && baseLat < 5.2; // pulau median Shibuya: hanya 1.6 m dalamnya
+    // arah mundur: ke dalam trotoar; di median: ke tepi (median tidak punya ruang ke samping)
+    const step = baseLat < 0 || onMedian ? -0.6 : 0.6;
+    const dLat = Math.max(-1.1, step * deep);
+    return { dx, dLat };
+  }
+
+  /** Target pejalan kaki TROTOAR yang harus terlihat di jendela pandang, per sisi trotoar. */
+  private sidewalkTargetPerSide(): number {
+    if (track.mode === "shibuya") return 7;
+    if (track.mode === "haruna") return 3;
+    return 5;
+  }
+
+  /** Titik trotoar (lat) untuk pejalan kaki: trotoar biasa atau trotoar tepi terowongan busway. */
+  private sidewalkWalkerLat(side: -1 | 1, inTunnel: boolean, dir: 1 | -1): number {
+    if (inTunnel) return side * ((dir > 0 ? 8.85 : 8.15) + rand(-0.1, 0.1)); // trotoar terowongan (7.4..9.6)
+    if (side > 0) {
+      if (track.mode !== "shibuya") return clamp(5.3 + (dir > 0 ? 0.35 : -0.35) + rand(-0.1, 0.1), 5.0, 5.65);
+      // Jalur trotoar jauh Shibuya (bebas dekorasi: lampu 12.55 paling luar 12.75, pengunjung
+      // toko/lampion ~15.05, vending >=13.75). Searah 13.7 / berlawanan 14.25, dan jalur
+      // penyeberang visual scramble 13.05 -> tidak ada dua pejalan di titik yang sama.
+      return clamp((dir > 0 ? 13.7 : 14.25) + rand(-0.1, 0.1), 13.6, 14.35);
+    }
+    return clamp((dir > 0 ? -5.65 : -5.05) + rand(-0.1, 0.1), -5.75, -4.95);
+  }
+
+  /**
+   * PENJAGA POPULASI PEJALAN KAKI TROTOAR.
+   *
+   * Dulu pejalan trotoar hanya muncul kalau pola chunk yang keluar kebetulan "pedestrians" DAN
+   * tidak ada perempatan dalam 18 m; terukur cuma 112 orang lahir dalam 900 detik dan
+   * 86% waktu trotoar KOSONG sama sekali (pemain melaju ~28 m/s, orang yang sudah dilewati
+   * hilang 16 m di belakang). Sekarang populasinya dijaga: begitu ada yang tertinggal, orang
+   * baru muncul di depan pada trotoar yang sama, jadi trotoar selalu hidup — termasuk trotoar
+   * tepi terowongan busway (mode banyak bus).
+   */
+  private updateSidewalkCrowd(dt: number) {
+    if (this.phase !== "playing") return;
+    this.sidewalkCrowdT -= dt;
+    if (this.sidewalkCrowdT > 0) return;
+    this.sidewalkCrowdT = 0.25;
+    const d = this.distance;
+    let near = 0;
+    let far = 0;
+    for (const m of this.movers) {
+      if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+      const rel = m.s - d;
+      if (rel < -SIDEWALK_WINDOW_BACK || rel > SIDEWALK_WINDOW_AHEAD) continue;
+      if (m.lat < 0) near++;
+      else far++;
+    }
+    const target = this.sidewalkTargetPerSide();
+    let budget = 2; // maksimal 2 orang per tik supaya munculnya mengalir, tidak meledak
+    const need: (-1 | 1)[] = [];
+    if (near < target) need.push(-1);
+    if (far < target) need.push(1);
+    for (const side of need) {
+      if (budget <= 0) break;
+      const s = this.pickSidewalkWalkerS(d, side);
+      if (s === null) continue;
+      this.spawnSidewalkWalker(s, side);
+      budget--;
+    }
+  }
+
+  /** Titik s yang aman untuk pejalan trotoar baru (tidak menempel orang lain, bukan mulut
+   *  terowongan, bukan perlintasan kereta). */
+  private pickSidewalkWalkerS(d: number, side: -1 | 1): number | null {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const s0 = d + rand(40, SIDEWALK_WINDOW_AHEAD - 6);
+      const inTun = this.isInSubwayTunnel(s0, 0);
+      // jangan di mulut terowongan: pejalan tidak boleh keluar/masuk lewat lat yang berbeda
+      if (this.isInSubwayTunnel(s0 - 12, 0) !== inTun) continue;
+      if (this.isInSubwayTunnel(s0 + 12, 0) !== inTun) continue;
+      // jangan di area perlintasan kereta (trotoar terpotong rel & palang pintu)
+      if (this.crossings.some((cr) => Math.abs(cr.s - s0) < 10)) continue;
+      let clash = false;
+      for (const m of this.movers) {
+        if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+        if (m.lat < 0 !== side < 0) continue;
+        if (Math.abs(m.s - s0) < 3.2) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      const s = this.clearSidewalkPoleS(s0); // jangan menembus tiang lampu trotoar
+      const tunnelNow = this.isInSubwayTunnel(s, 0);
+      if (this.isInSubwayTunnel(s - 12, 0) !== tunnelNow || this.isInSubwayTunnel(s + 12, 0) !== tunnelNow) continue;
+      return s;
+    }
+    return null;
+  }
+
+  /**
+   * Apakah ada pejalan lain tepat di depan pejalan trotoar `m` pada lajur yang sama?
+   * Dipakai untuk berhenti melangkah (bukan menembus) — lihat komentar di updateMovers.
+   */
+  private walkerBlockedAhead(m: Mover): boolean {
+    const dir = m.walkAlong;
+    if (!dir) return false;
+    for (const o of this.movers) {
+      if (o === m || o.kind !== "pedestrian" || o.phase === "hit") continue;
+      const ds = o.s - m.s;
+      const ad = Math.abs(ds);
+      if (ad > 1.0 || ad < 1e-4) continue;
+      if (Math.abs(o.lat - m.lat) > 0.5) continue; // beda lajur: aman, silakan lewat
+      if (ds * dir > 0) return true; // ada orang di depan pada lajur saya
+      // orang dari arah berlawanan pada lajur yang sama (kasus langka: mulut terowongan /
+      // kelompok yang muncul persis berdampingan): yang id-nya lebih besar mengalah dulu
+      if (o.walkAlong && o.walkAlong !== dir && (m.id ?? 0) > (o.id ?? 0)) return true;
+    }
+    return false;
+  }
+
+  /** Ada pejalan trotoar lain yang sudah berdiri dekat titik ini (satu lajur)? */
+  private walkAlongNear(s: number, lat: number): boolean {
+    for (const m of this.movers) {
+      if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+      if (Math.abs(m.s - s) < 1.8 && Math.abs(m.lat - lat) < 0.55) return true;
+    }
+    return false;
+  }
+
+  /** Pejalan kaki trotoar baru (bukan penyeberang): jalannya menyusuri trotoar, lat tetap. */
+  private spawnSidewalkWalker(s: number, side: -1 | 1) {
+    const inTunnel = this.isInSubwayTunnel(s, 0);
+    const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+    const m = this.newMover("pedestrian", s, -1, this.sidewalkWalkerLat(side, inTunnel, dir));
+    m.walkAlong = dir;
+    m.elderly = Math.random() < 0.12;
+    m.speed = m.elderly ? 1.5 : rand(2.4, 3.2); // 1.5x langkah penyeberang (aturan lama)
+    m.phase = "hop";
+    m.variant = m.elderly ? randInt(0, 2) : Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
+    if (inTunnel) m.tunnelWalker = true;
+    if (track.mode === "shibuya" && !m.elderly && Math.random() < 0.55) {
+      // Sebagian memakai rig Shibuya yang asli (sama seperti penyeberang) supaya trotoar
+      // terasa seperti Shibuya, bukan jalan generik.
+      const sumoDue = this.shibuyaPedestrianIndex % 3 === 0;
+      m.shibuyaChar = sumoDue ? "sumo" : Math.random() < 0.8 ? "salaryman" : pick(SHIBUYA_CHARACTERS);
+      this.shibuyaPedestrianIndex += 1;
+    }
+    this.movers.push(m);
+    this.moverVersion++;
+  }
+
+  /**
+   * Geser titik tunggu/seberang sedikit kalau tepat ada tiang lampu (atau dekor trotoar sejenis)
+   * di lintasannya, supaya penyeberang tidak berjalan menembus tiang saat menunggu/menyeberang.
+   */
+  private clearSidewalkPoleS(s: number): number {
+    for (const c of this.chunks) {
+      if (s < c.s0 - 4 || s > c.s0 + CHUNK_LEN + 4) continue;
+      for (const d of c.decor) {
+        if (d.s === undefined || d.lat === undefined) continue;
+        if (d.kind !== "lamp" && d.kind !== "avenue_lamp" && d.kind !== "touge_lamp") continue;
+        if (Math.abs(d.s - s) < 1.15) return s + (d.s >= s ? 1.35 : -1.35);
+      }
+    }
+    return s;
+  }
+
+  /**
+   * Rentang s di sekitar CELAH pagar pipa putih: perempatan, perlintasan kereta, atau di dalam
+   * terowongan busway (pagar sengaja tidak dipasang di sana). Penyeberang hanya melintas di
+   * celah ini supaya mereka tidak berjalan menembus pagar — persis seperti di jalan nyata.
+   */
+  private railingGapRange(s: number, maxDist = 40): [number, number] | null {
+    if (this.isInSubwayTunnel(s, 3)) {
+      const tun = this.subwayTunnels.find((t) => s >= t.startS - 3 && s <= t.endS + 3);
+      if (tun) return [tun.startS + 1, tun.endS - 1];
+    }
+    let best: [number, number] | null = null;
+    let bestDist = Infinity;
+    const consider = (center: number, radius: number) => {
+      const dist = Math.abs(center - s);
+      if (dist > maxDist || dist >= bestDist) return;
+      bestDist = dist;
+      best = [center - radius + 0.6, center + radius - 0.6];
+    };
+    for (const it of this.intersections) consider(it.s, it.scramble ? 11.5 : it.wide ? 10.5 : 8.5);
+    for (const cr of this.crossings) consider(cr.s, 8.5);
+    return best;
   }
 
   private spawnPedestrians(x: number, t: number) {
@@ -5524,6 +6284,11 @@ class Engine {
     const d = this.distance;
     // Urban crossers start at the curb and cross the live carriageway without reaching sidewalk fixtures.
     const edge = track.mode === "shibuya" ? 4.15 : 6.8;
+    // TITIK TUNGGU DI TROTOAR: di Shibuya pagar pipa putih berdiri di lat -4.12 dan tiang lampu
+    // di -4.3, jadi penyeberang menunggu 0.78 m lebih ke dalam trotoar (lat -4.93) supaya badan
+    // mereka tidak menembus pagar/tiang. Sisi median tetap di dalam pulau median.
+    const curbWait = track.mode === "shibuya" ? 4.93 : 6.8;
+    const medianWait = track.mode === "shibuya" ? SHIBUYA_MEDIAN_LAT : 6.8;
     // One occasional elderly pedestrian per group; everyone else gets independent timing and direction.
     const elderIndex = Math.random() < 0.3 ? randInt(0, n - 1) : -1;
     const offsets: number[] = [];
@@ -5535,21 +6300,80 @@ class Engine {
       offsets.push(offset);
     }
     offsets.sort((a, b) => a - b);
-    const firstDir = Math.random() < 0.5 ? 1 : -1;
+    // Tanpa celah pagar di dekat sini, penyeberang akan menembus pagar pipa putih — jadi
+    // kelompok ini dilewati saja (trotoar tetap hidup oleh pejalan kaki ambient).
+    const gap = this.railingGapRange(x);
+    if (!gap) return 0;
+    const gapWide = gap[1] - gap[0] > 16;
+    // RAPI — kalau ada perempatan di dekat sini, kelompok ini menyeberang DI PITA ZEBRA-nya
+    // (dua pita, satu arah per pita, antre satu-satu), bukan di sembarang titik jalan.
+    // Batas 18 m = batas yang sama dengan pencarian sinyal: jadi SETIAP penyeberang yang
+    // menunggu lampu perempatan pasti berdiri & menyeberang di pita zebra perempatan itu.
+    const inter = this.intersections
+      .filter((it) => Math.abs(it.s - x) < 18)
+      .sort((a, b) => Math.abs(a.s - x) - Math.abs(b.s - x))[0];
+    // TANPA zebra cross di dekat sini (celah pagar hanya karena perlintasan kereta / terowongan
+    // busway): jangan menyeberang di tengah blok — cukup jalan kaki sepanjang trotoar.
+    // Pemain hanya melihat orang menyeberang DI ZEBRA CROSS perempatan.
+    // Di dalam TEROWONGAN BUSWAY tidak ada zebra cross -> kelompok ini tidak menyeberang,
+    // hanya menyusuri trotoar tepi terowongan (|lat| 8.5). Itu juga sebabnya cabang trotoar
+    // dipakai saat inTun, bukan hanya saat tidak ada perempatan.
+    const inTun = this.isInSubwayTunnel(x, 4);
+    if (!inter || inTun) {
+      const side: -1 | 1 = Math.random() < 0.5 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        // Zona ditentukan per ORANG (bukan per kelompok): kalau kelompok ini tepat di mulut
+        // terowongan, orang di dalam terowongan memakai trotoar terowongan dan yang di luar
+        // memakai trotoar biasa — jadi tidak ada yang langsung hilang sesudah muncul.
+        const sI = x + i * rand(2.2, 4.2);
+        const mInTun = this.isInSubwayTunnel(sI, 0);
+        // jangan tepat di mulut terowongan: trotoarnya berganti lat di situ
+        if (this.isInSubwayTunnel(sI - 3, 0) !== mInTun || this.isInSubwayTunnel(sI + 3, 0) !== mInTun) continue;
+        const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+        const lat = this.sidewalkWalkerLat(side, mInTun, dir);
+        // jangan muncul menempel pejalan trotoar yang sudah ada (satu lajur)
+        if (this.walkAlongNear(sI, lat)) continue;
+        const m = this.newMover("pedestrian", sI, -1, lat);
+        m.walkAlong = dir;
+        m.speed = rand(2.4, 3.2); // trotoar: 1.5x lebih cepat dari langkah penyeberang
+        m.phase = "hop";
+        m.variant = Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
+        m.elderly = i === 0 && Math.random() < 0.25;
+        if (m.elderly) m.speed = 1.5;
+        if (mInTun) m.tunnelWalker = true;
+        this.movers.push(m);
+      }
+      this.moverVersion++;
+      return n * 2.8 + 3.5;
+    }
+    const bandX = inter ? (inter.scramble ? SCRAMBLE_BAND_X : (inter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1) : 0;
+    const leftFirst = Math.random() < 0.5;
+    const bandSlot: [number, number] = [0, 0];
+    const bandSpeed: [number, number] = [crosserSpeed(1), crosserSpeed(-1)];
+    let petSpotS = 0;
+    let petSpotLat = 0;
     for (let i = 0; i < n; i++) {
-      const dir = i === 0 ? firstDir : i === 1 ? -firstDir : Math.random() < 0.5 ? 1 : -1;
-      const pedestrianS = x + offsets[i];
-      const m = this.newMover("pedestrian", pedestrianS, -1, -dir * edge);
+      const useLeft = inter ? (i % 2 === 0) === leftFirst : false;
+      const dir: 1 | -1 = inter ? (useLeft ? 1 : -1) : i === 0 ? (Math.random() < 0.5 ? 1 : -1) : i === 1 ? (Math.random() < 0.5 ? 1 : -1) : Math.random() < 0.5 ? 1 : -1;
+      const rawS = x + offsets[i];
+      const bandIdx = useLeft ? 0 : 1;
+      const slot = inter ? bandSlot[bandIdx]++ : 0;
+      const waitLatBase = dir > 0 ? -curbWait : medianWait;
+      const spot = inter ? this.pedQueueSpot(slot, waitLatBase, !!inter.scramble) : { dx: 0, dLat: 0 };
+      const pedestrianS = inter
+        ? inter.s + (useLeft ? -bandX : bandX) + spot.dx
+        : this.clearSidewalkPoleS(gapWide ? rawS : clamp(rawS, gap[0], gap[1]));
+      if (!inter && gapWide && (rawS < gap[0] || rawS > gap[1])) continue; // celah sempit: di luar celah jangan
+      const waitLat = waitLatBase + spot.dLat;
+      if (inter && this.crosserSpotBusy(inter.id, pedestrianS, waitLat)) continue;
+      const m = this.newMover("pedestrian", pedestrianS, -1, waitLat);
       m.dir = dir;
       m.crossingEdge = edge;
-      // Any nearby city signal controls the crossing, not just Shibuya's scramble lights.
-      const signal = this.intersections
-        .filter((inter) => Math.abs(inter.s - pedestrianS) < 18)
-        .sort((a, b) => Math.abs(a.s - pedestrianS) - Math.abs(b.s - pedestrianS))[0];
-      if (signal) m.signalIntersectionId = signal.id;
+      // Sinyal perempatan hanya dipakai kalau kelompok ini memang menyeberang di pitanya.
+      if (inter) m.signalIntersectionId = inter.id;
       const elderly = i === elderIndex;
       m.elderly = elderly;
-      m.speed = elderly ? rand(0.85, 1.25) : rand(1.6, 2.3);
+      m.speed = elderly ? 0.95 : inter ? bandSpeed[useLeft ? 0 : 1] : rand(1.6, 2.3);
       // Mix casual walkers, salarymen, and Shibuya Blocks office workers.
       m.variant = elderly ? randInt(0, 2) : Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
       if (!elderly) {
@@ -5563,20 +6387,32 @@ class Engine {
       }
       const eta = (pedestrianS - d) / est;
       const walk = (edge - 1.2) / m.speed;
-      m.delay = Math.max(0.1, eta - walk + rand(-0.9, 0.9) + i * 0.35);
+      // antrean satu-satu dalam satu pita: orang ke-k berangkat k * 1.25 s lebih lambat
+      m.delay = Math.max(0.1, eta - walk + rand(-0.4, 0.4) + (inter ? slot * 1.25 : i * 0.35));
       this.movers.push(m);
 
       // Shibuya uses the deterministic retained Pigeon roster instead of a
       // random subset. The cursor wraps after the four enabled Friends.
       if (i === 0 && (track.mode === "shibuya" || Math.random() < 0.35)) {
-        const petMover = this.newMover("shibuya_animal", pedestrianS + rand(-1.2, 1.2), -1, -dir * (edge - 0.4));
+        // Hewan peliharaan ikut menunggu DI TROTOAR (bukan di atas aspal/curb).
+        // Hewan peliharaan menunggu di DALAM pita zebra yang sama, di slot paling belakang
+        // (slot 5) supaya tidak berdiri bertumpuk dengan orang.
+        if (inter) {
+          const petSpot = this.pedQueueSpot(5, waitLatBase, !!inter.scramble);
+          petSpotS = inter.s + (useLeft ? -bandX : bandX) + petSpot.dx;
+          petSpotLat = waitLatBase + petSpot.dLat;
+        } else {
+          petSpotS = pedestrianS + rand(-0.9, 0.9);
+          petSpotLat = waitLatBase + (dir > 0 ? -0.85 : 0.85);
+        }
+        const petMover = this.newMover("shibuya_animal", petSpotS, -1, petSpotLat);
         petMover.dir = dir;
         petMover.crossingEdge = edge;
         petMover.speed = rand(2.0, 2.7);
         petMover.delay = Math.max(0.1, m.delay + rand(0.05, 0.3));
         petMover.shibuyaAnimal = track.mode === "shibuya" ? this.nextShibuyaAnimal() : pick(PIGEON_SHIBUYA_ANIMALS);
         petMover.shibuyaAnimalActivity = "crossing";
-        if (signal) petMover.signalIntersectionId = signal.id;
+        if (inter) petMover.signalIntersectionId = inter.id;
         this.movers.push(petMover);
       }
     }
@@ -5632,9 +6468,11 @@ class Engine {
             (!o.keepRail || !(o.lane === lane && o.s >= x - 22 && o.s <= x + 20)) &&
             (!o.keepRail || !(Math.abs(o.lane - lane) === 1 && Math.abs(o.s - x) < 8))
         );
+        // Pejalan TROTOAR (walkAlong) tidak pernah ada di koridor item (jalur jalan), jadi
+        // mereka TIDAK ikut dihapus — dulu loro semua dihapus dan trotoar jadi kosong.
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                 !(m.kind === "pedestrian" && Math.abs(m.s - x) < 14) &&
+                 !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 14) &&
                  !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 14)
         );
         for (let b = 1; b <= 3; b++) {
@@ -5670,7 +6508,7 @@ class Engine {
         );
         this.movers = this.movers.filter(
           (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                 !(m.kind === "pedestrian" && Math.abs(m.s - x) < 16) &&
+                 !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "chicken" && Math.abs(m.s - x) < 16) &&
                  !(m.kind === "cat" && Math.abs(m.s - x) < 16)
@@ -5729,7 +6567,7 @@ class Engine {
           // Bersihkan kendaraan/hewan yang melintas di sekitar huruf
           this.movers = this.movers.filter(
             (m) => !(Math.abs(m.lane - lane) < 0.6 && m.s >= x - 22 && m.s <= x + 20) &&
-                   !(m.kind === "pedestrian" && Math.abs(m.s - x) < 18) &&
+                   !(m.kind === "pedestrian" && !m.walkAlong && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "shibuya_animal" && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "chicken" && Math.abs(m.s - x) < 18) &&
                    !(m.kind === "cat" && Math.abs(m.s - x) < 18)
@@ -5788,8 +6626,8 @@ class Engine {
         const lanes = [0, 1, 2].filter(laneOk);
         for (const lane of lanes) {
           // koridor rel dibersihkan dari roti (addObstacle menolak bila ada roti di dekatnya)
-          this.breads = this.breads.filter((b) => !(b.lane === lane && b.s > cx - (half + 24) && b.s < cx + (half + 14)));
-          this.breads = this.breads.filter((b) => !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - cx) < 5));
+          this.breads = this.breads.filter((b) => b.sky || !(b.lane === lane && b.s > cx - (half + 24) && b.s < cx + (half + 14)));
+          this.breads = this.breads.filter((b) => b.sky || !(Math.abs(b.lane - lane) === 1 && Math.abs(b.s - cx) < 5));
           if (!this.addObstacle("rail", cx, lane, false, half, isWave ? WAVE_VARIANT : COASTER_VARIANT, true)) continue;
           // koridor bebas: lajur ini di-reserve & rintangan kecil lama di jalur rel dibuang
           // (ramp darurat sengaja TIDAK dibuang — ia sarana keselamatan)
@@ -5841,8 +6679,13 @@ class Engine {
       ? [
           ["rail", 3.4],
           ["ramp", 2.6],
-          ["bread", 2.2],
+          ["bread", 2.8],
+          ["bread_snake", 6.2],
           ["single", 1.8],
+          // Busway tetap hidup: orang-orang tetap tampak menunggu & menyeberang di trotoar
+          // jalur bus, sama seperti di ruas jalan biasa (sebelumnya pola ini mati total di
+          // jalur bus sehingga trotoar terasa kosong).
+          ["pedestrians", 2.4],
         ]
       : [
           ["single", 3.8],
@@ -5852,7 +6695,8 @@ class Engine {
           ["zigzag", 0.4 + 2.5 * t],
           ["ramp", 2.2],
           ["rail", 5.2], // rel dibuat jauh lebih sering di jalan (sebelumnya 2.2)
-          ["bread", 1.6],
+          ["bread", 2.4],
+          ["bread_snake", 6.2],
           ["oncoming", track.mode === "haruna" ? 3.2 + 2.4 * t : 10 + 4 * t],
           ["motorcycles", (track.mode === "shibuya" ? 6.5 : 2.5) + 1.2 * t],
           ["chickens", 2.2 + 0.8 * t],
@@ -6039,16 +6883,42 @@ class Engine {
         }
         break;
       }
+      case "bread_snake": {
+        // FORMASI MENGULAR (S) khusus: roti berkelok dari lajur tengah ke samping, balik ke
+        // tengah, lalu ke samping lain — pemain diajak weave mulus.
+        const snakeLen = this.breadSnake(x);
+        if (snakeLen > 0) len = snakeLen;
+        else {
+          // kalau jalurnya terhalang: barisan lurus sebagai gantinya
+          this.breadLine(x, randInt(0, 2), 6);
+          len = 6.5;
+        }
+        break;
+      }
       case "bread": {
         const lane = randInt(0, 2);
-        if (Math.random() < 0.4) this.breadLine(x, lane, 6);
-        else if (Math.random() < 0.7) this.breadArc(x + 2, lane);
-        else {
+        const roll = Math.random();
+        if (roll < 0.3) {
+          // LURUS: barisan roti sejajar jalur (kadang lebih panjang)
+          this.breadLine(x, lane, Math.random() < 0.4 ? 9 : 6);
+          len = 9;
+        } else if (roll < 0.6) {
+          // MENGULAR ala S: roti berkelok antar lajur
+          const snakeLen = this.breadSnake(x);
+          if (snakeLen > 0) len = snakeLen;
+          else {
+            this.breadLine(x, lane, 6);
+            len = 6.5;
+          }
+        } else if (roll < 0.8) {
+          this.breadArc(x + 2, lane);
+          len = 6.5;
+        } else {
           const l2 = this.otherLane([lane]);
           this.breadLine(x, lane, 3);
           this.breadLine(x + 3.5, l2, 3);
+          len = 6.5;
         }
-        len = 6.5;
         break;
       }
       case "oncoming": {
@@ -6174,24 +7044,40 @@ class Engine {
         const dir = Math.random() < 0.5 ? 1 : -1;
         const est = Math.max(this.speed, START_SPEED);
         const eta = Math.max(0.1, (x - d) / est);
+        // RAPI — hewan/karakter Shibuya hanya MENYEBERANG kalau memang ada zebra cross
+        // (perempatan biasa yang pitanya dipakai penyeberang). Di tempat lain mereka hanya
+        // berjalan/berdiri di trotoar: tidak ada lagi yang menyeberang di tengah blok, dan
+        // tidak ada lagi yang MENUNGGU DI DALAM LAJUR MOBIL (dulu lat ±3.6 = tengah jalan).
+        const crossInter = this.intersections
+          .filter((it) => !it.scramble && Math.abs(it.s - x) < 10)
+          .sort((a, b) => Math.abs(a.s - x) - Math.abs(b.s - x))[0];
+        const crossBandX = crossInter ? (crossInter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1 : 0;
+        const crossWait = track.mode === "shibuya" ? 4.93 : 6.8;
         for (let i = 0; i < n; i++) {
           const animalSpeed = rand(2.2, 3.2);
           const targetLat = LANE_LAT[(i + 1) % 3];
-          const startEdge = 3.6;
-          const distToTarget = Math.abs(targetLat - (-dir * startEdge));
+          const distToTarget = Math.abs(targetLat - -dir * crossWait);
           const tWalk = distToTarget / animalSpeed;
           const delay = Math.max(0.05, eta - tWalk + (i - (n - 1) / 2) * 0.3);
           const slot = this.shibuyaAnimalRosterIndex % PIGEON_SHIBUYA_ANIMALS.length;
           const animal = track.mode === "shibuya" ? this.nextShibuyaAnimal() : pick(PIGEON_SHIBUYA_ANIMALS);
-          const activity = track.mode !== "shibuya"
-            ? "crossing"
-            : animal === "monkey" || animal === "capybara"
-              ? "bathing"
-              : slot % 2 === 0 ? "waving" : "crossing";
+          const bath = track.mode === "shibuya" && (animal === "monkey" || animal === "capybara");
+          const wantsCross = !bath && (track.mode !== "shibuya" || slot % 2 === 1);
+          const activity: ShibuyaAnimalActivity = bath
+            ? "bathing"
+            : wantsCross && crossInter
+              ? "crossing" // HANYA di zebra cross perempatan
+              : "waving";
           const side: -1 | 1 = i % 2 === 0 ? -1 : 1;
           // Sisi +1 = trotoar jauh (12.6..16.1), bukan aspal jalur seberang yang dilewati mobil
-          const sidewalkLat = side > 0 ? 13.45 : -5.3;
-          const m = this.newMover("shibuya_animal", x + (i - (n - 1) / 2) * 1.8, -1, activity === "crossing" ? -dir * startEdge : sidewalkLat);
+          const sidewalkLat = side > 0 ? (track.mode === "shibuya" ? 13.45 : 5.3) : -5.3;
+          const crossS = crossInter ? crossInter.s + (dir > 0 ? -crossBandX : crossBandX) + (i === 0 ? -0.35 : 0.35) : x;
+          const m = this.newMover(
+            "shibuya_animal",
+            activity === "crossing" && crossInter ? crossS : x + (i - (n - 1) / 2) * 1.8,
+            -1,
+            activity === "crossing" ? -dir * crossWait : sidewalkLat,
+          );
           m.dir = dir;
           m.speed = activity === "crossing" ? animalSpeed : 0;
           m.delay = activity === "crossing" ? delay : 0;
@@ -6232,7 +7118,7 @@ class Engine {
     const before = this.obstacles.length;
     this.obstacles = this.obstacles.filter((o) => o.s + obstacleHalf(o) > d - 16);
     if (this.obstacles.length !== before) changed = true;
-    if (this.breads.length && this.breads[0].s < d - 14) this.breads = this.breads.filter((b) => b.s > d - 14);
+    if (this.breads.length && this.breads[0].s < d - 14) this.breads = this.breads.filter((b) => b.sky || b.s > d - 14);
     if (this.puddles.length && this.puddles[0].s < d - 14) {
       this.puddles = this.puddles.filter((pu) => pu.s > d - 14);
       changed = true;
@@ -6486,7 +7372,6 @@ class Engine {
   }
 
   private updatePulses(dt: number) {
-    this.landRollT += dt;
     for (let i = this.bursts.length - 1; i >= 0; i--) {
       const bu = this.bursts[i];
       bu.t += dt;
@@ -6625,6 +7510,155 @@ class Engine {
     if (this.particles.length > 150) this.particles.splice(0, this.particles.length - 150);
   }
 
+  /* ---------- Asap roket NOS (warna-warni khas Subway Surfers) ---------- */
+
+  /** Titik nosel roket punggung di koordinat dunia (posisi pemain + offset rig). */
+  private rocketNozzle(sPos: number, out: { x: number; y: number; z: number }) {
+    const p = this.player;
+    const c = track.sample(sPos, tmpS);
+    out.x = c.x - Math.sin(c.th) * p.lat;
+    out.z = c.z + Math.cos(c.th) * p.lat;
+    out.y = c.y + p.h + ROCKET_NOZZLE_H;
+    return c;
+  }
+
+  /** Ledakan asap pelangi tepat saat roket dinyalakan (burst besar + cincin warna). */
+  private rocketSmokeBurst() {
+    const c = this.rocketNozzle(this.distance - ROCKET_NOZZLE_BACK, rocketTmp);
+    const x = rocketTmp.x;
+    const y = rocketTmp.y;
+    const z = rocketTmp.z;
+    const fx = Math.cos(c.th);
+    const fz = Math.sin(c.th);
+    const lx = -Math.sin(c.th); // sumbu menyamping (lat)
+    const lz = Math.cos(c.th);
+    // ledakan asap pelangi keluar dari lubang nosel: menyembur ke BELAKANG dalam kerucut
+    // (bukan mekar ke segala arah), jadi tetap terlihat keluar dari satu lubang roket.
+    for (let i = 0; i < 64; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rad = Math.sqrt(Math.random()) * 1.3; // sebaran radial kecil di dalam kerucut
+      const outX = lx * Math.cos(a) * rad;
+      const outZ = lz * Math.cos(a) * rad;
+      this.rocketSmoke.push({
+        x: x + rand(-0.07, 0.07), y: y + rand(-0.07, 0.07), z: z + rand(-0.07, 0.07),
+        vx: -fx * rand(3.0, 7.5) + outX,
+        vy: Math.sin(a) * rad * 0.55 + rand(0.1, 1.0),
+        vz: -fz * rand(3.0, 7.5) + outZ,
+        life: 0, max: rand(0.75, 1.55), size: rand(0.3, 0.56), grow: rand(1.8, 3.0),
+        hue: (i / 64) * 0.999, rot: rand(0, 6.28), spin: rand(-3, 3), spark: false,
+      });
+    }
+    for (let i = 0; i < 40; i++) {
+      const a = rand(0, Math.PI * 2);
+      const sp = rand(3, 8);
+      this.rocketSmoke.push({
+        x, y, z,
+        vx: -fx * rand(2.5, 7) + lx * Math.cos(a) * sp * 0.7,
+        vy: Math.sin(a) * sp * 0.5 + rand(0.4, 2.6),
+        vz: -fz * rand(2.5, 7) + lz * Math.cos(a) * sp * 0.7,
+        life: 0, max: rand(0.28, 0.55), size: rand(0.1, 0.2), grow: 0.4,
+        hue: Math.random(), rot: rand(0, 6.28), spin: rand(-12, 12), spark: true,
+      });
+    }
+    if (this.rocketSmoke.length > ROCKET_SMOKE_MAX) {
+      this.rocketSmoke.splice(0, this.rocketSmoke.length - ROCKET_SMOKE_MAX);
+    }
+    this.spawnPulse(x, y, z, { max: 0.55, r0: 0.35, r1: 3.4, color: [0.35, 0.95, 1] });
+    this.spawnPulse(x, y, z, { max: 0.75, r0: 0.2, r1: 2.4, color: [1, 0.45, 0.9] });
+    this.spawnPulse(x, y, z, { max: 0.95, r0: 0.15, r1: 1.7, color: [1, 0.92, 0.4] });
+  }
+
+  /** Semburan asap kontinu selama NOS menyala (puff pelangi + percikan terang). */
+  private emitRocketSmoke(_dt: number) {
+    const p = this.player;
+    // ASAP TIDAK BOLEH PUTUS walau roket melesat 3.5x.
+    // Emisi dijadwalkan per JARAK: setiap gumpalan ditempatkan pada posisi s yang tepat
+    // (selisih `step` meter dari gumpalan sebelumnya, melewati batas frame). Jadi pita asap
+    // selalu rapat dari nosel sampai ekor — tidak ada lubang 1 m seperti kalau menumpuk
+    // gumpalan sekali per frame.
+    const step = Math.max(0.12, this.speed * 0.0045); // jarak antar gumpalan (m)
+    if (this.rocketSmokeS < this.distance - 3) this.rocketSmokeS = this.distance; // pengaman
+    let k = 0;
+    while (this.rocketSmokeS <= this.distance && k < 48) {
+      const c = track.sample(this.rocketSmokeS - ROCKET_NOZZLE_BACK, tmpS2);
+      this.rocketSmokeS += step;
+      k++;
+      const lx = -Math.sin(c.th);
+      const lz = Math.cos(c.th);
+      const fx = Math.cos(c.th);
+      const fz = Math.sin(c.th);
+      const x = c.x - Math.sin(c.th) * p.lat;
+      const z = c.z + Math.cos(c.th) * p.lat;
+      const y = c.y + p.h + ROCKET_NOZZLE_H;
+      this.rocketSmokeHue = (this.rocketSmokeHue + 0.011) % 1;
+      const jit = rand(-0.015, 0.015);
+      this.rocketSmoke.push({
+        x: x + lx * rand(-0.03, 0.03) + rand(-0.03, 0.03),
+        y: y + rand(-0.05, 0.07),
+        z: z + lz * rand(-0.03, 0.03) + rand(-0.03, 0.03),
+        vx: -fx * rand(1.0, 2.6) + lx * rand(-0.4, 0.4),
+        vy: rand(0.05, 0.7),
+        vz: -fz * rand(1.0, 2.6) + lz * rand(-0.4, 0.4),
+        life: 0, max: rand(1.15, 1.75), size: rand(0.26, 0.5), grow: rand(2.0, 3.0),
+        hue: (this.rocketSmokeHue + jit + 1) % 1,
+        rot: rand(0, 6.28), spin: rand(-2.2, 2.2), spark: false,
+      });
+    }
+    // percikan warna-warni: juga dijadwalkan per jarak
+    const sparkStep = Math.max(0.25, this.speed * 0.012);
+    if (this.rocketSparkS < this.distance - 4) this.rocketSparkS = this.distance;
+    let j = 0;
+    while (this.rocketSparkS <= this.distance && j < 32) {
+      const c = track.sample(this.rocketSparkS - ROCKET_NOZZLE_BACK, tmpS2);
+      this.rocketSparkS += sparkStep;
+      j++;
+      const lx = -Math.sin(c.th);
+      const lz = Math.cos(c.th);
+      const fx = Math.cos(c.th);
+      const fz = Math.sin(c.th);
+      const x = c.x - Math.sin(c.th) * p.lat;
+      const z = c.z + Math.cos(c.th) * p.lat;
+      const y = c.y + p.h + ROCKET_NOZZLE_H - 0.05;
+      this.rocketSmokeHue = (this.rocketSmokeHue + 0.023) % 1;
+      this.rocketSmoke.push({
+        x, y, z,
+        vx: -fx * rand(2.0, 5.5) + lx * rand(-1.1, 1.1),
+        vy: rand(0.5, 2.6),
+        vz: -fz * rand(2.0, 5.5) + lz * rand(-1.1, 1.1),
+        life: 0, max: rand(0.3, 0.6), size: rand(0.09, 0.18), grow: 0.4,
+        hue: (this.rocketSmokeHue + rand(-0.07, 0.07) + 1) % 1, rot: rand(0, 6.28), spin: rand(-10, 10), spark: true,
+      });
+    }
+    if (this.rocketSmoke.length > ROCKET_SMOKE_MAX) {
+      this.rocketSmoke.splice(0, this.rocketSmoke.length - ROCKET_SMOKE_MAX);
+    }
+  }
+
+  private updateRocketSmoke(dt: number) {
+    const arr = this.rocketSmoke;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const s = arr[i];
+      s.life += dt;
+      if (s.life >= s.max) {
+        arr.splice(i, 1);
+        continue;
+      }
+      // seret udara: asap cepat kehilangan dorongan lalu mengapung & mengembang
+      const drag = Math.exp(-dt * (s.spark ? 2.6 : 1.7));
+      s.vx *= drag;
+      s.vz *= drag;
+      s.vy = s.vy * drag + (s.spark ? -7.5 : 0.5) * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.z += s.vz * dt;
+      if (s.y < 0.04 && s.vy < 0) {
+        s.y = 0.04;
+        s.vy *= -0.25;
+      }
+      s.rot += s.spin * dt;
+    }
+  }
+
   private updateParticles(dt: number) {
     const arr = this.particles;
     for (let i = arr.length - 1; i >= 0; i--) {
@@ -6649,5 +7683,7 @@ class Engine {
     }
   }
 }
+
+const rocketTmp = { x: 0, y: 0, z: 0 };
 
 export const engine = new Engine();

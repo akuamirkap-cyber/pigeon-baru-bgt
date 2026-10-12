@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useUI } from "../game/store";
 import { BreadIcon } from "./BreadIcon";
-import { engine, NOS_MAX } from "../game/engine";
+import { engine, NOS_MAX, NOS_MIN_FIRE } from "../game/engine";
 import { unlockAudio, sfx } from "../game/audio";
 
 function SpeakerIcon({ muted }: { muted: boolean }) {
@@ -88,6 +88,8 @@ export function HUD() {
                   : "✨";
   const inRun = phase === "playing" || phase === "crashed";
   const nosReady = nos >= NOS_MAX * 0.99 && !nosActive;
+  // ROKET bisa dinyalakan sejak isi NOS 35% (durasi terbang ikut sisa isi tangki)
+  const rocketArmed = nos >= NOS_MAX * NOS_MIN_FIRE && !nosActive;
   const sprint = useUI((s) => s.sprint);
   const sprintLevel = useUI((s) => s.sprintLevel);
   const sprinting = sprint > 0.02 || sprintLevel > 0;
@@ -376,10 +378,11 @@ export function HUD() {
             onPointerDown={(e) => {
               e.stopPropagation();
               unlockAudio();
-              engine.input("boost");
+              // isi tangki cukup -> langsung ROKET (terbang 3 m); kalau tidak, sprint biasa
+              engine.input(rocketArmed ? "nos" : "boost");
             }}
             className={`flex h-[15cqw] w-[15cqw] flex-col items-center justify-center rounded-full font-display leading-none border-[3px] shadow-[0_4px_0_rgba(0,0,0,0.3)] active:translate-y-[2px] active:shadow-none transition-all duration-150 ${
-              nosReady
+              rocketArmed
                 ? "border-[#ffd60a] bg-gradient-to-b from-[#ffd60a] to-[#ff9f1c] text-[#1f2430] animate-pulse"
                 : nosActive
                   ? "border-white bg-[#00e5ff] text-white"
@@ -392,7 +395,7 @@ export function HUD() {
                         : "border-[#0091ff] bg-[#0066cc] text-white"
             }`}
             style={{
-              boxShadow: nosReady || nosActive
+              boxShadow: rocketArmed || nosActive
                 ? "0 0 16px rgba(0, 229, 255, 0.8), 0 4px 0 rgba(0,0,0,0.25)"
                 : sprinting
                   ? `0 0 ${Math.round(8 + sprint * 18)}px ${
@@ -400,10 +403,15 @@ export function HUD() {
                     }, 0 4px 0 rgba(0,0,0,0.25)`
                   : undefined,
             }}
-            aria-label={nosReady || nosActive ? "Aktifkan NOS" : "Sprint kick"}
+            aria-label={rocketArmed || nosActive ? "Nyalakan roket (R)" : "Sprint kick"}
           >
-            {nosReady || nosActive ? (
-              <span className="text-[4.2cqw]">NOS</span>
+            {nosReady || nosActive || rocketArmed ? (
+              <>
+                <span className="text-[4.2cqw]">NOS</span>
+                <span className="mt-[0.5cqw] hidden font-body text-[1.7cqw] font-extrabold tracking-wider opacity-85 [@media(hover:hover)]:block">
+                  R 🚀 FULL
+                </span>
+              </>
             ) : sprintLevel > 0 ? (
               <>
                 <span className="text-[3.8cqw] font-black tracking-tight drop-shadow-md">

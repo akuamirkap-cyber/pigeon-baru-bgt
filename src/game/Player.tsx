@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { buildVoxelGeometry, clamp, rand, voxelMaterial } from "./voxel";
+import { buildVoxelGeometry, clamp, getGeometry, rand, voxelMaterial } from "./voxel";
 import { engine, LANE_LAT } from "./engine";
 import { useUI } from "./store";
 import { charBodyParts, charHeadParts, charTailParts, charWingParts, deckParts, getSkin, truckParts, wheelParts, HIP_Y, LEG_Z, TAIL_ROOT } from "./skins";
 import { RIG, LegRig } from "./pigeonRig";
-import { nosTankParts } from "./models";
+import { nosTankParts, rocketParts } from "./models";
 import { buildShibuyaAnimalRig } from "./shibuyaPacks";
 import { buildBuddyRig, VOXEL_BOARD_IDS } from "./buddiesSkins";
 import { Koi, Goldfish, Ufo, Broom, Drone } from "../buddies/characters";
@@ -221,8 +221,17 @@ export function Player() {
     }),
     [],
   );
+  // ROKET PUNGGUNG: pakai geometri CACHE YANG SAMA dengan item roket di World.tsx
+  // (getGeometry("rocket", rocketParts)) — jadi roket yang nempel di punggung 100% identik
+  // dengan roket yang kita temui di jalan. Tidak ikut di-dispose karena dipakai bersama.
+  const backRocketGeo = useMemo(() => getGeometry("rocket", rocketParts), []);
   const flames = useRef<THREE.Group>(null);
   const tanks = useRef<THREE.Mesh>(null);
+  /** ROKET PUNGGUNG: roket yang otomatis menempel di punggung saat NOS/roket menyala */
+  const rocketPack = useRef<THREE.Group>(null);
+  const rocketFlame = useRef<THREE.Group>(null);
+  /** blend pose terbang "Superman" (0 = normal, 1 = melaju seperti roket) */
+  const boostK = useRef(0);
   const dizzyRef = useRef<THREE.Group>(null);
   const starGeo = useMemo(() => new THREE.OctahedronGeometry(0.065, 0), []);
   const starMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#ffd166" }), []);
@@ -251,6 +260,12 @@ export function Player() {
     const [legPush, legPlant] = legs;
 
     const crashed = engine.phase === "crashed" || engine.phase === "gameover";
+    // ROKET/NOS: saat menyala, pemain otomatis terbang "Superman" — roket menempel di
+    // punggung, badan rebah ke depan, dan papan dikempit di tangan kanan. Blend-nya dihitung
+    // engine (termasuk saat meluncur turun setelah roket mati) supaya pose & ketinggian
+    // penerbangan selalu selaras.
+    boostK.current = crashed ? 0 : engine.player.rocketFly;
+    const sup = boostK.current;
     // Keep the chunky pigeon silhouette compact while preserving full-size legs.
     // The torso group contains the body, collar, head, wings and tail; the IK legs
     // are siblings, so scaling here does not shrink or bury the feet.
@@ -366,14 +381,22 @@ export function Player() {
       // Formula mepet presisi: permukaan atas papan (boardY + deckSurfaceTop * effScaleY)
       // selalu menempel persis di telapak kaki (RIG.pigeonY = 0.25).
       const flushBoardY = RIG.pigeonY - deckSurfaceTop * effScaleY;
-      bd.position.set(g > 0 ? -g * 0.2 : 0, flushBoardY + grabLift + grabTuck + floatLift + (deckAdj.offsetY || 0), 0);
+      // ROKET: papan berpindah dari bawah kaki ke KETIAK KANAN (dikempit), berdiri tegak
+      // sejajar badan supaya tetap terlihat seperti sedang membawa skateboard.
+      bd.position.set(
+        (g > 0 ? -g * 0.2 : 0) + 0.02 * sup,
+        flushBoardY + grabLift + grabTuck + floatLift + (deckAdj.offsetY || 0) + 0.52 * sup,
+        0.34 * sup,
+      );
       bd.scale.set(effScaleX, effScaleY, effScaleZ);
       // board yaws into the carve (nose points where the pigeon is going) on top of any trick rotation
       // NEW: in the air the feet steer the board, so it tilts a little MORE than the body (lean * 0.2)
       const airTilt = nm ? lv * 0.2 * p.airBlend : 0;
+      const flatRoll = p.flip + (g > 0 ? g * 0.9 : 0) + airTilt + p.railRoll;
+      const flatYaw = p.boardYaw + p.boardTwist + p.railYaw;
       bd.rotation.set(
-        p.flip + (g > 0 ? g * 0.9 : 0) + airTilt + p.railRoll,
-        p.boardYaw + p.boardTwist + p.railYaw,
+        lerp(flatRoll, Math.PI / 2, sup),
+        lerp(flatYaw, 0, sup),
         p.pitch + (g < 0 ? g * 0.35 : 0) + p.boardPitch + p.railPitch,
       );
 
@@ -413,24 +436,16 @@ export function Player() {
       const saltoCy = 0.6 * PS;
       const saltoX = saltoCy * Math.sin(saltoZ);
       const saltoY = saltoCy * (1 - Math.cos(saltoZ));
-      // ragdoll saat mendarat: tumble/guling ke depan (full roll saat jatuh keras), wobble settling
-      const lr = engine.landRollT;
-      let rollZ = 0;
-      let rollX = 0;
-      let landBounce = 0;
-      if (lr < 1.2) {
-        const amp = engine.landRollAmp;
-        const dir = engine.landRollDir;
-        if (engine.landRollFull && lr < 0.6) {
-          const u = Math.min(1, lr / 0.6);
-          rollZ += dir * Math.PI * 2 * (1 - Math.pow(1 - u, 3));
-        }
-        rollZ += dir * amp * 0.22 * Math.sin(lr * 20) * Math.exp(-lr * 6);
-        rollX = amp * 0.3 * Math.sin(lr * 15) * Math.exp(-lr * 5);
-        landBounce = amp * 0.22 * Math.exp(-lr * 7) * Math.abs(Math.sin(lr * 11));
-      }
-      pg.position.set(saltoX, RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift + saltoY + landBounce, -0.03 * out);
-      pg.rotation.set(rollX, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ + rollZ);
+      // PENDARATAN BERSIH: saat menyentuh aspal rider TIDAK roll/guling ke depan lagi (request
+      // pemain). Rasa empuk pendaratan tetap datang dari squash + debu engine, bukan guling.
+      // ROKET: badan rebah horisontal (Superman) — punggung + roket menghadap atas,
+      // kepala ke depan, kaki lurus ke belakang, badan melayang di atas aspal.
+      pg.position.set(
+        saltoX - 0.45 * sup,
+        RIG.pigeonY + hop - crouch - dip + grabLift + grabTuck + floatLift + saltoY + 0.62 * sup,
+        -0.03 * out,
+      );
+      pg.rotation.set(0, 0, p.pitch * 0.5 + (g > 0 ? g * 0.35 : 0) + (g < 0 ? g * 0.25 : 0) + saltoZ - (Math.PI / 2) * sup);
       pg.scale.set(PS * (1 + 0.26 * s), PS * (1 - 0.42 * s + idle), PS * (1 + 0.26 * s));
 
       if (friendModel.current && friendRig) {
@@ -519,13 +534,14 @@ export function Player() {
 
       // hips in deck space (the pigeon group moved by hop/dip; the board is the reference)
       const hipY = HIP_Y + hop - dip - crouch;
-      // planted leg: sole stays on the deck under the body (slightly forward when driving)
-      legPlant.solve((broomDeck ? 0.18 : 0.02) + 0.03 * drive - 0, -hipY, 0);
+      // ROKET: kaki lurus menjulur ke belakang seperti terbang, bukan berdiri di papan
+      const legY = lerp(-hipY, -0.46, sup);
+      legPlant.solve(lerp((broomDeck ? 0.18 : 0.02) + 0.03 * drive, 0.0, sup), legY, 0);
       if (u >= 0) {
-        legPush.solve(kTmp[0], kTmp[1] - hipY, kTmp[2] - (broomDeck ? 0 : LEG_Z));
+        legPush.solve(lerp(kTmp[0], 0.02, sup), lerp(kTmp[1] - hipY, legY, sup), lerp(kTmp[2] - (broomDeck ? 0 : LEG_Z), 0, sup));
       } else {
         // riding stance: both feet on the deck; tiny knee flex with the head bob
-        legPush.solve(broomDeck ? -0.22 : 0.02, -hipY, 0);
+        legPush.solve(lerp(broomDeck ? -0.22 : 0.02, 0.02, sup), legY, 0);
       }
       // torso: lean forward & over the planted foot during the drive, dip a touch on the kick.
       // While carving, the upper body leans a little further INTO the turn than the board (weight over the
@@ -578,7 +594,7 @@ export function Player() {
         leanTorso(-0.12 * out - lv * 0.14 + p.railBodyRoll, -0.2 * drive - 0.04 * out - 0.14 * spr + p.railLean, 0.04 * drive + 0.03 * spr, -0.02 * drive, -0.05 * out + lv * 0.06, p.railBodyYaw);
         // head bob halus yang selalu menempel pada leher (RIG.headPos)
         hd.position.set(RIG.headPos[0] + bob * 0.02, RIG.headPos[1] + Math.abs(bob) * 0.015, 0);
-        hd.rotation.set(hl.pitch - lv * 0.1, hl.yaw, grounded ? -0.06 * drive : -0.12);
+        hd.rotation.set(hl.pitch - lv * 0.1, hl.yaw, (grounded ? -0.06 * drive : -0.12) + 1.0 * sup);
       } else {
         // extra torso roll INTO the turn (rotation.x > 0 tips the top toward +z, so it is -carve)
         const torsoCarve = -carve * (airborne ? 0.55 : 0.35);
@@ -586,7 +602,7 @@ export function Player() {
         leanTorso(-0.12 * out + torsoCarve + p.railBodyRoll, -0.2 * drive - 0.04 * out - 0.14 * spr + 0.12 * shift + p.railLean, 0.04 * drive + 0.03 * spr, -0.02 * drive - 0.03 * shift, -0.05 * out + hipShift, -p.steer * 0.35 + p.railBodyYaw);
         // head bob halus yang selalu menempel pada leher (RIG.headPos)
         hd.position.set(RIG.headPos[0] + bob * 0.02, RIG.headPos[1] + Math.abs(bob) * 0.015, 0);
-        hd.rotation.set(hl.pitch - carve * 0.18, hl.yaw, grounded ? -0.06 * drive : -0.12);
+        hd.rotation.set(hl.pitch - carve * 0.18, hl.yaw, (grounded ? -0.06 * drive : -0.12) + 1.0 * sup);
       }
     } else {
       // ---- ragdoll dummy physics ----
@@ -912,12 +928,38 @@ export function Player() {
     const fl = flames.current;
     if (fl) {
       const f = engine.nosFlame;
-      fl.visible = f > 0.03;
+      // saat roket punggung menyala, semburan api di ekor papan dimatikan (biar tidak dobel)
+      fl.visible = f > 0.03 && sup < 0.4;
       const flick = 1 + 0.25 * Math.sin(t * 60) + 0.15 * Math.sin(t * 37 + 1);
       fl.scale.set(f * flick * (1.2 + 0.5 * f), f * (0.8 + 0.3 * flick), f * (0.9 + 0.2 * flick));
       fl.rotation.z = 0.08 * Math.sin(t * 25);
     }
-    if (tanks.current) tanks.current.visible = engine.nos > 1 || engine.nosT > 0;
+    // tangki NOS lama di papan disembunyikan saat roket punggung aktif (biar tidak rancu:
+    // yang tampil hanya roket item yang menempel di punggung)
+    if (tanks.current) tanks.current.visible = (engine.nos > 1 || engine.nosT > 0) && sup < 0.15;
+
+    // ROKET PUNGGUNG: muncul (pop) saat NOS menyala, dengan nyala api yang berkedip
+    const rp = rocketPack.current;
+    if (rp) {
+      const on = sup > 0.02;
+      rp.visible = on;
+      if (on) {
+        // getaran kecil mesin roket (skala dasar 1.6 sudah dipasang di JSX -> 2x ukuran
+        // sebelumnya, lebih besar dari item di jalan; posisinya dinaikkan di atas punggung)
+        const pop = 1.6 * (0.6 + 0.4 * sup);
+        rp.scale.set(pop, pop, pop);
+        rp.position.set(-0.95 + Math.sin(t * 52) * 0.006, 0.03 + Math.sin(t * 44 + 1) * 0.006, 0);
+      }
+    }
+    const rf = rocketFlame.current;
+    if (rf) {
+      rf.visible = sup > 0.05;
+      if (rf.visible) {
+        const flick = 1 + 0.3 * Math.sin(t * 61) + 0.2 * Math.sin(t * 39 + 1.3);
+        rf.scale.set(sup * (0.85 + 0.25 * flick), sup * flick * (0.9 + 0.6 * sup), sup * (0.85 + 0.25 * flick));
+        rf.rotation.z = 0.1 * Math.sin(t * 27);
+      }
+    }
 
     // tail: swings with the lean, trailing toward the OUTSIDE of the turn (inertia), with a lag and a small flutter
     if (tail.current) {
@@ -1031,6 +1073,17 @@ export function Player() {
           wl.rotation.z = dir < 0 ? -0.35 * shift : 0;
         }
       }
+      // ROKET: sayap/tangan menjulur ke depan seperti Superman — tangan kanan sedikit
+      // menurun mengempit papan yang dikempit di ketiak.
+      if (sup > 0.01) {
+        wr.rotation.x = lerp(wr.rotation.x, 0.4, sup);
+        wl.rotation.x = lerp(wl.rotation.x, -0.4, sup);
+        wr.rotation.y = lerp(wr.rotation.y, 0, sup);
+        wl.rotation.y = lerp(wl.rotation.y, 0, sup);
+        // sayap kanan sedikit menurun menekan papan yang dikempit, kiri lurus ke depan
+        wr.rotation.z = lerp(wr.rotation.z, -1.85, sup);
+        wl.rotation.z = lerp(wl.rotation.z, -1.5, sup);
+      }
     }
   });
 
@@ -1133,6 +1186,27 @@ export function Player() {
                       rotation={[0.3, angle, 0.4]}
                     />
                   ))}
+                </group>
+              </group>
+              {/* ROKET PUNGGUNG = model ROKET yang sama persis dengan item yang diambil.
+                  Ditempel di punggung (sumbu model +y = moncong = arah laju saat badan rebah
+                  "Superman"), jadi noselnya menghadap ke belakang dan asap keluar dari
+                  SATU lubang nosel itu. Sibling grup torso supaya tetap muncul untuk skin buddy.
+                  UKURAN: skala 1.6 = 2x lipat ukuran sebelumnya (0.8) dan 1.6x ukuran item di
+                  jalan; POSISI: x -0.95 = dipasang LEBIH TINGGI (melayang di atas punggung)
+                  karena badan rebah -90 derajat -> sumbu lokal -x = atas dunia. */}
+              <group ref={rocketPack} position={[-0.95, 0.03, 0]} scale={1.6} visible={false}>
+                <mesh geometry={backRocketGeo} material={voxelMaterial} castShadow />
+                <group ref={rocketFlame} position={[0, 0.02, 0]} visible={false}>
+                  <mesh material={flameMats.outer} position={[0, -0.5, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.14, 1.05, 10]} />
+                  </mesh>
+                  <mesh material={flameMats.mid} position={[0, -0.34, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.095, 0.72, 10]} />
+                  </mesh>
+                  <mesh material={flameMats.core} position={[0, -0.2, 0]} rotation-x={Math.PI}>
+                    <coneGeometry args={[0.058, 0.46, 10]} />
+                  </mesh>
                 </group>
               </group>
             </group>

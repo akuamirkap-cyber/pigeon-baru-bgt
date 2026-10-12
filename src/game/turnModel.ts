@@ -43,6 +43,9 @@ export const TURN = {
   /** 0..1: critically damped stopping capability prevents overshoot ("PAS" tepat di tengah jalur) */
   BRAKE_MARGIN: 1.0,
   BRAKE_MARGIN_AIR: 0.40,
+  /** TERBANG ROKET: margin pengereman dinaikkan di atas angka aspal supaya gerak bebas kiri/kanan
+   *  lebih cepat — masih memakai rumus pengereman yang sama, jadi tetap tidak overshoot. */
+  BRAKE_MARGIN_FREE: 1.25,
   /** the trucks lag the lean command, so we compare the desired heading with where the heading WILL be (s) */
   PREDICT: 0.04,
   PREDICT_AIR: 0.12,
@@ -78,6 +81,11 @@ export interface TurnInput {
   minLat: number;
   maxLat: number;
   dt: number;
+  /** 0..1: pindah jalur saat TERBANG ROKET dibuat LEBIH GESIT & responsif tapi tetap mulus
+   *  (bukan snap): pegas referensi & koreksi posisi dipercepat, cacah setir dinaikkan
+   *  mendekati cengkeraman aspal, dan lean mengikuti lebih cepat. Tetap memakai hukum
+   *  pengereman model ini, jadi tidak pernah overshoot. */
+  smooth?: number;
 }
 
 export function makeTurnState(lat = 0): TurnState {
@@ -99,8 +107,26 @@ export function yawRate(sF: number, fwd: number, grip: number) {
 function stepOnce(s: TurnState, i: TurnInput, dt: number) {
   const T = TURN;
   const fwd = Math.max(i.fwd, T.MIN_FWD);
-  const grip = i.air ? T.GRIP_AIR : T.GRIP_GROUND;
-  const steerMax = i.air ? T.STEER_MAX_AIR : T.STEER_MAX_GROUND;
+  // TERBANG ROKET (f = 1): respons pindah jalur dipercepat — pegas referensi & koreksi posisi
+  // lebih gesit, cengkeraman setir dinaikkan mendekati aspal, lean & truck mengikuti lebih cepat.
+  // Semua tetap melalui hukum pengereman model (vDes dibatasi vBrake) jadi tetap mulus, tidak snap,
+  // dan tidak pernah overshoot ke jalur sebelah.
+  const f = clamp(i.smooth ?? 0, 0, 1);
+  // TERBANG ROKET: pegas referensi & koreksi posisi dipercepat lebih jauh lagi (gerak bebas
+  // kiri/kanan makin gesit); hukum pengereman di bawah tetap menjadi pengaman anti-overshoot.
+  const slowRef = 1 + 1.2 * f;
+  const slowPos = 1 + 2.4 * f;
+  const slowHead = 1 + 0.8 * f;
+  const slowLean = 1 + 0.6 * f;
+  const slowTruck = 1 + 0.5 * f;
+  const authority = 1 + 0.3 * f; // otoritas setir (steerMax) — terbang: setir lebih tajam
+  // Saat terbang, cengkeraman dinaikkan dari "udara" ke arah aspal supaya setirnya terasa nyata
+  const gripBase = i.air ? T.GRIP_AIR : T.GRIP_GROUND;
+  const gripBlend = gripBase + (T.GRIP_GROUND - gripBase) * 0.8 * f;
+  const steerBase = i.air ? T.STEER_MAX_AIR : T.STEER_MAX_GROUND;
+  const steerBlend = steerBase + (T.STEER_MAX_GROUND - steerBase) * 0.85 * f;
+  const steerMax = steerBlend * authority;
+  const desiredMax = T.DESIRED_MAX * (1 + 0.15 * f);
   const prevLat = s.lat;
   s.airBlend += ((i.air ? 1 : 0) - s.airBlend) * (1 - Math.exp(-dt * 10));
 
@@ -130,20 +156,24 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
   } else {
     // 1) smooth reference to the lane centre: critically damped spring, exact integration
     {
+      const refOmega = T.REF_OMEGA * slowRef;
       const x0 = s.refX - i.target;
-      const e = Math.exp(-T.REF_OMEGA * dt);
-      const c2 = s.refV + T.REF_OMEGA * x0;
+      const e = Math.exp(-refOmega * dt);
+      const c2 = s.refV + refOmega * x0;
       s.refX = i.target + (x0 + c2 * dt) * e;
-      s.refV = (s.refV - T.REF_OMEGA * c2 * dt) * e;
+      s.refV = (s.refV - refOmega * c2 * dt) * e;
     }
     const err = i.target - s.lat;
     const arrived = Math.abs(err) < T.ARRIVE_POS && Math.abs(s.heading) < T.ARRIVE_HEADING && Math.abs(s.lean) < T.ARRIVE_LEAN && Math.abs(s.refV) < 0.12;
     if (arrived) {
-      // settle: straighten heading and lean slowly, no micro wobble
-      s.heading *= Math.exp(-dt * 10);
-      s.lean *= Math.exp(-dt * 12);
-      s.sF *= Math.exp(-dt * 18);
-      s.lat += err * (1 - Math.exp(-dt * 14));
+      // settle: straighten heading and lean slowly, no micro wobble.
+      // Terbang roket: penguncian akhir ke tengah jalur dipercepat supaya terasa gesit
+      // (overshoot tetap 0 karena hanya mengunci sisa error yang sudah di bawah ARRIVE_POS).
+      const settle = 1 + 0.9 * f;
+      s.heading *= Math.exp(-dt * 10 * settle);
+      s.lean *= Math.exp(-dt * 12 * settle);
+      s.sF *= Math.exp(-dt * 18 * settle);
+      s.lat += err * (1 - Math.exp(-dt * 14 * settle));
       if (Math.abs(s.heading) < 0.002 && Math.abs(s.lean) < 0.004 && Math.abs(err) < 0.002) {
         s.heading = 0;
         s.lean = 0;
@@ -157,19 +187,26 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
       // ahead of it we must not be pulled back (that would reverse the sideways motion); it just heads for the lane.
       const dirT = Math.sign(i.target - s.lat);
       const past = dirT !== 0 && dirT * (s.lat - s.refX) > 0;
-      let vDes = past ? (i.target - s.lat) * T.POS_GAIN * 1.5 : s.refV + (s.refX - s.lat) * T.POS_GAIN;
-      const refAcc = -T.REF_OMEGA * T.REF_OMEGA * (s.refX - i.target) - 2 * T.REF_OMEGA * s.refV;
+      const posGain = T.POS_GAIN * slowPos;
+      let vDes = past ? (i.target - s.lat) * posGain * 1.5 : s.refV + (s.refX - s.lat) * posGain;
+      const refOmega2 = T.REF_OMEGA * slowRef;
+      const refAcc = -refOmega2 * refOmega2 * (s.refX - i.target) - 2 * refOmega2 * s.refV;
       let limited = past;
       // 2b) braking law: a board can only stop its sideways drift by turning back to straight, and that takes
       //     (1 - cos(heading)) / c of lateral distance (c = yaw authority / forward speed). Never ask for more
       //     lateral speed than we can still cancel before the lane centre => no overshoot, also in the air.
       {
-        const c = (Math.tan((1 + T.REAR_RATIO) * steerMax) * grip) / effWb();
+        const c = (Math.tan((1 + T.REAR_RATIO) * steerMax) * gripBlend) / effWb();
         const toGo = i.target - s.lat;
         const dir = Math.sign(toGo);
-        const eff = Math.max(0, Math.abs(toGo) - (i.air ? T.LAG_AIR : T.LAG) * Math.max(0, s.latVel * dir));
-        const thBrake = Math.acos(clamp(1 - c * (i.air ? T.BRAKE_MARGIN_AIR : T.BRAKE_MARGIN) * eff, -1, 1));
-        const vBrake = fwd * Math.sin(Math.min(thBrake, T.DESIRED_MAX));
+        // TERBANG ROKET (f = 1): batas pengereman (margin) dicampur ke angka aspal supaya
+        // gerak bebas kiri/kanan jauh lebih gesit. Kompensasi lag (truk menggantung lebih
+        // longgar di udara) tetap angka udara supaya hasilnya TETAP tidak overshoot.
+        const lag = i.air ? T.LAG_AIR : T.LAG;
+        const margin = i.air ? T.BRAKE_MARGIN_AIR + (T.BRAKE_MARGIN_FREE - T.BRAKE_MARGIN_AIR) * f : T.BRAKE_MARGIN;
+        const eff = Math.max(0, Math.abs(toGo) - lag * Math.max(0, s.latVel * dir));
+        const thBrake = Math.acos(clamp(1 - c * margin * eff, -1, 1));
+        const vBrake = fwd * Math.sin(Math.min(thBrake, desiredMax));
         if (dir > 0 && vDes > vBrake) {
           vDes = vBrake;
           limited = true;
@@ -179,24 +216,24 @@ function stepOnce(s: TurnState, i: TurnInput, dt: number) {
         }
       }
       // 3) desired heading from lateral speed, limited
-      const sinMax = Math.sin(T.DESIRED_MAX);
+      const sinMax = Math.sin(desiredMax);
       if (Math.abs(vDes / fwd) >= sinMax) limited = true;
       const desired = Math.asin(clamp(vDes / fwd, -sinMax, sinMax));
       // 4) yaw-rate we need (P on heading + feed-forward of how fast the desired heading itself is changing),
       //    then invert the bicycle model to get the truck angle difference
-      const rateFF = limited ? 0 : (refAcc + T.POS_GAIN * (s.refV - s.latVel)) / (fwd * Math.max(0.3, Math.cos(desired)));
-      const headingNow = yawRate(s.sF, fwd, grip);
+      const rateFF = limited ? 0 : (refAcc + posGain * (s.refV - s.latVel)) / (fwd * Math.max(0.3, Math.cos(desired)));
+      const headingNow = yawRate(s.sF, fwd, gripBlend);
       const headingPred = s.heading + headingNow * (i.air ? T.PREDICT_AIR : T.PREDICT);
-      const wantRate = (desired - headingPred) * T.HEADING_GAIN + rateFF;
-      const steerDiff = Math.atan((wantRate * effWb()) / (fwd * grip));
+      const wantRate = (desired - headingPred) * T.HEADING_GAIN * slowHead + rateFF;
+      const steerDiff = Math.atan((wantRate * effWb()) / (fwd * gripBlend));
       // 5) lean request (front - rear = (1 + ratio) * front), rate limited so the body cannot snap
       const leanReq = clamp(steerDiff / (1 + T.REAR_RATIO) / steerMax, -1, 1);
-      const maxStep = (i.air ? T.LEAN_RATE_AIR : T.LEAN_RATE_GROUND) * dt;
+      const maxStep = (i.air ? T.LEAN_RATE_AIR : T.LEAN_RATE_GROUND) * slowLean * dt;
       s.lean += clamp(leanReq - s.lean, -maxStep, maxStep);
       // 6) the lean moves the trucks (damped, hangs looser in the air)
-      s.sF += (s.lean * steerMax - s.sF) * (1 - Math.exp(-dt * (i.air ? T.TRUCK_DAMP_AIR : T.TRUCK_DAMP_GROUND)));
+      s.sF += (s.lean * steerMax - s.sF) * (1 - Math.exp(-dt * (i.air ? T.TRUCK_DAMP_AIR : T.TRUCK_DAMP_GROUND) * slowTruck));
       // 7) yaw comes out of the trucks
-      s.heading = clamp(s.heading + yawRate(s.sF, fwd, grip) * dt, -T.HEADING_MAX, T.HEADING_MAX);
+      s.heading = clamp(s.heading + yawRate(s.sF, fwd, gripBlend) * dt, -T.HEADING_MAX, T.HEADING_MAX);
       // 8) lateral motion is ONLY the consequence of the heading
       s.lat += Math.sin(s.heading) * fwd * dt;
       s.latVel = (s.lat - prevLat) / dt;

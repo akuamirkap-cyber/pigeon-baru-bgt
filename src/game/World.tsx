@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { buildVoxelPair, getGeometry, getGeometryPair, glossyGroundMaterial, glowMaterial, pick, transparentVoxelMaterial, voxelMaterial, type GeoPair } from "./voxel";
 import { applyCurve } from "./curve";
+import { BREAD_HALO_PEAK, BREAD_HALO_SIZE, BREAD_HALO_STOPS, BREAD_HALO_Y, breadHaloBrightness } from "./breadGlow";
 import {
   CHUNK_LEN,
   barrierParts,
@@ -110,6 +111,7 @@ import {
   SUBWAY_GAP,
 } from "./models";
 import { railPhase, WAVE_VARIANT } from "./railMath";
+import { SCRAMBLE_PATHS, createScrambleWalkerState, scrambleWalkerPose, stepScrambleWalker, type ScramblePath } from "./scrambleCrossing";
 import { useUI, type TrackMode } from "./store";
 import { getRayTexture } from "./rays";
 import { getAssetData } from "../shibuya/voxel/models";
@@ -126,6 +128,8 @@ import {
   type Chunk,
   type Crossing,
   crossCarH,
+  pedGroundH,
+  scramblePedH,
   trafficSignalApproach,
   RARE_FLASH_T,
   type Intersection,
@@ -604,33 +608,41 @@ const PedestrianMover = memo(function PedestrianMover({ m }: { m: Mover }) {
     } else {
       // ---- NATURAL WALKING / WAITING ANIMATION ----
       inner.position.set(0, PED_LIFT, 0);
-      inner.rotation.set(0, m.dir > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
+      // ARAH HADAP. Rig voxel menghadap +x lokal (probe140: +x lokal = +s dunia, +z lokal = +lat):
+      //  • penyeberang: jalan ke ±lat  -> yaw -pi/2 (ke +lat) / +pi/2 (ke -lat)
+      //  • pejalan trotoar (walkAlong): jalan SEPANJANG s -> yaw 0 (ke +s) / pi (ke -s).
+      // Dulu pejalan trotoar memakai yaw +pi/2, jadi mereka berjalan MENYAMPING (meluncur
+      // ke samping seperti bug) — sekarang menghadap arah jalannya.
+      const walkAlongYaw = m.walkAlong ? (m.walkAlong > 0 ? 0 : Math.PI) : null;
+      inner.rotation.set(0, walkAlongYaw ?? (m.dir > 0 ? -Math.PI / 2 : Math.PI / 2), 0);
       inner.scale.setScalar(PED_SCALE);
       torso.position.set(0, 0, 0);
 
+      // Kekuatan langkah: 0 saat orangnya berhenti (kaki tidak beku di tengah langkah).
+      const stepFade = m.walkFade ?? 1;
       if (m.phase === "hop") {
         if (isElder) {
           // Jalan santai teratur lansia dengan tongkat (langkah wajar, tidak kaku)
           const strideFreq = (m.speed / 0.75) * Math.PI;
           const step = Math.sin(m.hopT * strideFreq);
-          legL.rotation.set(0, 0, step * 0.48);
-          legR.rotation.set(0, 0, -step * 0.48);
-          armL.rotation.set(0, 0, -step * 0.36);
-          armR.rotation.set(0, 0, 0.16 + Math.abs(step) * 0.14);
-          headG.rotation.set(0.08, Math.sin(m.hopT * 2.4) * 0.08, Math.sin(m.hopT * 4.8) * 0.02);
+          legL.rotation.set(0, 0, step * 0.48 * stepFade);
+          legR.rotation.set(0, 0, -step * 0.48 * stepFade);
+          armL.rotation.set(0, 0, -step * 0.36 * stepFade);
+          armR.rotation.set(0, 0, 0.16 + Math.abs(step) * 0.14 * stepFade);
+          headG.rotation.set(0.08, Math.sin(m.hopT * 2.4) * 0.08 * stepFade, Math.sin(m.hopT * 4.8) * 0.02 * stepFade);
           torso.rotation.set(0, 0, 0.12);
-          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.016;
+          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.016 * stepFade;
         } else {
           // Langkah jalan kaki proporsional, santai, dan nyaman (panjang langkah pas, tidak kaku/shuffle)
           const strideFreq = (m.speed / 0.88) * Math.PI;
           const swing = Math.sin(m.hopT * strideFreq);
-          legL.rotation.set(0, 0, swing * 0.62);
-          legR.rotation.set(0, 0, -swing * 0.62);
-          armL.rotation.set(0, 0, -swing * 0.48);
-          armR.rotation.set(0, 0, swing * 0.48);
-          headG.rotation.set(0, 0, Math.sin(m.hopT * strideFreq * 2) * 0.02);
-          torso.rotation.set(0, 0, 0.04 + Math.sin(m.hopT * strideFreq * 2) * 0.01);
-          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.026;
+          legL.rotation.set(0, 0, swing * 0.62 * stepFade);
+          legR.rotation.set(0, 0, -swing * 0.62 * stepFade);
+          armL.rotation.set(0, 0, -swing * 0.48 * stepFade);
+          armR.rotation.set(0, 0, swing * 0.48 * stepFade);
+          headG.rotation.set(0, 0, Math.sin(m.hopT * strideFreq * 2) * 0.02 * stepFade);
+          torso.rotation.set(0, 0, 0.04 + Math.sin(m.hopT * strideFreq * 2) * 0.01 * stepFade);
+          inner.position.y = PED_LIFT + Math.abs(Math.sin(m.hopT * strideFreq)) * 0.026 * stepFade;
         }
       } else {
         legL.rotation.set(0, 0, 0);
@@ -716,12 +728,17 @@ const ShibuyaPedestrianMover = memo(function ShibuyaPedestrianMover({ m }: { m: 
       inner.scale.setScalar(1);
     } else {
       inner.position.set(0, 0, 0);
-      inner.rotation.set(0, m.dir > 0 ? 0 : Math.PI, 0); // rig Shibuya menghadap +z: 0 = ke kanan (+lat), PI = ke kiri
+      // rig Shibuya menghadap +z: 0 = ke kanan (+s dunia, lihat probe140), PI = ke kiri.
+      // Pejalan TROTOAR (walkAlong) berjalan menyusuri trotoar, jadi menghadap arah jalannya
+      // (dulu memakai m.dir penyeberang -> meluncur menyamping seperti bug).
+      const shibuyaWalkYaw = m.walkAlong ? (m.walkAlong > 0 ? 0 : Math.PI) : m.dir > 0 ? 0 : Math.PI;
+      inner.rotation.set(0, shibuyaWalkYaw, 0);
       inner.scale.setScalar(1);
       if (m.phase === "hop") {
         const strideFreq = (m.speed / 0.88) * Math.PI;
-        inner.position.y = Math.abs(Math.sin(m.hopT * strideFreq)) * 0.04;
-        inner.rotation.z = Math.sin(m.hopT * strideFreq) * 0.05;
+        const stepFade = m.walkFade ?? 1; // diam = goyangan badan berhenti (tidak jalan di tempat)
+        inner.position.y = Math.abs(Math.sin(m.hopT * strideFreq)) * 0.04 * stepFade;
+        inner.rotation.z = Math.sin(m.hopT * strideFreq) * 0.05 * stepFade;
       }
     }
   });
@@ -1226,18 +1243,28 @@ function SubwayTrains() {
 }
 
 /* ---------- Perempatan (4-Way Crossroads / Intersections) ---------- */
-/** Penyeberang ambient di paruh jauh Scramble Crossing (median -> trotoar seberang).
- *  Murni visual: jalur pemain hanya diisi penyeberang SUNGGUHAN dari sistem mover. */
-const ScrambleWalker = memo(function ScrambleWalker({ inter, idx }: { inter: Intersection; idx: number }) {
+/**
+ * Penyeberang ambient Scramble Crossing (Shibuya). Murni visual: jalur pemain tetap hanya
+ * diisi penyeberang SUNGGUHAN dari sistem mover.
+ *
+ * RAPI & MUDAH DIPERIKSA: semua jalur DAN siklus hidupnya ada di src/game/scrambleCrossing.ts
+ * (stepScrambleWalker, diuji .arena-tmp/probe142.ts) — tiap orang
+ * berjalan di kolomnya sendiri di atas pita zebra (|x| = 4.25 / 5.75, lebar pita 2.25 m),
+ * hanya melintasi paruh jauh (median ↔ trotoar jauh) sehingga jalur pemain tetap bersih,
+ * menginjak permukaan yang benar (scramblePedH) dan menunggu DI ATAS TROTOAR/MEDIAN —
+ * tidak ada lagi orang yang menunggu di tengah aspal atau berdiri bertumpuk (satu kolom =
+ * satu penyeberang, jadi tidak ada yang bisa menyusul/berpapasan).
+ */
+const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: Intersection; path: ScramblePath }) {
   const rootRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Group>(null);
   const armLRef = useRef<THREE.Group>(null);
   const armRRef = useRef<THREE.Group>(null);
   const legLRef = useRef<THREE.Group>(null);
   const legRRef = useRef<THREE.Group>(null);
-  // varian 0..7: campuran kasual + salaryman berjas (5..7); idx 4 = anak sekolah ber-randoseru
-  const variant = idx % 8;
-  const kid = idx === 4;
+  // varian 0..7: campuran kasual + salaryman berjas (5..7)
+  const variant = path.variant;
+  const kid = !!path.kid;
   const snowW = useUI((s) => s.weather === "snow"); // mode salju: jaket tebal + kupluk
   const pedKey = `${variant}${kid ? "-kid" : ""}${snowW ? "-w" : ""}`;
   const headGeo = useMemo(() => getGeometry(`ped-head-${pedKey}-normal`, () => pedestrianHeadParts(variant, false, false, snowW)), [pedKey, variant, snowW]);
@@ -1247,72 +1274,52 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, idx }: { inter: Int
   const armRGeo = useMemo(() => getGeometry(`ped-arm-${pedKey}-R`, () => pedestrianArmParts(variant, -1, false, false, snowW)), [pedKey, variant, snowW]);
   const legLGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-L`, () => pedestrianLegParts(variant, 1, false, snowW)), [pedKey, variant, snowW]);
   const legRGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-R`, () => pedestrianLegParts(variant, -1, false, snowW)), [pedKey, variant, snowW]);
-  const seed = useMemo(() => {
-    const slot = -4.6 + (idx + 0.5) * (9.2 / 9); // tiap penyeberang punya "jalur" x sendiri
-    const dirU = (idx % 2 === 0 ? 1 : -1) as 1 | -1;
-    return {
-      slot,
-      x: slot + (Math.random() - 0.5) * 0.5,
-      diag: (Math.random() - 0.5) * 1.2, // drift diagonal kecil, tetap di jalur masing-masing
-      u: dirU > 0 ? 0 : 1,
-      dirU,
-      rate: 0.11 + Math.random() * 0.07, // kecepatan menyeberang (u/detik)
-      cooldown: 0,
-      waitingForRed: true,
-      t0: Math.random() * 20,
-    };
-  }, [idx]);
+  // SIKLUS HIDUP PENYEBERANG VISUAL ada di scrambleCrossing.ts (stepScrambleWalker):
+  // menunggu di trotoar -> menyeberang ke median -> menunggu di median -> menyeberang balik
+  // -> menyusuri trotoar jauh -> kembali -> ulang. Tiap langkah punya tujuan, dan langkah
+  // menyeberang yang sudah mulai selalu diselesaikan (tidak jadi patung di tengah zebra).
+  const seed = useMemo(() => createScrambleWalkerState(), [path]);
+
   useFrame((_, dtRaw) => {
     const root = rootRef.current;
     const inner = innerRef.current;
     if (!root || !inner) return;
     const dt = Math.min(dtRaw, 0.05);
-    if (seed.cooldown > 0) {
-      seed.cooldown -= dt;
-      root.visible = false;
-      if (seed.cooldown > 0) return;
-      // Sudah sampai tujuan: jeda di luar layar, lalu mulai perjalanan baru ke arah yang sama.
-      seed.u = seed.dirU > 0 ? 0 : 1;
-      seed.x = seed.slot + (Math.random() - 0.5) * 0.5;
-      seed.diag = (Math.random() - 0.5) * 1.2;
-      seed.waitingForRed = true;
-    }
-    root.visible = true;
-    const waitingAtLight = seed.waitingForRed && inter.lightState !== "red";
-    if (seed.waitingForRed && !waitingAtLight) seed.waitingForRed = false;
-    if (!waitingAtLight) seed.u += seed.dirU * seed.rate * dt;
-    if (seed.dirU > 0 && seed.u >= 1) {
-      seed.u = 1;
-      seed.cooldown = 2.0 + (idx % 3) * 0.55;
-      seed.waitingForRed = true;
-      root.visible = false;
-      return;
-    }
-    if (seed.dirU < 0 && seed.u <= 0) {
-      seed.u = 0;
-      seed.cooldown = 2.0 + (idx % 3) * 0.55;
-      seed.waitingForRed = true;
-      root.visible = false;
-      return;
-    }
-    const lat = 4.2 + seed.u * 11.0; // median (4.2) -> trotoar seberang (15.2)
-    const sPos = inter.s + seed.x + seed.diag * seed.u;
-    // tinggi permukaan tepat menapak: median ter-aspal 0.18, dek jalan lintas/trotoar jauh 0.175, apron 0.03
-    const h = lat < 5.2 ? 0.18 : lat > 12.25 ? 0.175 : 0.03;
-    track.frame(sPos, lat, h, root.position);
+    // ---- satu langkah siklus (logikanya di scrambleCrossing.ts) ----
+    // Posisi SEKARANG di dunia (untuk cek: ada pejalan trotoar tepat di jalur penyeberangan?
+    // Kalau ya, penyeberang menunggu — persis orang asli yang tidak menabrak orang).
+    const curPose = scrambleWalkerPose(path, seed.dist, seed.dir);
+    const onWalkLeg = seed.leg === "walkAway" || seed.leg === "walkBack";
+    const curS = inter.s + (onWalkLeg ? path.xA + seed.sidewalk * seed.sidewalkDir : curPose.x);
+    const curLat = onWalkLeg ? path.latA : curPose.lat;
+    const sidewalkBusy = () => {
+      for (const m of engine.movers) {
+        if (m.kind !== "pedestrian" || !m.walkAlong) continue;
+        if (Math.abs(m.s - curS) < 1.3 && Math.abs(m.lat - curLat) < 0.5) return true;
+      }
+      return false;
+    };
+    const pose = stepScrambleWalker(seed, path, dt, inter.lightState === "red", sidewalkBusy);
+    const sPos = inter.s + pose.sLocal;
+    // Permukaan yang benar: DI DALAM apron perempatan pakai dek perempatan (apron 0.03 /
+    // median 0.18 / dek jalan lintas 0.175); DI LUAR apron (saat menyusuri trotoar jauh)
+    // pakai tinggi trotoar asli (0.12) — dulu selalu scramblePedH, jadi kaki melayang 5.5 cm
+    // begitu penyeberang menyusuri trotoar di luar perempatan.
+    const h = Math.abs(pose.sLocal) <= 6.7 ? scramblePedH(pose.lat) : pedGroundH(pose.lat, track.mode);
+    track.frame(sPos, pose.lat, h, root.position);
     track.quat(sPos, root.quaternion);
-    inner.rotation.y = seed.dirU > 0 ? -Math.PI / 2 : Math.PI / 2;
+    inner.rotation.y = pose.yaw;
     const scl = PED_SCALE * (kid ? 0.62 : 1);
     inner.scale.setScalar(scl);
-    const walkSpeed = waitingAtLight ? 0 : seed.rate * 11.0; // ~m/s dari laju u
-    seed.t0 += dt * (walkSpeed / (0.62 * scl)) * Math.PI;
+    // ---- animasi langkah (hanya saat benar-benar melangkah) ----
+    if (pose.walking) seed.t0 += dt * ((path.speed / (0.62 * scl)) * Math.PI);
     const t = seed.t0;
-    const swing = waitingAtLight ? 0 : Math.sin(t) * 0.4;
+    const swing = pose.walking ? Math.sin(t) * 0.4 : 0;
     if (legLRef.current) legLRef.current.rotation.z = swing;
     if (legRRef.current) legRRef.current.rotation.z = -swing;
     if (armLRef.current) armLRef.current.rotation.z = -swing * 0.55;
     if (armRRef.current) armRRef.current.rotation.z = swing * 0.55;
-    inner.position.y = PED_LIFT + (waitingAtLight ? 0 : Math.abs(Math.sin(t)) * 0.018);
+    inner.position.y = PED_LIFT + (pose.walking ? Math.abs(Math.sin(t)) * 0.018 : 0);
   });
   return (
     <group ref={rootRef}>
@@ -1413,8 +1420,10 @@ const IntersectionView = memo(function IntersectionView({ inter, lightState }: {
       {/* ⚠️ Perempatan warning signs placed ahead on both sides of the road */}
       <mesh geometry={signGeo} material={voxelMaterial} position={inter.signPos} rotation-y={inter.signRotY} castShadow />
       <mesh geometry={signGeo} material={voxelMaterial} position={signPos2} rotation-y={inter.signRotY} castShadow />
-      {/* Kerumunan scramble: penyeberang ambient memenuhi paruh jauh avenue */}
-      {inter.scramble && Array.from({ length: 9 }, (_, i) => <ScrambleWalker key={i} inter={inter} idx={i} />)}
+      {/* Kerumunan scramble: penyeberang di ATAS pita zebra. WAJIB di luar grup perempatan —
+          posisinya sudah koordinat dunia dari track.frame(), kalau ditaruh di dalam grup yang
+          sudah digeser & diputar mereka melenceng sejauh inter.s dari zebra (dulu 87 m!). */}
+      {inter.scramble && SCRAMBLE_PATHS.map((path, i) => <ScrambleWalker key={i} inter={inter} path={path} />)}
     </group>
   );
 });
@@ -2008,8 +2017,10 @@ function RareFlash() {
 }
 
 /* ---------- Bread (instanced) ---------- */
-const MAX_BREAD = 140;
+const MAX_BREAD = 200; // cukup untuk roti aspal + roti langit (formasi terbang roket)
 const tmpObj = new THREE.Object3D();
+const tmpGlowPos = new THREE.Vector3();
+const tmpGlowColor = new THREE.Color();
 
 /* Bintang kilau (sparkle) bergaya Subway Surfers: sprite bintang 4 sudut, additive,
  * membesar lalu memudar sambil berputar. Menghadap kamera. */
@@ -2123,6 +2134,122 @@ function getDotTex(): THREE.CanvasTexture {
   return dotTex;
 }
 
+/** Tekstur gumpalan asap lembut (beberapa bulatan radial ditumpuk) untuk asap roket. */
+let puffTex: THREE.CanvasTexture | null = null;
+function getPuffTex(): THREE.CanvasTexture {
+  if (!puffTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d")!;
+    const blobs: [number, number, number, number][] = [
+      [64, 64, 62, 0.62],
+      [46, 52, 44, 0.6],
+      [86, 58, 42, 0.55],
+      [56, 86, 36, 0.5],
+      [88, 86, 28, 0.44],
+      [38, 78, 28, 0.42],
+      [70, 34, 30, 0.4],
+    ];
+    for (const [px, py, r, a] of blobs) {
+      const grd = g.createRadialGradient(px, py, 0, px, py, r);
+      grd.addColorStop(0, `rgba(255,255,255,${a})`);
+      grd.addColorStop(0.5, `rgba(255,255,255,${a * 0.62})`);
+      grd.addColorStop(0.78, `rgba(255,255,255,${a * 0.22})`);
+      grd.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grd;
+      g.beginPath();
+      g.arc(px, py, r, 0, Math.PI * 2);
+      g.fill();
+    }
+    puffTex = new THREE.CanvasTexture(c);
+  }
+  return puffTex;
+}
+
+/* ---------- Asap roket NOS warna-warni (Subway Surfers style) ---------- */
+const ROCKET_SMOKE_CAP = 560;
+const rocketColor = new THREE.Color();
+const rocketObj = new THREE.Object3D();
+
+function RocketSmokeFx() {
+  const puffRef = useRef<THREE.InstancedMesh>(null);
+  const sparkRef = useRef<THREE.InstancedMesh>(null);
+  const { camera } = useThree();
+  const res = useMemo(() => {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const add = (map: THREE.Texture) =>
+      new THREE.MeshBasicMaterial({
+        map,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      });
+    return { geo, puffMat: add(getPuffTex()), sparkMat: add(getSparkleTex()) };
+  }, []);
+  useEffect(
+    () => () => {
+      res.geo.dispose();
+      res.puffMat.dispose();
+      res.sparkMat.dispose();
+    },
+    [res],
+  );
+
+  useFrame(() => {
+    const puffs = puffRef.current;
+    const sparks = sparkRef.current;
+    if (!puffs || !sparks) return;
+    let pi = 0;
+    let si = 0;
+    for (const s of engine.rocketSmoke) {
+      const k = s.life / s.max; // 0..1 umur
+      const fade = Math.pow(1 - k, 1.5);
+      if (s.spark) {
+        if (si >= ROCKET_SMOKE_CAP) continue;
+        const sc = s.size * (0.6 + 0.5 * (1 - k));
+        rocketObj.position.set(s.x, s.y, s.z);
+        rocketObj.quaternion.copy(camera.quaternion);
+        rocketObj.rotateZ(s.rot);
+        rocketObj.scale.setScalar(Math.max(0.001, sc));
+        rocketObj.updateMatrix();
+        sparks.setMatrixAt(si, rocketObj.matrix);
+        // kilau pelangi terang (additive: kecerahan = warna)
+        rocketColor.setHSL(s.hue, 0.95, 0.7).multiplyScalar(0.45 + 1.0 * fade);
+        sparks.setColorAt(si, rocketColor);
+        si++;
+      } else {
+        if (pi >= ROCKET_SMOKE_CAP) continue;
+        const sc = s.size * (0.6 + s.grow * k); // mengembang sepanjang umur
+        rocketObj.position.set(s.x, s.y, s.z);
+        rocketObj.quaternion.copy(camera.quaternion);
+        rocketObj.rotateZ(s.rot);
+        rocketObj.scale.setScalar(Math.max(0.001, sc));
+        rocketObj.updateMatrix();
+        puffs.setMatrixAt(pi, rocketObj.matrix);
+        // puff pelangi: saturasi penuh, cerah, memudar mulus (additive)
+        rocketColor.setHSL(s.hue, 1, 0.56).multiplyScalar(0.72 * fade + 0.14 * fade * (1 - k) + 0.03);
+        puffs.setColorAt(pi, rocketColor);
+        pi++;
+      }
+    }
+    puffs.count = pi;
+    sparks.count = si;
+    puffs.instanceMatrix.needsUpdate = true;
+    sparks.instanceMatrix.needsUpdate = true;
+    if (puffs.instanceColor) puffs.instanceColor.needsUpdate = true;
+    if (sparks.instanceColor) sparks.instanceColor.needsUpdate = true;
+  });
+
+  return (
+    <>
+      <instancedMesh ref={puffRef} args={[res.geo, res.puffMat, ROCKET_SMOKE_CAP]} frustumCulled={false} renderOrder={8} />
+      <instancedMesh ref={sparkRef} args={[res.geo, res.sparkMat, ROCKET_SMOKE_CAP]} frustumCulled={false} renderOrder={8} />
+    </>
+  );
+}
+
 const BURST_POOL = 6;
 const BURST_PART_CAP = 60;
 const burstCol = new THREE.Color();
@@ -2220,7 +2347,10 @@ function BurstFx() {
   );
 }
 
-/* Halo emas radial (additive, selalu menghadap kamera) untuk glow roti. */
+/* Aura emas roti (additive, selalu menghadap kamera).
+ * Bentuk & kecerahannya ada di breadGlow.ts: INTI TRANSPARAN + cincin lembut di pinggir
+ * siluet roti, jadi rotinya tetap tajam dan glow-nya terbaca sebagai aura (bukan noda emas
+ * yang menutupi roti sampai pucat). */
 let breadHaloTex: THREE.CanvasTexture | null = null;
 function getBreadHaloTex(): THREE.CanvasTexture {
   if (!breadHaloTex) {
@@ -2228,9 +2358,7 @@ function getBreadHaloTex(): THREE.CanvasTexture {
     c.width = c.height = 128;
     const g = c.getContext("2d")!;
     const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    grd.addColorStop(0, "rgba(255,236,170,1)");
-    grd.addColorStop(0.35, "rgba(255,200,90,0.55)");
-    grd.addColorStop(1, "rgba(255,170,40,0)");
+    for (const [stop, color] of BREAD_HALO_STOPS) grd.addColorStop(stop, color);
     g.fillStyle = grd;
     g.fillRect(0, 0, 128, 128);
     breadHaloTex = new THREE.CanvasTexture(c);
@@ -2244,9 +2372,9 @@ function Breads() {
   const haloRef = useRef<THREE.InstancedMesh>(null);
   const pair = useMemo(() => getGeometryPair("bread", breadParts), []);
   const { camera } = useThree();
-  const haloGeo = useMemo(() => new THREE.PlaneGeometry(1.0, 1.0), []);
+  const haloGeo = useMemo(() => new THREE.PlaneGeometry(BREAD_HALO_SIZE, BREAD_HALO_SIZE), []);
   const haloMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    () => new THREE.MeshBasicMaterial({ map: getBreadHaloTex(), transparent: true, opacity: BREAD_HALO_PEAK, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     []
   );
   useFrame(() => {
@@ -2255,6 +2383,13 @@ function Breads() {
     let i = 0;
     const t = engine.time;
     const hm = haloRef.current;
+    // instanceColor dipakai untuk meredupkan glow per butir roti; isi dulu dengan putih
+    // supaya tidak ada instance yang tidak sengaja hitam pada frame pertama.
+    if (hm && !hm.instanceColor) {
+      for (let k = 0; k < MAX_BREAD; k++) hm.setColorAt(k, tmpGlowColor.setScalar(1));
+      const ic = (hm as THREE.InstancedMesh).instanceColor as THREE.InstancedBufferAttribute | null;
+      if (ic) ic.needsUpdate = true;
+    }
     for (const b of engine.breads) {
       if (b.taken || i >= MAX_BREAD) continue;
       const bob = Math.sin(t * 3 + b.phase) * 0.08;
@@ -2264,13 +2399,19 @@ function Breads() {
       tmpObj.updateMatrix();
       m.setMatrixAt(i, tmpObj.matrix);
       if (hm) {
-        // halo: billboard menghadap kamera, berdenyut pelan
-        const pulse = 1 + 0.05 * Math.sin(t * 2.2 + b.phase);
-        tmpObj.position.set(b.wx, b.wy + bob + 0.35, b.wz);
+        // halo: billboard menghadap kamera, TERPUSAT di tengah visual roti, ukuran tetap
+        // (tidak lagi berdenyut skalanya). Kecerahan per butir: memudar saat sangat dekat
+        // kamera (tidak memutihkan layar saat terbang melewatinya) dan di kejauhan.
+        const hcy = b.wy + bob + BREAD_HALO_Y;
+        tmpGlowPos.set(b.wx, hcy, b.wz);
+        const dist = tmpGlowPos.distanceTo(camera.position);
+        const bright = breadHaloBrightness(dist, t, b.phase);
+        tmpObj.position.set(b.wx, hcy, b.wz);
         tmpObj.quaternion.copy(camera.quaternion);
-        tmpObj.scale.setScalar(pulse);
+        tmpObj.scale.setScalar(1);
         tmpObj.updateMatrix();
         hm.setMatrixAt(i, tmpObj.matrix);
+        hm.setColorAt(i, tmpGlowColor.setScalar(bright));
       }
       i++;
     }
@@ -2285,6 +2426,7 @@ function Breads() {
     if (hm) {
       hm.count = i;
       hm.instanceMatrix.needsUpdate = true;
+      if (hm.instanceColor) hm.instanceColor.needsUpdate = true;
     }
   });
   return (
@@ -2483,6 +2625,132 @@ function crowdLat(mode: TrackMode, side: 1 | -1, dir: 1 | -1): number {
   return pick(farLanes) + (Math.random() - 0.5) * 0.25;
 }
 
+/** Kecepatan langkah pejalan kaki trotoar (1.5x lebih cepat sesuai request: trotoar hidup). */
+const WALK_SPEED_MULT = 1.5;
+
+/** Koridor langkah yang WAJAR: jalur tengah trotoar, sudah bersih dari furnitur tepi curb
+ *  (pagar pipa putih, tiang lampu, neon sign, mamachari) dan dari dinding gedung. */
+export function walkCorridor(mode: TrackMode, side: 1 | -1): [number, number] {
+  // Shibuya: trotoar dekat -8.2..-4.0 dengan pagar pipa di -4.12; trotoar jauh 12.6..16.1
+  // dengan pagar di 12.45. Lajur langkah sengaja dijaga di bagian tengah trotoar.
+  if (mode === "shibuya") return side < 0 ? [-6.9, -4.95] : [13.45, 14.95];
+  // Tokyo City / Park: trotoar -7..-4 dan 4..6.3 (pagar pipa di ±4.12)
+  return side < 0 ? [-6.55, -4.85] : [4.6, 5.95];
+}
+
+/** Batas FISIK trotoar: seluruh badan pejalan kaki tetap di atas trotoar dan tidak bisa
+ *  menyentuh pagar pipa di tepi curb. Dipakai sebagai batas darurat saat mengelak. */
+export function walkHardBand(mode: TrackMode, side: 1 | -1): [number, number] {
+  // Shibuya dekat: pagar -4.12, badan ±0.3 => berhenti di -4.6. Sisi gedung dijaga pita
+  // tapak gedung di safeWalkLat; -8.0 masih di atas trotoar (-8.2..-4.0).
+  // Shibuya jauh: pagar 12.45 => mulai 12.95; tepi trotoar 16.1 => 15.75.
+  if (mode === "shibuya") return side < 0 ? [-8.0, -4.6] : [12.95, 15.75];
+  return side < 0 ? [-6.75, -4.6] : [4.6, 6.15];
+}
+
+/** Benda padat di trotoar + jarak aman lateral (m) dari titik pusatnya — pejalan kaki
+ *  mengelak mulus, tidak menembus tiang/pohon/vending/planter/orang yang berdiri. */
+export const WALK_OBSTACLES: Record<string, number> = {
+  // Nilai = setengah lebar benda di sumbu lat + setengah lebar badan pejalan kaki (±0.33 m).
+  // Tanpa tambahan margin besar lagi supaya pejalan kaki masih bisa menyelip di antara dua
+  // benda yang memang punya celah nyata (mis. pohon trotoar vs pengunjung toko).
+  lamp: 0.5,
+  avenue_lamp: 0.5,
+  touge_lamp: 0.5,
+  tree: 0.55,
+  sakura: 0.55,
+  autumn_tree: 0.55,
+  bush: 0.78,
+  vending: 0.78,
+  sidewalk_planter: 0.58,
+  mamachari: 0.6,
+  neon_sign: 0.55,
+  lantern: 0.5,
+  shopper: 0.62,
+  ramen_customer: 0.62,
+  hydrant: 0.5,
+};
+
+/**
+ * Posisi lat aman untuk pejalan kaki di titik s.
+ *  - Tiang lampu, pohon, vending, planter, sepeda, orang berdiri, dan TAPAK GEDUNG
+ *    memblokir pita lateral masing-masing (pagar pipa dijamin oleh walkHardBand).
+ *  - Benda yang masih 1.3 m+ di depan baru memblokir sebagian (pengelakan mulai halus
+ *    lebih awal) dan menjadi blokir penuh saat sudah dekat, sehingga pejalan kaki tidak
+ *    pernah "terlambat mengelak".
+ *  - Posisi terdekat yang bebas dipilih: prioritas di dalam koridor langkah, kalau jalur
+ *    itu benar-benar penuh baru keluar koridor seperlunya (tetap di atas trotoar), dan
+ *    sebagai pilihan terakhir posisi paling dangkal menembusnya (bukan di tengah benda).
+ */
+export function safeWalkLat(mode: TrackMode, side: 1 | -1, s: number, lat: number): number {
+  const [cMin, cMax] = walkCorridor(mode, side);
+  const [hMin, hMax] = walkHardBand(mode, side);
+  const clampHard = (c: number) => Math.min(hMax, Math.max(hMin, c));
+  // Ruang cadangan hanya ke arah gedung: ke arah pagar/curb tidak boleh sama sekali
+  // (badan pejalan kaki tidak boleh menyentuh pagar pipa putih di tepi trotoar).
+  const slackMin = side < 0 ? 0.3 : 0;
+  const slackMax = side < 0 ? 0 : 0.3;
+  const blocks: [number, number][] = [];
+  for (const c of engine.chunks) {
+    if (s < c.s0 - 8 || s > c.s0 + CHUNK_LEN + 10) continue; // hanya chunk di sekitar s
+    for (const d of c.decor) {
+      if (d.s === undefined || d.lat === undefined) continue;
+      const ahead = d.s - s;
+      if (Math.abs(ahead) > 3.4) continue; // hanya benda dekat / sedikit di depan
+      if (d.kind === "building") {
+        const b = d.bounds;
+        if (!b) continue;
+        if (lat > b.latMax + 1.2 || lat < b.latMin - 1.2) continue;
+        blocks.push([b.latMin, b.latMax - 0.05]); // dinding gedung = pita terlarang
+        continue;
+      }
+      const clear = WALK_OBSTACLES[d.kind];
+      if (clear === undefined) continue;
+      // Pengelakan bertahap: 1.3 m/lebih di depan baru sebagian, 1.3 m terakhir penuh.
+      const near = Math.abs(ahead) <= 1.3;
+      const rad = near ? clear : Math.max(0.16, clear * (1 - (Math.abs(ahead) - 1.3) / 2.4));
+      if (Math.abs(lat - d.lat) > rad + 0.5) continue; // jalur langkah masih bersih
+      blocks.push([d.lat - rad, d.lat + rad]);
+    }
+  }
+  // Orang yang sedang berdiri/menunggu (penyeberang) juga dihindari supaya pejalan kaki
+  // ambient tidak berjalan menembus badan orang lain di trotoar.
+  for (const m of engine.movers) {
+    if (m.kind !== "pedestrian" && m.kind !== "shibuya_animal") continue;
+    if (Math.abs(m.s - s) > 1.6 || Math.abs(lat - m.lat) > 1.1) continue;
+    blocks.push([m.lat - 0.55, m.lat + 0.55]);
+  }
+  const penOf = (c: number) => {
+    let pen = 0;
+    for (const [a, b] of blocks) {
+      if (c > a && c < b) pen = Math.max(pen, Math.min(c - a, b - c));
+    }
+    return pen;
+  };
+  // Kandidat: posisi sekarang + tepi tiap pita terlarang + batas koridor/batas trotoar
+  const cand: number[] = [clampHard(lat), cMin, cMax];
+  for (const [a, b] of blocks) cand.push(a - 0.02, b + 0.02);
+  let freeIn: number | null = null;   // bebas & di dalam koridor langkah
+  let freeOut: number | null = null;  // bebas, masih di atas trotoar (mengelak keluar koridor)
+  let minPen = Infinity;              // terpaksa: posisi paling dangkal menembusnya
+  let forced: number | null = null;
+  for (const c of cand) {
+    if (c < hMin - slackMin - 0.02 || c > hMax + slackMax + 0.02) continue;
+    const dist = Math.abs(c - lat);
+    const pen = penOf(c);
+    if (pen <= 0.001) {
+      const inCorridor = c >= cMin - 0.001 && c <= cMax + 0.001;
+      if (inCorridor) {
+        if (freeIn === null || dist < Math.abs(freeIn - lat)) freeIn = c;
+      } else if (freeOut === null || dist < Math.abs(freeOut - lat)) freeOut = c;
+    } else if (pen < minPen - 0.002 || (pen < minPen + 0.002 && forced !== null && dist < Math.abs(forced - lat))) {
+      minPen = pen;
+      forced = c;
+    }
+  }
+  return freeIn ?? freeOut ?? forced ?? clampHard(lat);
+}
+
 type WalkerKind = "adult" | "elder" | "suit" | "kid" | "kamen";
 
 const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, trackMode }: { w: Walker; all: Walker[]; variant: number; kind: WalkerKind; trackMode: TrackMode }) {
@@ -2541,17 +2809,18 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
     if (!w.seeded) {
       w.seeded = true;
       w.s = dist - 20 + Math.random() * 125;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     }
     // JAGA KELANCARAN & JARAK ALAMI: tidak dempet, tidak menumpuk jadi antrean macet
-    let v = w.speed;
+    // (langkah trotoar 1.5x lebih cepat: WALK_SPEED_MULT)
+    let v = w.speed * WALK_SPEED_MULT;
     for (const o of all) {
       if (o === w || !o.seeded || o.side !== w.side || o.dir !== w.dir) continue;
       if (Math.abs(o.lat - w.lat) > 0.42) continue;
       const gap = (o.s - w.s) * w.dir;
       if (gap > 0 && gap < 1.6) {
         // Sesuaikan kecepatan secara halus, tetap melangkah alami (tidak macet berhenti total)
-        v = Math.min(v, o.speed * 0.95);
+        v = Math.min(v, o.speed * WALK_SPEED_MULT * 0.95);
         // Geser ke samping secara halus bila mendekati orang di depan agar tidak dempet
         if (gap < 1.1) {
           const shift = w.lat >= o.lat ? 0.3 : -0.3;
@@ -2559,15 +2828,22 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
         }
       }
     }
+    // KORIDOR + HINDARI BENDA: pejalan kaki tidak boleh menembus pagar pipa di tepi curb,
+    // tiang lampu, pohon, planter, vending machine, atau dinding gedung. Pengelakan dibiarkan
+    // melebar keluar koridor bila perlu, tapi selalu dibatasi batas fisik trotoar.
+    const [hardMin, hardMax] = walkHardBand(trackMode, w.side);
+    const safeLat = safeWalkLat(trackMode, w.side, w.s, w.lat);
+    w.lat += Math.min(2.2 * dt, Math.max(-2.2 * dt, safeLat - w.lat)); // langkah menyamping cepat
+    w.lat = Math.min(hardMax, Math.max(hardMin, w.lat));
     w.s += w.dir * v * dt;
     let rel = w.s - dist;
     // Sirkulasi terus menerus di sekitar pemain agar trotoar selalu ramai merata tanpa zona kosong
     if (w.dir > 0 && rel > 98) {
       w.s = dist - 24 - Math.random() * 12;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     } else if (w.dir < 0 && rel < -24) {
       w.s = dist + 88 + Math.random() * 24;
-      w.lat = crowdLat(trackMode, w.side, w.dir);
+      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
     }
     rel = w.s - dist;
 
@@ -2697,6 +2973,7 @@ export function World() {
       <Pulses />
       <SparkleFx />
       <BurstFx />
+      <RocketSmokeFx />
     </group>
   );
 }
