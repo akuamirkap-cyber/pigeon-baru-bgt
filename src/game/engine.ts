@@ -1,4 +1,6 @@
 import * as THREE from "three";
+/** Kecepatan penyeberang per arah pita zebra (deterministik; lihat Engine.crosserSpeed). */
+const crosserSpeed = (dir: 1 | -1): number => (dir > 0 ? 2.0 : 1.9);
 import {
   ARM_LEN,
   CHUNK_LEN,
@@ -12,6 +14,8 @@ import {
   SUBWAY_CAR_LEN,
   SUBWAY_GAP,
   SUBWAY_ROOF_H,
+  INTERSECTION_W,
+  INTERSECTION_W_WIDE,
   type BuildingSpec,
   type ShibuyaBuildingId,
 } from "./models";
@@ -616,7 +620,9 @@ export function pedGroundH(lat: number, mode: "tokyo" | "haruna" | "shibuya"): n
 /** Permukaan scramble crossing: apron datar, median di-aspal (0.18), jalan lintas naik 0.175. */
 export function scramblePedH(lat: number): number {
   if (lat < -4.0) return 0.175;
-  if (lat >= 3.5 && lat <= 5.3) return 0.18; // median yang di-pave
+  // dek median di geometri scramble menutup lat 3.55..5.15 (dulu ditulis 5.3, jadi kaki
+  // penyeberang melayang 15 cm tepat setelah ujung median)
+  if (lat >= 3.55 && lat <= 5.15) return 0.18; // median yang di-pave
   if (lat > 12.3) return 0.175;
   return 0.03; // apron persimpangan
 }
@@ -3604,6 +3610,16 @@ class Engine {
           if (Math.abs(m.lat) < 4.2 && this.subwayTrains.some((st) => st.speed > 0 && st.s - m.s > -18 && st.s - m.s < 30)) {
             v = Math.max(v, m.speed * 1.6);
           }
+          // JANGAN melangkah ke badan penyeberang lain yang tepat di depan (satu pita = satu
+          // barisan). Ini jaring pengaman terakhir supaya tidak ada dua orang saling menembus.
+          if (v > 0.01) {
+            for (const other of this.movers) {
+              if (other === m || other.kind !== "pedestrian" || other.phase === "hit") continue;
+              if (Math.abs(other.s - m.s) > 1.0) continue;
+              const ahead = (other.lat - m.lat) * m.dir;
+              if (ahead > 0 && ahead < 1.45) { v = 0; break; }
+            }
+          }
           m.lat += m.dir * v * dt;
           const ghNow = this.pedSurfaceAt(m.lat, m.s);
           if (v > 0.01) {
@@ -4748,38 +4764,46 @@ class Engine {
     };
     this.intersections.push(inter);
     if (track.mode !== "haruna") {
-      // Every urban crosswalk gets a real, signal-controlled pedestrian wave. Scrambles
-      // are busier, while random longitudinal offsets keep the group from marching in a row.
+      // Every urban crosswalk gets a real, signal-controlled pedestrian wave.
       const n = scramble ? 4 + randInt(0, 2) : 2 + randInt(0, 2);
       const edge = 6.8;
       const est = Math.max(this.speed, START_SPEED);
       const elderIndex = Math.random() < 0.28 ? randInt(0, n - 1) : -1;
-      const offsets: number[] = [];
+      // RAPI — penyeberang selalu menyeberang DI ATAS pita zebra yang tergambar:
+      //   scramble  : pita zebra avenue di |x| = 5.0 (lebar 2.25 m)
+      //   perempatan: pita zebra di |x| = halfW + 1.1 (lebar 2.2 m)
+      // Pita kiri dipakai satu arus, pita kanan arus balik, jadi dua arah tidak bertabrakan
+      // dan tidak ada lagi orang menyeberang di tengah perempatan (di luar zebra).
+      const bandX = scramble ? 5.0 : (wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
+      const leftFirst = Math.random() < 0.5;
+      // kecepatan SAMA untuk semua orang dalam satu pita: jarak antrean tetap rata
+      // (kalau kecepatannya beda, yang cepat menyusul yang lambat lalu saling menembus)
+      const bandSpeed: [number, number] = [crosserSpeed(1), crosserSpeed(-1)];
+      const bandCount: [number, number] = [0, 0];
       for (let i = 0; i < n; i++) {
-        let offset = rand(-7.0, 7.0);
-        for (let attempt = 0; attempt < 12 && offsets.some((other) => Math.abs(other - offset) < 2.4); attempt++) {
-          offset = rand(-7.0, 7.0);
-        }
-        offsets.push(offset);
-      }
-      offsets.sort((a, b) => a - b);
-      const firstDir = Math.random() < 0.5 ? 1 : -1;
-      for (let i = 0; i < n; i++) {
-        const dir = i === 0 ? firstDir : i === 1 ? -firstDir : Math.random() < 0.5 ? 1 : -1;
-        const px = s + offsets[i];
+        const useLeft = (i % 2 === 0) === leftFirst;
+        const dir: 1 | -1 = useLeft ? 1 : -1;
+        const bandIdx = useLeft ? 0 : 1;
+        const slot = bandCount[bandIdx]++;
         // Shibuya: penyeberang arah sebaliknya MENUNGGU DI MEDIAN (bukan di aspal jalur
         // seberang 5.0..12.3). Penyeberang dari trotoar dekat juga selesai di median.
-        const m = this.newMover("pedestrian", px, -1, track.mode === "shibuya" && dir < 0 ? SHIBUYA_MEDIAN_LAT : -dir * edge);
+        const baseLat = track.mode === "shibuya" && dir < 0 ? SHIBUYA_MEDIAN_LAT : -dir * edge;
+        const spot = this.pedQueueSpot(slot, baseLat, scramble);
+        const px = s + (useLeft ? -bandX : bandX) + spot.dx;
+        if (this.crosserSpotBusy(inter.id, px, baseLat + spot.dLat)) continue;
+        const m = this.newMover("pedestrian", px, -1, baseLat + spot.dLat);
         m.dir = dir;
         m.crossingEdge = edge;
         m.signalIntersectionId = inter.id;
         const elderly = i === elderIndex;
         m.elderly = elderly;
-        m.speed = elderly ? rand(0.85, 1.25) : rand(1.7, 2.4);
+        m.speed = elderly ? 0.95 : bandSpeed[bandIdx];
         m.variant = elderly ? randInt(0, 2) : Math.random() < 0.4 ? randInt(5, 7) : randInt(0, 4);
         const eta = (px - this.distance) / est;
         const walk = (edge - 1.2) / m.speed;
-        m.delay = Math.max(0.1, eta - walk + rand(-0.8, 0.8) + i * 0.35);
+        // masuk antrean satu per satu: orang ke-k di pita itu berangkat k * 1.25 s lebih lambat
+        // supaya mereka menyeberang berurutan (jarak tetap rata, tidak menumpuk/menembus)
+        m.delay = Math.max(0.1, eta - walk + rand(-0.3, 0.3) + slot * 1.25);
         this.movers.push(m);
       }
       this.moverVersion++;
@@ -5956,6 +5980,45 @@ class Engine {
   }
 
   /**
+   * Kecepatan penyeberang per pita zebra: SATU nilai untuk satu arah pita, bukan acak per
+   * kelompok. Kalau berbeda-beda, penyeberang dari kelompok lain bisa menyusul orang di depannya
+   * lalu saling menembus (terukur 0.00 m). Dengan kecepatan sama, jarak antrean tetap selamanya.
+   */
+  /**
+   * Sudah ada penyeberang lain yang menunggu/menyeberang di titik itu? Dipakai sebelum
+   * menaruh penyeberang baru: dua kelompok yang berbeda tidak boleh memakai titik tunggu yang
+   * sama (terukur 0.23 m -> saling menembus). Beda 0.75 m sudah cukup aman.
+   */
+  private crosserSpotBusy(signalId: number | undefined, s: number, lat: number): boolean {
+    if (signalId === undefined) return false;
+    for (const m of this.movers) {
+      if (m.kind !== "pedestrian" || m.phase === "hit" || m.signalIntersectionId !== signalId) continue;
+      if (Math.hypot(m.s - s, m.lat - lat) < 0.75) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Tempat tunggu penyeberang ke-`slot` di dalam SATU pita zebra.
+   * Sebelum ini semua orang memakai geseran acak ±0.5 m, jadi dua orang bisa berdiri di titik
+   * yang sama persis (terukur 0.01 m -> saling menembus). Sekarang tempatnya DETERMINISTIK:
+   * orang ke-`slot` mundur 0.6 m ke belakang dari tempat tunggu dasar, dan kalau perlu
+   * berselang-seling 0.45 m ke samping — minimum 0.6 m, jadi tidak ada yang bertumpuk.
+   */
+  private pedQueueSpot(slot: number, baseLat: number, centered = false): { dx: number; dLat: number } {
+    // Kolom LUAR pita zebra dipakai penyeberang visual (|x| = band ∓0.75 m), jadi penyeberang
+    // sungguhan memakai KOLOM TENGAH pita (dx = 0) di perempatan scramble supaya dua sistem
+    // tidak pernah berdiri di titik yang sama. Di perempatan biasa kolom luar bebas dipakai.
+    const dx = centered ? 0 : slot % 2 === 0 ? -0.45 : 0.45;
+    const deep = centered ? slot : Math.floor(slot / 2);
+    const onMedian = baseLat > 4 && baseLat < 5.2; // pulau median Shibuya: hanya 1.6 m dalamnya
+    // arah mundur: ke dalam trotoar; di median: ke tepi (median tidak punya ruang ke samping)
+    const step = baseLat < 0 || onMedian ? -0.6 : 0.6;
+    const dLat = Math.max(-1.1, step * deep);
+    return { dx, dLat };
+  }
+
+  /**
    * Geser titik tunggu/seberang sedikit kalau tepat ada tiang lampu (atau dekor trotoar sejenis)
    * di lintasannya, supaya penyeberang tidak berjalan menembus tiang saat menunggu/menyeberang.
    */
@@ -6005,7 +6068,7 @@ class Engine {
     // di -4.3, jadi penyeberang menunggu 0.78 m lebih ke dalam trotoar (lat -4.93) supaya badan
     // mereka tidak menembus pagar/tiang. Sisi median tetap di dalam pulau median.
     const curbWait = track.mode === "shibuya" ? 4.93 : 6.8;
-    const medianWait = track.mode === "shibuya" ? 4.95 : 6.8;
+    const medianWait = track.mode === "shibuya" ? SHIBUYA_MEDIAN_LAT : 6.8;
     // One occasional elderly pedestrian per group; everyone else gets independent timing and direction.
     const elderIndex = Math.random() < 0.3 ? randInt(0, n - 1) : -1;
     const offsets: number[] = [];
@@ -6022,24 +6085,41 @@ class Engine {
     const gap = this.railingGapRange(x);
     if (!gap) return 0;
     const gapWide = gap[1] - gap[0] > 16;
-    const firstDir = Math.random() < 0.5 ? 1 : -1;
+    // RAPI — kalau ada perempatan di dekat sini, kelompok ini menyeberang DI PITA ZEBRA-nya
+    // (dua pita, satu arah per pita, antre satu-satu), bukan di sembarang titik jalan.
+    // Batas 18 m = batas yang sama dengan pencarian sinyal: jadi SETIAP penyeberang yang
+    // menunggu lampu perempatan pasti berdiri & menyeberang di pita zebra perempatan itu.
+    const inter = this.intersections
+      .filter((it) => Math.abs(it.s - x) < 18)
+      .sort((a, b) => Math.abs(a.s - x) - Math.abs(b.s - x))[0];
+    const bandX = inter ? (inter.scramble ? 5.0 : (inter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1) : 0;
+    const leftFirst = Math.random() < 0.5;
+    const bandSlot: [number, number] = [0, 0];
+    const bandSpeed: [number, number] = [crosserSpeed(1), crosserSpeed(-1)];
+    let petSpotS = 0;
+    let petSpotLat = 0;
     for (let i = 0; i < n; i++) {
-      const dir = i === 0 ? firstDir : i === 1 ? -firstDir : Math.random() < 0.5 ? 1 : -1;
+      const useLeft = inter ? (i % 2 === 0) === leftFirst : false;
+      const dir: 1 | -1 = inter ? (useLeft ? 1 : -1) : i === 0 ? (Math.random() < 0.5 ? 1 : -1) : i === 1 ? (Math.random() < 0.5 ? 1 : -1) : Math.random() < 0.5 ? 1 : -1;
       const rawS = x + offsets[i];
-      if (gapWide && (rawS < gap[0] || rawS > gap[1])) continue; // celah sempit: di luar celah jangan
-      const pedestrianS = this.clearSidewalkPoleS(gapWide ? rawS : clamp(rawS, gap[0], gap[1]));
-      const waitLat = dir > 0 ? -curbWait : medianWait;
+      const bandIdx = useLeft ? 0 : 1;
+      const slot = inter ? bandSlot[bandIdx]++ : 0;
+      const waitLatBase = dir > 0 ? -curbWait : medianWait;
+      const spot = inter ? this.pedQueueSpot(slot, waitLatBase, !!inter.scramble) : { dx: 0, dLat: 0 };
+      const pedestrianS = inter
+        ? inter.s + (useLeft ? -bandX : bandX) + spot.dx
+        : this.clearSidewalkPoleS(gapWide ? rawS : clamp(rawS, gap[0], gap[1]));
+      if (!inter && gapWide && (rawS < gap[0] || rawS > gap[1])) continue; // celah sempit: di luar celah jangan
+      const waitLat = waitLatBase + spot.dLat;
+      if (inter && this.crosserSpotBusy(inter.id, pedestrianS, waitLat)) continue;
       const m = this.newMover("pedestrian", pedestrianS, -1, waitLat);
       m.dir = dir;
       m.crossingEdge = edge;
-      // Any nearby city signal controls the crossing, not just Shibuya's scramble lights.
-      const signal = this.intersections
-        .filter((inter) => Math.abs(inter.s - pedestrianS) < 18)
-        .sort((a, b) => Math.abs(a.s - pedestrianS) - Math.abs(b.s - pedestrianS))[0];
-      if (signal) m.signalIntersectionId = signal.id;
+      // Sinyal perempatan hanya dipakai kalau kelompok ini memang menyeberang di pitanya.
+      if (inter) m.signalIntersectionId = inter.id;
       const elderly = i === elderIndex;
       m.elderly = elderly;
-      m.speed = elderly ? rand(0.85, 1.25) : rand(1.6, 2.3);
+      m.speed = elderly ? 0.95 : inter ? bandSpeed[useLeft ? 0 : 1] : rand(1.6, 2.3);
       // Mix casual walkers, salarymen, and Shibuya Blocks office workers.
       m.variant = elderly ? randInt(0, 2) : Math.random() < 0.35 ? randInt(5, 7) : randInt(0, 4);
       if (!elderly) {
@@ -6053,21 +6133,32 @@ class Engine {
       }
       const eta = (pedestrianS - d) / est;
       const walk = (edge - 1.2) / m.speed;
-      m.delay = Math.max(0.1, eta - walk + rand(-0.9, 0.9) + i * 0.35);
+      // antrean satu-satu dalam satu pita: orang ke-k berangkat k * 1.25 s lebih lambat
+      m.delay = Math.max(0.1, eta - walk + rand(-0.4, 0.4) + (inter ? slot * 1.25 : i * 0.35));
       this.movers.push(m);
 
       // Shibuya uses the deterministic retained Pigeon roster instead of a
       // random subset. The cursor wraps after the four enabled Friends.
       if (i === 0 && (track.mode === "shibuya" || Math.random() < 0.35)) {
         // Hewan peliharaan ikut menunggu DI TROTOAR (bukan di atas aspal/curb).
-        const petMover = this.newMover("shibuya_animal", pedestrianS + rand(-1.2, 1.2), -1, (dir > 0 ? -curbWait : medianWait) + (dir > 0 ? -0.4 : 0.4));
+        // Hewan peliharaan menunggu di DALAM pita zebra yang sama, di slot paling belakang
+        // (slot 5) supaya tidak berdiri bertumpuk dengan orang.
+        if (inter) {
+          const petSpot = this.pedQueueSpot(5, waitLatBase, !!inter.scramble);
+          petSpotS = inter.s + (useLeft ? -bandX : bandX) + petSpot.dx;
+          petSpotLat = waitLatBase + petSpot.dLat;
+        } else {
+          petSpotS = pedestrianS + rand(-0.9, 0.9);
+          petSpotLat = waitLatBase + (dir > 0 ? -0.85 : 0.85);
+        }
+        const petMover = this.newMover("shibuya_animal", petSpotS, -1, petSpotLat);
         petMover.dir = dir;
         petMover.crossingEdge = edge;
         petMover.speed = rand(2.0, 2.7);
         petMover.delay = Math.max(0.1, m.delay + rand(0.05, 0.3));
         petMover.shibuyaAnimal = track.mode === "shibuya" ? this.nextShibuyaAnimal() : pick(PIGEON_SHIBUYA_ANIMALS);
         petMover.shibuyaAnimalActivity = "crossing";
-        if (signal) petMover.signalIntersectionId = signal.id;
+        if (inter) petMover.signalIntersectionId = inter.id;
         this.movers.push(petMover);
       }
     }

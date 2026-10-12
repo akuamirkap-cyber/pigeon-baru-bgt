@@ -110,6 +110,7 @@ import {
   SUBWAY_GAP,
 } from "./models";
 import { railPhase, WAVE_VARIANT } from "./railMath";
+import { SCRAMBLE_PATHS, scramblePathLength, scrambleWalkerPose, type ScramblePath } from "./scrambleCrossing";
 import { useUI, type TrackMode } from "./store";
 import { getRayTexture } from "./rays";
 import { getAssetData } from "../shibuya/voxel/models";
@@ -126,6 +127,7 @@ import {
   type Chunk,
   type Crossing,
   crossCarH,
+  scramblePedH,
   trafficSignalApproach,
   RARE_FLASH_T,
   type Intersection,
@@ -1226,18 +1228,27 @@ function SubwayTrains() {
 }
 
 /* ---------- Perempatan (4-Way Crossroads / Intersections) ---------- */
-/** Penyeberang ambient di paruh jauh Scramble Crossing (median -> trotoar seberang).
- *  Murni visual: jalur pemain hanya diisi penyeberang SUNGGUHAN dari sistem mover. */
-const ScrambleWalker = memo(function ScrambleWalker({ inter, idx }: { inter: Intersection; idx: number }) {
+/**
+ * Penyeberang ambient Scramble Crossing (Shibuya). Murni visual: jalur pemain tetap hanya
+ * diisi penyeberang SUNGGUHAN dari sistem mover.
+ *
+ * RAPI & MUDAH DIPERIKSA: semua jalurnya ada di src/game/scrambleCrossing.ts — tiap orang
+ * berjalan di kolomnya sendiri di atas pita zebra (|x| = 4.25 / 5.75, lebar pita 2.25 m),
+ * hanya melintasi paruh jauh (median ↔ trotoar jauh) sehingga jalur pemain tetap bersih,
+ * menginjak permukaan yang benar (scramblePedH) dan menunggu DI ATAS TROTOAR/MEDIAN —
+ * tidak ada lagi orang yang menunggu di tengah aspal atau berdiri bertumpuk (satu kolom =
+ * satu penyeberang, jadi tidak ada yang bisa menyusul/berpapasan).
+ */
+const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: Intersection; path: ScramblePath }) {
   const rootRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Group>(null);
   const armLRef = useRef<THREE.Group>(null);
   const armRRef = useRef<THREE.Group>(null);
   const legLRef = useRef<THREE.Group>(null);
   const legRRef = useRef<THREE.Group>(null);
-  // varian 0..7: campuran kasual + salaryman berjas (5..7); idx 4 = anak sekolah ber-randoseru
-  const variant = idx % 8;
-  const kid = idx === 4;
+  // varian 0..7: campuran kasual + salaryman berjas (5..7)
+  const variant = path.variant;
+  const kid = !!path.kid;
   const snowW = useUI((s) => s.weather === "snow"); // mode salju: jaket tebal + kupluk
   const pedKey = `${variant}${kid ? "-kid" : ""}${snowW ? "-w" : ""}`;
   const headGeo = useMemo(() => getGeometry(`ped-head-${pedKey}-normal`, () => pedestrianHeadParts(variant, false, false, snowW)), [pedKey, variant, snowW]);
@@ -1248,71 +1259,55 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, idx }: { inter: Int
   const legLGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-L`, () => pedestrianLegParts(variant, 1, false, snowW)), [pedKey, variant, snowW]);
   const legRGeo = useMemo(() => getGeometry(`ped-leg-${pedKey}-R`, () => pedestrianLegParts(variant, -1, false, snowW)), [pedKey, variant, snowW]);
   const seed = useMemo(() => {
-    const slot = -4.6 + (idx + 0.5) * (9.2 / 9); // tiap penyeberang punya "jalur" x sendiri
-    const dirU = (idx % 2 === 0 ? 1 : -1) as 1 | -1;
     return {
-      slot,
-      x: slot + (Math.random() - 0.5) * 0.5,
-      diag: (Math.random() - 0.5) * 1.2, // drift diagonal kecil, tetap di jalur masing-masing
-      u: dirU > 0 ? 0 : 1,
-      dirU,
-      rate: 0.11 + Math.random() * 0.07, // kecepatan menyeberang (u/detik)
-      cooldown: 0,
-      waitingForRed: true,
+      dist: 0, // mulai DI TROTOAR JAUH (ujung jalur), bukan di tengah aspal
+      dir: 1 as 1 | -1,
+      moving: false,
+      wait: 0.2 + Math.random() * 0.9, // jeda kecil sebelum mulai menyeberang
       t0: Math.random() * 20,
     };
-  }, [idx]);
+  }, [path]);
+
   useFrame((_, dtRaw) => {
     const root = rootRef.current;
     const inner = innerRef.current;
     if (!root || !inner) return;
     const dt = Math.min(dtRaw, 0.05);
-    if (seed.cooldown > 0) {
-      seed.cooldown -= dt;
-      root.visible = false;
-      if (seed.cooldown > 0) return;
-      // Sudah sampai tujuan: jeda di luar layar, lalu mulai perjalanan baru ke arah yang sama.
-      seed.u = seed.dirU > 0 ? 0 : 1;
-      seed.x = seed.slot + (Math.random() - 0.5) * 0.5;
-      seed.diag = (Math.random() - 0.5) * 1.2;
-      seed.waitingForRed = true;
+    const dMax = scramblePathLength(path); // ujung jalur di median
+    const dMin = 0; // ujung jalur di trotoar jauh
+    // ---- berjalan / menunggu ----
+    if (seed.moving) {
+      seed.dist += path.speed * dt * seed.dir;
+      const done = seed.dist >= dMax ? dMax : seed.dist <= dMin ? dMin : null;
+      if (done !== null) {
+        seed.dist = done;
+        seed.dir = done >= dMax ? -1 : 1; // sampai ujung: hadap balik
+        seed.moving = false;
+        seed.wait = 0.3 + Math.random() * 0.9;
+      }
+    } else if (seed.wait > 0) {
+      seed.wait -= dt; // berdiri di trotoar/median dulu
+    } else if (inter.lightState === "red") {
+      // lampu kendaraan merah = penyeberangan dibuka (sama seperti penyeberang sungguhan)
+      seed.moving = true;
     }
-    root.visible = true;
-    const waitingAtLight = seed.waitingForRed && inter.lightState !== "red";
-    if (seed.waitingForRed && !waitingAtLight) seed.waitingForRed = false;
-    if (!waitingAtLight) seed.u += seed.dirU * seed.rate * dt;
-    if (seed.dirU > 0 && seed.u >= 1) {
-      seed.u = 1;
-      seed.cooldown = 2.0 + (idx % 3) * 0.55;
-      seed.waitingForRed = true;
-      root.visible = false;
-      return;
-    }
-    if (seed.dirU < 0 && seed.u <= 0) {
-      seed.u = 0;
-      seed.cooldown = 2.0 + (idx % 3) * 0.55;
-      seed.waitingForRed = true;
-      root.visible = false;
-      return;
-    }
-    const lat = 4.2 + seed.u * 11.0; // median (4.2) -> trotoar seberang (15.2)
-    const sPos = inter.s + seed.x + seed.diag * seed.u;
-    // tinggi permukaan tepat menapak: median ter-aspal 0.18, dek jalan lintas/trotoar jauh 0.175, apron 0.03
-    const h = lat < 5.2 ? 0.18 : lat > 12.25 ? 0.175 : 0.03;
-    track.frame(sPos, lat, h, root.position);
+    const pose = scrambleWalkerPose(path, seed.dist, seed.dir);
+    const sPos = inter.s + pose.x;
+    const h = scramblePedH(pose.lat); // permukaan yang benar: apron 0.03 / median 0.18 / dek 0.175
+    track.frame(sPos, pose.lat, h, root.position);
     track.quat(sPos, root.quaternion);
-    inner.rotation.y = seed.dirU > 0 ? -Math.PI / 2 : Math.PI / 2;
+    inner.rotation.y = pose.yaw;
     const scl = PED_SCALE * (kid ? 0.62 : 1);
     inner.scale.setScalar(scl);
-    const walkSpeed = waitingAtLight ? 0 : seed.rate * 11.0; // ~m/s dari laju u
-    seed.t0 += dt * (walkSpeed / (0.62 * scl)) * Math.PI;
+    // ---- animasi langkah ----
+    if (seed.moving) seed.t0 += dt * ((path.speed / (0.62 * scl)) * Math.PI);
     const t = seed.t0;
-    const swing = waitingAtLight ? 0 : Math.sin(t) * 0.4;
+    const swing = seed.moving ? Math.sin(t) * 0.4 : 0;
     if (legLRef.current) legLRef.current.rotation.z = swing;
     if (legRRef.current) legRRef.current.rotation.z = -swing;
     if (armLRef.current) armLRef.current.rotation.z = -swing * 0.55;
     if (armRRef.current) armRRef.current.rotation.z = swing * 0.55;
-    inner.position.y = PED_LIFT + (waitingAtLight ? 0 : Math.abs(Math.sin(t)) * 0.018);
+    inner.position.y = PED_LIFT + (seed.moving ? Math.abs(Math.sin(t)) * 0.018 : 0);
   });
   return (
     <group ref={rootRef}>
@@ -1413,8 +1408,10 @@ const IntersectionView = memo(function IntersectionView({ inter, lightState }: {
       {/* ⚠️ Perempatan warning signs placed ahead on both sides of the road */}
       <mesh geometry={signGeo} material={voxelMaterial} position={inter.signPos} rotation-y={inter.signRotY} castShadow />
       <mesh geometry={signGeo} material={voxelMaterial} position={signPos2} rotation-y={inter.signRotY} castShadow />
-      {/* Kerumunan scramble: penyeberang ambient memenuhi paruh jauh avenue */}
-      {inter.scramble && Array.from({ length: 9 }, (_, i) => <ScrambleWalker key={i} inter={inter} idx={i} />)}
+      {/* Kerumunan scramble: penyeberang di ATAS pita zebra. WAJIB di luar grup perempatan —
+          posisinya sudah koordinat dunia dari track.frame(), kalau ditaruh di dalam grup yang
+          sudah digeser & diputar mereka melenceng sejauh inter.s dari zebra (dulu 87 m!). */}
+      {inter.scramble && SCRAMBLE_PATHS.map((path, i) => <ScrambleWalker key={i} inter={inter} path={path} />)}
     </group>
   );
 });
