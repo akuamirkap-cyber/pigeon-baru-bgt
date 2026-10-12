@@ -225,19 +225,6 @@ export function Player() {
   // (getGeometry("rocket", rocketParts)) — jadi roket yang nempel di punggung 100% identik
   // dengan roket yang kita temui di jalan. Tidak ikut di-dispose karena dipakai bersama.
   const backRocketGeo = useMemo(() => getGeometry("rocket", rocketParts), []);
-  /** Aura emas additif: bikin roket punggung tampil persis seperti item ROCKET yang bersinar. */
-  const rocketAuraMat = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: "#ffd76a",
-        transparent: true,
-        opacity: 0.17,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-  useEffect(() => () => rocketAuraMat.dispose(), [rocketAuraMat]);
   const flames = useRef<THREE.Group>(null);
   const tanks = useRef<THREE.Mesh>(null);
   /** ROKET PUNGGUNG: roket yang otomatis menempel di punggung saat NOS/roket menyala */
@@ -1210,11 +1197,6 @@ export function Player() {
                   karena badan rebah -90 derajat -> sumbu lokal -x = atas dunia. */}
               <group ref={rocketPack} position={[-0.95, 0.03, 0]} scale={1.6} visible={false}>
                 <mesh geometry={backRocketGeo} material={voxelMaterial} castShadow />
-                {/* aura emas additif — sama seperti kilau item ROCKET yang mengambang di jalan
-                    (kotak aura ikut membesar mengikuti roket 2x) */}
-                <mesh position={[0, 0.58, 0]} material={rocketAuraMat}>
-                  <boxGeometry args={[0.98, 1.5, 0.98]} />
-                </mesh>
                 <group ref={rocketFlame} position={[0, 0.02, 0]} visible={false}>
                   <mesh material={flameMats.outer} position={[0, -0.5, 0]} rotation-x={Math.PI}>
                     <coneGeometry args={[0.14, 1.05, 10]} />
