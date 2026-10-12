@@ -23,9 +23,9 @@
 const COL_OFF = 0.75;
 
 /** Pusat pita zebra avenue (m dari pusat perempatan). */
-export const SCRAMBLE_BAND_X = 5.0;
+export const SCRAMBLE_BAND_X = 4.7;
 /** Setengah lebar pita zebra avenue (m). */
-export const SCRAMBLE_BAND_HALF = 1.125;
+export const SCRAMBLE_BAND_HALF = 1.45; // setengah lebar pita zebra = setengah lebar marka (2.9 m)
 /** Tepi dalam trotoar dekat (batas badan jalan). */
 export const SCRAMBLE_NEAR_LAT = -4.55;
 /** Tepi dalam trotoar jauh (batas badan jalan). */

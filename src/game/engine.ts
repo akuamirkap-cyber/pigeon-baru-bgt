@@ -28,6 +28,7 @@ import {
   type ShibuyaCharacterId,
   type ShibuyaMotorcycleId,
 } from "./shibuyaPacks";
+import { SCRAMBLE_BAND_X } from "./scrambleCrossing";
 import { TRICK_MAP, TRICKS, type TrickKind } from "./tricks";
 import { RailTrickDeck, RAIL_POSE, RAIL_POSE_NONE, type RailTrickDef } from "./railTricks";
 import { useUI, type Phase } from "./store";
@@ -3958,8 +3959,11 @@ class Engine {
       );
       inter.lightState = pedestrianInJunction || crossTrafficInJunction ? "red" : scheduledLight;
 
-      // Jendela pendekatan: munculkan mobil penyeberang yang akan melintas tepat saat pemain tiba
-      if (this.phase === "playing" && dist > -16 && dist < 65) {
+      // Jendela pendekatan: munculkan mobil penyeberang yang akan melintas tepat saat pemain tiba.
+      // SCRAMBLE (khas Shibuya) DIKECUALIKAN: seluruh kendaraan berhenti dan hanya pejalan kaki
+      // yang menyeberang (semua arah). Dulu mobil jalan lintas tetap melaju di tengah kerumunan
+      // yang sedang menyeberang, jadi tampak seperti orang berdiri di antara mobil.
+      if (!inter.scramble && this.phase === "playing" && dist > -16 && dist < 65) {
         if (!inter.signalStarted) {
           inter.signalStarted = true;
           // Spawn mobil pertama segera agar langsung melintas di depan pemain
@@ -4787,7 +4791,7 @@ class Engine {
       //   perempatan: pita zebra di |x| = halfW + 1.1 (lebar 2.2 m)
       // Pita kiri dipakai satu arus, pita kanan arus balik, jadi dua arah tidak bertabrakan
       // dan tidak ada lagi orang menyeberang di tengah perempatan (di luar zebra).
-      const bandX = scramble ? 5.0 : (wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
+      const bandX = scramble ? SCRAMBLE_BAND_X : (wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1;
       const leftFirst = Math.random() < 0.5;
       // kecepatan SAMA untuk semua orang dalam satu pita: jarak antrean tetap rata
       // (kalau kecepatannya beda, yang cepat menyusul yang lambat lalu saling menembus)
@@ -6135,7 +6139,7 @@ class Engine {
       this.moverVersion++;
       return n * 2.8 + 3.5;
     }
-    const bandX = inter ? (inter.scramble ? 5.0 : (inter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1) : 0;
+    const bandX = inter ? (inter.scramble ? SCRAMBLE_BAND_X : (inter.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 1.1) : 0;
     const leftFirst = Math.random() < 0.5;
     const bandSlot: [number, number] = [0, 0];
     const bandSpeed: [number, number] = [crosserSpeed(1), crosserSpeed(-1)];

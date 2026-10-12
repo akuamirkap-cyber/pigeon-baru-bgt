@@ -3799,6 +3799,18 @@ export function scrambleRoadParts(): Part[] {
   const parts: Part[] = [];
   const avenueW = 13.4;
 
+  // ── Pola marka zebra (konsisten di SELURUH perempatan) ──
+  // Tiap garis MEMANJANG searah laju kendaraan (jadi tegak lurus arah langkah pejalan kaki)
+  // dan berulang searah langkah; lebar garis 0.45 m, jarak antar garis 0.90 m — persis
+  // proporsi zebra Shibuya. Tidak ada dua bidang putih yang bertumpuk (tidak ada z-fighting).
+  const RUN = 0.45;
+  const STEP = 0.9;
+  const halfRun = RUN / 2;
+  const BAND_X = 4.7; // pusat pita zebra avenue (pejalan menyeberang avenue lewat sini)
+  const BAND_W = 2.9; // panjang garis = lebar pita (memanjang searah laju mobil di avenue)
+  const MED_Z0 = 3.55; // pulau median yang di-pave (lihat part asphaltDark di bawah)
+  const MED_Z1 = 5.15;
+
   // A single, level intersection apron: two carriageways and a paved-over median.
   parts.push({ x: 0, y: 0.016, z: 0, w: avenueW, h: 0.024, d: 8.0, color: asphalt });
   parts.push({ x: 0, y: 0.016, z: 8.65, w: avenueW, h: 0.024, d: 7.35, color: asphalt });
@@ -3810,50 +3822,76 @@ export function scrambleRoadParts(): Part[] {
     parts.push({ x: 0, y: 0.145, z: mid, w: avenueW, h: 0.06, d: z1 - z0, color: asphalt });
   }
 
-  // Two crisp, evenly spaced zebra bands across the six-lane avenue.
-  for (const x of [-5.0, 5.0]) {
-    for (let z = -3.4; z <= 12.1; z += 0.95) {
-      const onMedian = z > 3.4 && z < 5.3;
-      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 2.25, h: 0.022, d: 0.46, color: zebra });
+  // Garis yang menabrak tepi pulau median dibuang: separuh di pulau separuh di aspal
+  // akan melayang (pulau lebih tinggi 0.15 m). Zebra asli juga terputus di pulau.
+  const straddlesMedian = (za: number, zb: number) =>
+    !(za >= MED_Z0 && zb <= MED_Z1) && zb > MED_Z0 && za < MED_Z1;
+
+  // ── 1. DUA PITA ZEBRA AVENUE (lebar 2.9 m di kiri & kanan perempatan) ──
+  for (const cx of [-BAND_X, BAND_X]) {
+    const z0 = -3.655;
+    const z1 = 11.985;
+    const n = Math.round((z1 - z0) / STEP);
+    for (let i = 0; i <= n; i++) {
+      const z = z0 + ((z1 - z0) * i) / n;
+      if (straddlesMedian(z - halfRun, z + halfRun)) continue;
+      const onMedian = z > MED_Z0 && z < MED_Z1;
+      parts.push({ x: cx, y: onMedian ? 0.19 : 0.04, z, w: BAND_W, h: 0.022, d: RUN, color: zebra });
     }
   }
 
-  // Matching zebra crossings on the north/south side streets.
-  for (const z of [-5.4, 13.7]) {
-    for (let x = -5.5; x <= 5.5; x += 0.9) {
-      parts.push({ x, y: 0.19, z, w: 0.44, h: 0.022, d: 2.0, color: zebra });
+  // ── 2. DUA PITA ZEBRA JALAN LINTAS (pejalan menyeberang jalan samping searah x) ──
+  // Di sini garis memanjang searah z (arah laju mobil jalan lintas) dan berulang searah x.
+  for (const cz of [-5.7, 14.0]) {
+    const x0 = -6.2;
+    const x1 = 6.2;
+    const n = Math.round((x1 - x0) / STEP);
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      parts.push({ x, y: 0.19, z: cz, w: RUN, h: 0.022, d: BAND_W, color: zebra });
     }
   }
 
-  // Signature diagonal scramble paths, confined to the center so they do not pile onto the straight zebras.
+  // ── 3. DUA JALUR DIAGONAL KHAS SCRAMBLE (sudut ke sudut, lewat tengah) ──
+  // Garis diagonal = rung tangga: memanjang TEGAK LURUS jalur diagonal (2.9 m) dan tipis
+  // 0.45 m searah jalur, berulang tiap 0.9 m — pola yang sama dengan pita zebra lurus.
+  // Tiap jalur diberi offset tinggi 3 mm supaya kedua diagonal tidak z-fighting di tengah.
   const diagonals = [
-    { x0: -2.8, z0: -2.6, x1: 2.8, z1: 10.2 },
-    { x0: -2.8, z0: 10.2, x1: 2.8, z1: -2.6 },
+    { x0: -4.4, z0: -3.0, x1: 4.4, z1: 11.4 },
+    { x0: -4.4, z0: 11.4, x1: 4.4, z1: -3.0 },
   ];
-  const stripeCount = 13;
   for (let d = 0; d < diagonals.length; d++) {
     const line = diagonals[d];
     const dx = line.x1 - line.x0;
     const dz = line.z1 - line.z0;
+    const len = Math.hypot(dx, dz);
     const ry = Math.atan2(dx, dz);
-    for (let i = 1; i < stripeCount - 1; i++) {
-      const t = i / (stripeCount - 1);
-      // Leave a small clean center tile where the two diagonal routes meet; no z-fighting pile-up.
-      if (t > 0.44 && t < 0.56) continue;
+    const dirX = dx / len;
+    const dirZ = dz / len;
+    // Separuh bentang garis dalam arah z setelah diputar (untuk cek tepi apron & pulau).
+    const halfZ = Math.abs(dirZ) * halfRun + Math.abs(dirX) * (BAND_W / 2);
+    const n = Math.round(len / STEP);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      // Ujung jalur & tengah perempatan dibiarkan bersih: garis paling ujung tidak boleh
+      // menyembul ke jalan lintas, dan di tengah perempatan (tempat kedua diagonal bertemu)
+      // tetap ada aspal kosong — persis seperti perempatan Shibuya aslinya.
+      if (i === 0 || i === n) continue;
+      if (Math.abs(t - 0.5) < 0.14) continue;
       const x = line.x0 + t * dx;
       const z = line.z0 + t * dz;
-      const onMedian = z > 3.4 && z < 5.3;
-      const y = (onMedian ? 0.19 : 0.04) + d * 0.003;
-      parts.push({ x, y, z, w: 1.7, h: 0.022, d: 0.42, ry, color: zebra });
+      if (straddlesMedian(z - halfZ, z + halfZ)) continue;
+      const onMedian = z > MED_Z0 && z < MED_Z1;
+      const y = (onMedian ? 0.19 : 0.04) + 0.003 * (d + 1);
+      parts.push({ x, y, z, w: BAND_W, h: 0.022, d: RUN, ry, color: zebra });
     }
   }
 
-  // Bold stop bars frame the junction and make the approach geometry easy to read.
-  for (const x of [-6.45, 6.45]) {
-    for (const [z, width] of [[0, 7.0], [8.65, 7.0]] as const) {
-      const onMedian = z > 3.4 && z < 5.3;
-      parts.push({ x, y: onMedian ? 0.19 : 0.04, z, w: 0.16, h: 0.022, d: width, color: zebra });
-    }
+  // ── 4. GARIS STOP AVENUE: tepat di depan hidung mobil yang berhenti (8.2 − 1.7 = 6.5 m
+  //       dari pusat perempatan), jadi mobil berhenti rapi di garis, tidak menabrak zebra ──
+  for (const x of [-6.6, 6.6]) {
+    parts.push({ x, y: 0.04, z: -0.225, w: 0.16, h: 0.022, d: 7.35, color: zebra });
+    parts.push({ x, y: 0.04, z: 8.74, w: 0.16, h: 0.022, d: 7.17, color: zebra });
   }
 
   return parts;
