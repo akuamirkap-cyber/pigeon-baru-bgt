@@ -596,7 +596,7 @@ export function getShibuyaMotorcycleParts(id: ShibuyaMotorcycleId, helmet = true
 }
 
 export function getShibuyaMotorcycleGeo(id: ShibuyaMotorcycleId, helmet = true) {
-  return getGeometry(`shibuya-moto-${id}-${helmet ? "helmet" : "no-helmet"}`, () => getShibuyaMotorcycleParts(id, helmet));
+  return getGeometryPair(`shibuya-moto-${id}-${helmet ? "helmet" : "no-helmet"}`, () => getShibuyaMotorcycleParts(id, helmet));
 }
 
 /** Glowing headlight and taillight for Shibuya motorcycle at night */

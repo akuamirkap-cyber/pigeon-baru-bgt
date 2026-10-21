@@ -202,7 +202,7 @@ function car(b: Builder, id: string, p: Vec3) {
   const cabinZ = truck ? 0.47 : bus ? -length / 2 + 0.14 : -0.77;
   const cabinLength = truck ? 1.18 : bus ? length - 0.3 : kei ? 2.02 : 1.77;
   const cabinHeight = bus ? 1.12 : kei ? 0.78 : 0.62;
-  r.box('chassis', [-width / 2 + 0.075, 0.9, cabinZ], [width - 0.15, cabinHeight, 0.026], '#709eaa');
+  r.box('chassis', [-width / 2 + 0.075, 0.9, cabinZ], [width - 0.15, cabinHeight, 0.026], '#bfe3ff');
   for (const side of [-1, 1]) {
     b.box([side * (width / 2 - 0.068), 1.04, cabinZ + 0.04], [0.022, cabinHeight - 0.14, cabinLength - 0.08], '#9ec8cd', { node: r.name('chassis'), opacity: 0.35 });
   }
@@ -215,7 +215,7 @@ function car(b: Builder, id: string, p: Vec3) {
     r.box('chassis', [side * (width / 2 + 0.03) - 0.045, 1.01, cabinZ + cabinLength - 0.1], [0.14, 0.1, 0.22], color);
   }
   const front = cabinZ + cabinLength + 0.015;
-  b.box([-width / 2 + 0.11, 1.07, front], [width - 0.22, cabinHeight - 0.2, 0.019], '#bddbd6', { node: r.name('chassis'), opacity: 0.34 });
+  b.box([-width / 2 + 0.11, 1.07, front], [width - 0.22, cabinHeight - 0.2, 0.019], '#bfe3ff', { node: r.name('chassis'), opacity: 0.34 });
   driver(r, width * 0.23, 0.99, front - 0.24);
   for (const side of [-1, 1]) {
     r.box('chassis', [side * width * 0.31 - 0.14, 0.652, length / 2 + 0.007], [0.28, 0.15, 0.02], '#fff0c4', undefined, 0.45);
@@ -250,8 +250,8 @@ function car(b: Builder, id: string, p: Vec3) {
     r.motion('Ride', 'crate', 'rotation', 2, 0.024, { cycles: 3 });
   } else if (bus) {
     for (let i = 0; i < 7; i++) {
-      b.box([-width / 2 - 0.024, 1.42, -2.4 + i * 0.68], [0.028, 0.44, 0.42], '#bad7d0', { node: r.name('chassis'), opacity: 0.4 });
-      b.box([width / 2 - 0.004, 1.42, -2.4 + i * 0.68], [0.028, 0.44, 0.42], '#9ac4c2', { node: r.name('chassis'), opacity: 0.4 });
+      b.box([-width / 2 - 0.024, 1.42, -2.4 + i * 0.68], [0.028, 0.44, 0.42], '#bfe3ff', { node: r.name('chassis'), opacity: 0.4 });
+      b.box([width / 2 - 0.004, 1.42, -2.4 + i * 0.68], [0.028, 0.44, 0.42], '#bfe3ff', { node: r.name('chassis'), opacity: 0.4 });
     }
     for (let row = 0; row < 4; row++) for (const side of [-1, 1]) {
       const z = -1.9 + row * 0.88;

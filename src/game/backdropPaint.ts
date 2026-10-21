@@ -4,7 +4,7 @@
  * gradients blended green/pink/blue into mud). Everything here is deterministic.
  */
 
-export const MIST_HEX = "#dbeeff";
+export const MIST_HEX = "#d2f0ff";
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -679,7 +679,7 @@ export function paintCityNight(W = 4096, H = 512): HTMLCanvasElement {
  * dan sungai berkelok di kaki. Gaya ilustratif datar, selaras art-style dengan Gunung Fuji
  * (billboard Fuji sendiri TIDAK diubah).
  */
-export function paintScenicDay(W = 4096, H = 512, tod: "pagi" | "siang" | "sore" = "siang", mistHex = "#dbeeff"): HTMLCanvasElement {
+export function paintScenicDay(W = 4096, H = 512, tod: "pagi" | "siang" | "sore" = "siang", mistHex = "#d2f0ff"): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = W;
   c.height = H;

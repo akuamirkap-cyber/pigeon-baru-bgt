@@ -116,12 +116,13 @@ export function getShibuyaAssetFootprint(id: ShibuyaBuildingId): ShibuyaAssetFoo
 export function getShibuyaBuildingParts(id: ShibuyaBuildingId): Part[] {
   const d = getAssetData(id);
   const floorY = d.floorY ?? 0.73;
-  const storeBoxes = d.boxes.filter((b) => b.part !== "setting");
-  // Shibuya Blocks marks the surrounding diorama as `setting`. Keep the small props
-  // (trees, poles, lamps, planters, bicycle parts and frontage trim), but leave out
-  // the large road/ground slabs because Pigeon SK8 owns the playable road surface.
+  const storeBoxes = d.boxes.filter((b) => b.part !== "setting" && b.role !== "pedestrian" && b.role !== "vehicle");
+  // Only tagged landscape belongs with a scaled building. Source dioramas also contain
+  // miniature roads, signal poles, crossings, cars and pedestrians; letting those leak
+  // into the playable world made intersections cluttered and parked cars toy-sized.
   const settingDecor = d.boxes.filter((b) =>
     b.part === "setting" &&
+    b.role === "landscape" &&
     b.s[0] <= 4.2 &&
     b.s[2] <= 4.2 &&
     b.s[1] >= 0.08 &&

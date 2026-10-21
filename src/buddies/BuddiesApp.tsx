@@ -5,6 +5,7 @@ import { cn } from "./utils/cn";
 import { useUI } from "../game/store";
 import { engine } from "../game/engine";
 import { sfx, unlockAudio } from "../game/audio";
+import { missionStatus, snapshotCtx } from "../game/skinMissions";
 
 type Category = "char" | "skate";
 
@@ -46,6 +47,12 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
   const selectSkin = useUI((s) => s.selectSkin);
   const selectDeck = useUI((s) => s.selectDeck);
   const trailEffect = useUI((s) => s.trailEffect);
+  // Data untuk kartu syarat buka skin: progres dihitung dari statistik + dompet roti.
+  const wallet = useUI((s) => s.wallet);
+  const bestScore = useUI((s) => s.best);
+  const unlocked = useUI((s) => s.unlocked);
+  const unlockedDecks = useUI((s) => s.unlockedDecks);
+  const addPopup = useUI((s) => s.addPopup);
 
   const [category, setCategory] = useState<Category>(initialCategory);
 
@@ -129,6 +136,21 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
     return currentEquippedDeck === skin.id;
   }, [category, currentEquippedSkin, currentEquippedDeck, skin]);
 
+  // ── Info syarat buka skin (misi) untuk skin yang lagi dilihat ──
+  const isSkate = category === "skate";
+  const entryId = isSkate ? skin.id : toPigeonSkinId(skin.id);
+  const isUnlocked = isSkate ? unlockedDecks.includes(entryId) : unlocked.includes(entryId);
+  const { mission, status } = useMemo(
+    () => missionStatus(entryId, snapshotCtx(bestScore, wallet)),
+    [entryId, bestScore, wallet]
+  );
+  const missionDone = status?.done ?? true;
+  const canOpen = isUnlocked || missionDone;
+  const pct = status ? Math.max(0, Math.min(100, Math.round((status.cur / Math.max(1, status.goal)) * 100))) : 100;
+  const missionHint = mission && mission.kind !== "price"
+    ? "Progres tercatat otomatis — skin terbuka sendiri begitu syarat tercapai."
+    : "Terbeli otomatis dari dompet roti begitu jumlahmu cukup.";
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
@@ -155,7 +177,7 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
       onTouchEnd={handleTouchEnd}
       className="relative h-screen w-screen overflow-hidden font-sans select-none"
       style={{
-        background: "linear-gradient(180deg, #72D4EC 0%, #4FBCDC 100%)",
+        background: "linear-gradient(180deg, #3ec6f0 0%, #12a5e4 100%)",
       }}
     >
       {/* 3D canvas */}
@@ -225,8 +247,8 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
         &gt;
       </button>
 
-      {/* ===== NAMA KARAKTER (Dinaikkan 5 nilai lagi dari posisi sebelumnya, tepat di bawah model) ===== */}
-      <div className="pointer-events-none absolute bottom-[14.75rem] sm:bottom-[16.75rem] left-0 right-0 z-10 flex justify-center px-4">
+      {/* ===== NAMA KARAKTER + KARTU SYARAT BUKA (tepat di bawah model) ===== */}
+      <div className="pointer-events-none absolute bottom-[13.25rem] sm:bottom-[15.25rem] left-0 right-0 z-10 flex flex-col items-center gap-1.5 px-4">
         <h2
           key={skin.id}
           className="animate-[popIn_0.3s_ease] font-display text-base sm:text-xl font-black uppercase tracking-wider text-white drop-shadow-md text-center max-w-full"
@@ -234,6 +256,51 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
         >
           {skin.name}
         </h2>
+
+        {/* Info syarat terbuka: misi apa yang harus dikerjakan supaya skin ini bisa dipakai */}
+        <div
+          key={`${skin.id}-req`}
+          className={cn(
+            "animate-[popIn_0.3s_ease] w-full max-w-md rounded-xl px-3.5 py-2 text-center backdrop-blur-sm ring-1",
+            isUnlocked
+              ? "bg-[#1b7a43]/85 ring-[#2ecc71]/60"
+              : missionDone
+                ? "bg-[#c96f00]/85 ring-[#ffd60a]/70"
+                : "bg-[#1f2430]/80 ring-white/25"
+          )}
+        >
+          {isUnlocked ? (
+            <span className="font-display text-[11px] sm:text-[13px] font-black uppercase tracking-wide text-white">
+              ✓ TERBUKA {isSelected ? "· SEKARANG DIPAKAI" : "· SIAP DIPAKAI"}
+            </span>
+          ) : missionDone ? (
+            <span className="font-display text-[11px] sm:text-[13px] font-black uppercase tracking-wide text-white">
+              🎉 SYARAT TERPENUHI — TEKAN &quot;{status?.purchase ? `BUKA · ${status.goal} 🍞` : "BUKA SKIN"}&quot;!
+            </span>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <span className="font-display text-[10px] sm:text-[11px] font-black uppercase tracking-wide text-[#ffd60a]">
+                🔒 SYARAT TERBUKA
+              </span>
+              <span className="font-body text-[11px] sm:text-[13px] font-bold leading-snug text-white">
+                {status?.label ?? "Gratis — langsung terbuka"}
+              </span>
+              {status && (
+                <div className="mx-auto mt-0.5 h-1.5 w-full max-w-[16rem] overflow-hidden rounded-full bg-black/40">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#ffd60a] to-[#ff9500] transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              )}
+              <span className="font-body text-[9.5px] sm:text-[11px] font-semibold text-white/75">
+                {status?.purchase
+                  ? `Dompetmu: ${status.cur.toLocaleString("id-ID")} / ${status.goal.toLocaleString("id-ID")} roti`
+                  : `${status ? status.cur.toLocaleString("id-ID") : 0} / ${status ? status.goal.toLocaleString("id-ID") : 1} — ${missionHint}`}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ===== KONTROL BAWAH (Kembali ke bawah normal, tidak ikut naik) ===== */}
@@ -273,31 +340,52 @@ export default function BuddiesApp({ onBackToPigeon }: { onBackToPigeon?: () => 
           </button>
         </div>
 
-        {/* tombol SELECT (font 8-bit bergaya main menu) */}
+        {/* tombol SELECT / BUKA SKIN / TERKUNCI (font 8-bit bergaya main menu) */}
         <button
           type="button"
           onClick={() => {
             unlockAudio();
+            if (!isUnlocked && !canOpen) {
+              // Misi belum selesai: beri tahu syaratnya, jangan equip.
+              sfx.deny();
+              if (status) addPopup(`🔒 ${status.label}`, "#ff6b6b");
+              return;
+            }
+            const ok = isSkate ? selectDeck(skin.id) : selectSkin(skin.id);
+            if (!ok) {
+              sfx.deny();
+              if (status?.purchase) addPopup(`🍞 ROTI KURANG — PERLU ${status.goal}`, "#ff6b6b");
+              return;
+            }
             sfx.unlock();
             setBump((b) => b + 1);
-            if (category === "char") {
-              selectSkin(skin.id);
-              engine.skinPop();
-            } else {
-              selectDeck(skin.id);
-              engine.skinPop();
+            if (!isUnlocked) {
+              addPopup(isSkate ? `🛹 PAPAN ${skin.name.toUpperCase()} TERBUKA!` : `🎉 SKIN ${skin.name.toUpperCase()} TERBUKA!`, "#ffd60a");
             }
+            engine.skinPop();
           }}
           key={bump}
           className={cn(
             "pointer-events-auto animate-[popIn_0.25s_ease] rounded-2xl px-10 py-3 sm:py-3.5 sm:px-14 font-display text-base sm:text-xl font-black uppercase tracking-wider text-white transition-all active:translate-y-1",
             isSelected
               ? "bg-gradient-to-b from-[#2ecc71] to-[#27ae60] shadow-[0_6px_0_#1b7a43] active:shadow-[0_2px_0_#1b7a43]"
-              : "bg-gradient-to-b from-[#ffb400] to-[#ff9500] shadow-[0_6px_0_#c96f00] active:shadow-[0_2px_0_#c96f00]"
+              : canOpen
+                ? "bg-gradient-to-b from-[#ffd166] to-[#ffb400] shadow-[0_6px_0_#c96f00] active:shadow-[0_2px_0_#c96f00]"
+                : "bg-gradient-to-b from-[#7b8494] to-[#5b6472] shadow-[0_6px_0_#414a57] active:shadow-[0_2px_0_#414a57]"
           )}
           style={{ textShadow: "0 2px 4px rgba(0,0,0,0.3)" }}
         >
-          {isSelected ? "SELECTED" : "SELECT"}
+          {isSelected
+            ? "SELECTED"
+            : !canOpen
+              ? "🔒 TERKUNCI"
+              : !isUnlocked && status?.purchase
+                ? `BUKA · ${status.goal} 🍞`
+                : !isUnlocked
+                  ? "BUKA SKIN!"
+                  : isSkate
+                    ? "PAKAI PAPAN"
+                    : "SELECT"}
         </button>
       </div>
 

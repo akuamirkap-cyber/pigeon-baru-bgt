@@ -14,7 +14,7 @@ export const curveUniforms = {
   uCurveDown: { value: 0.0 }, // downward bend strength
   uCurveSide: { value: 0.0 }, // sideways bend strength (+ = to the right of travel)
   uCurveStart: { value: 6.0 }, // distance ahead before bending kicks in
-  uHazeColor: { value: new THREE.Color("#dbeeff") },
+  uHazeColor: { value: new THREE.Color("#d2f0ff") },
   uHazeRange: { value: new THREE.Vector2(1e6, 2e6) }, // (start, end) view distance; defaults = no haze
   uSnowAmount: { value: 0.0 }, // 0..1 — salju menutup permukaan (lerp halus saat cuaca berubah)
 };

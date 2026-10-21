@@ -1,14 +1,16 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useUI, WHEEL_COLORS, SWIPE_SENS_LABEL } from "../game/store";
 import { engine } from "../game/engine";
 import { getSkin, DECKS } from "../game/skins";
+import { missionStatus, snapshotCtx } from "../game/skinMissions";
 import { sfx, unlockAudio, SoundId } from "../game/audio";
 import { BreadIcon } from "./BreadIcon";
-import { SkinsPanel } from "./SkinsPanel";
+import { SkinsPanel, preloadSkinsPanel } from "./SkinsPanel";
 import { TricksPanel } from "./TricksPanel";
 import { PigeonIcon } from "./PigeonIcon";
 import { AchievementsPanel } from "./AchievementsPanel";
 import { SoundPanelModal } from "./GameOver";
+import { RoadDictPanel } from "./RoadDict";
 
 function ShirtIcon() {
   return (
@@ -91,55 +93,57 @@ function CyclePill({
   );
 }
 
-/** Track mode selector: Mount Haruna, Tokyo City, and Shibuya Scramble. */
+/** MODE DUNIA — MIX (default): satu lintasan Shibuya → Tokyo → Touge berulang tiap blok 336 m.
+ *  Pilihan lain: satu kota saja (perilaku klasik masing-masing mode). */
 function TrackModeRow() {
-  const trackMode = useUI((s) => s.trackMode);
-  const setTrackMode = useUI((s) => s.setTrackMode);
+  const worldMode = useUI((s) => s.worldMode);
+  const setWorldMode = useUI((s) => s.setWorldMode);
+  const liveZone = useUI((s) => s.trackMode);
   const addPopup = useUI((s) => s.addPopup);
 
-  const selectTrack = (mode: "haruna" | "tokyo" | "shibuya") => {
-    if (mode === trackMode) return;
+  const pickMode = (mode: "mix" | "shibuya" | "tokyo" | "haruna") => {
+    if (mode === worldMode) return;
     unlockAudio();
-    setTrackMode(mode);
-    engine.setTrackMode(mode);
-    if (mode === "haruna") {
-      sfx.unlock();
-      addPopup("TRACK: MT. HARUNA", "#ff9f1c", "Gunma Touge Downhill & Hairpins");
-    } else if (mode === "shibuya") {
-      sfx.click();
-      addPopup("TRACK: SHIBUYA SCRAMBLE", "#c77dff", "Daylight, neon, and busy crosswalks");
-    } else {
-      sfx.click();
-      addPopup("TRACK: TOKYO CITY", "#2ec4b6", "Classic City Skate");
-    }
+    sfx.click();
+    setWorldMode(mode);
+    engine.setWorldMode(mode);
+    if (mode === "mix") addPopup("🌏 MODE: MIX — 3 KOTA SATU RUTE", "#ffd21f", "Shibuya → Tokyo → Touge berganti tiap 336 m!");
+    else if (mode === "shibuya") addPopup("MODE: SHIBUYA SAJA", "#d5a8ff", "Neon avenue · scramble · terowongan metro");
+    else if (mode === "tokyo") addPopup("MODE: TOKYO CITY SAJA", "#7ce0d4", "Jalanan klasik dengan sakura");
+    else addPopup("MODE: MT. HARUNA SAJA", "#ffc46b", "Touge downhill & hairpin Akina");
   };
 
-  const cell = (mode: "haruna" | "tokyo" | "shibuya", name: string, badge: string, activeBg: string, activeShadow: string) => {
-    const active = trackMode === mode;
+  const cell = (mode: "mix" | "shibuya" | "tokyo" | "haruna", name: string, badge: string, activeBg: string, activeShadow: string) => {
+    const active = worldMode === mode;
+    // MIX sedang berjalan: titik ● menandai kota yang sedang dimasuki pemain
+    const live = mode !== "mix" && worldMode === "mix" && liveZone === mode;
     return (
       <button
         type="button"
-        onClick={() => selectTrack(mode)}
-        className={`pointer-events-auto flex flex-1 items-center justify-center gap-1 rounded-xl py-2 font-display text-[3cqw] leading-none transition-transform active:translate-y-[2px] ${
+        onClick={() => pickMode(mode)}
+        className={`pointer-events-auto flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1.5 font-display text-[2.4cqw] leading-none transition-transform active:translate-y-[2px] ${
           active ? `${activeBg} text-[#1f2430] font-black shadow-[0_3px_0_${activeShadow}]` : "bg-white/60 text-[#1f2430]/70 hover:bg-white/80"
         }`}
       >
-        <span>{name}</span>
-        <span className={`rounded px-1 py-0.5 font-body text-[1.9cqw] font-black ${active ? "bg-black/15" : "bg-black/10"}`}>{badge}</span>
+        <span className="flex items-center gap-1">
+          {name}
+          {live && <span className="inline-block h-[1.1cqw] w-[1.1cqw] animate-pulse rounded-full bg-[#3dffa0] shadow-[0_0_6px_#3dffa0]" />}
+        </span>
+        <span className={`rounded px-1 py-0.5 font-body text-[1.6cqw] font-black ${active ? "bg-black/15" : "bg-black/10"}`}>{badge}</span>
       </button>
     );
   };
 
   return (
     <div className="flex w-full items-center gap-1 rounded-2xl bg-[#1f2430]/25 p-1 backdrop-blur-[3px]">
-      {cell("haruna", "HARUNA", "GUNMA", "bg-[#ffc46b]", "#c9700a")}
-      {cell("tokyo", "TOKYO", "CITY", "bg-[#7ce0d4]", "#1f9a8f")}
-      {cell("shibuya", "SHIBUYA", "CITY", "bg-[#d5a8ff]", "#8b3fd6")}
+      {cell("mix", "🌏 MIX", "3 KOTA", "bg-[#ffd21f]", "#b8860b")}
+      {cell("shibuya", "🌃 SHIBUYA", "NEON", "bg-[#d5a8ff]", "#8b3fd6")}
+      {cell("tokyo", "🏙️ TOKYO", "CITY", "bg-[#7ce0d4]", "#1f9a8f")}
+      {cell("haruna", "⛰️ HARUNA", "TOUGE", "bg-[#ffc46b]", "#c9700a")}
     </div>
   );
 }
 
-/** Setelan cepat dalam grid rapi (mobile friendly) */
 function SettingsRow() {
   const speed = useUI((s) => s.speedMode);
   const setSpeed = useUI((s) => s.setSpeedMode);
@@ -162,14 +166,21 @@ function SettingsRow() {
   const shibuyaTime = useUI((s) => s.shibuyaTime);
   const cycleShibuyaTime = useUI((s) => s.cycleShibuyaTime);
   const soundProfile = useUI((s) => s.soundProfile);
+  // Musik BGM default SENYAP (nyaman di HP) — pemain bisa menyalakan lewat pill 🎵 di bawah.
+  const musicOn = useUI((s) => s.musicOn);
+  const toggleMusic = useUI((s) => s.toggleMusic);
   const toggleSoundProfile = useUI((s) => s.toggleSoundProfile);
   const addPopup = useUI((s) => s.addPopup);
   const [tips, setTips] = useState(false);
   const [soundModalOpen, setSoundModalOpen] = useState(false);
+  const [roadDictOpen, setRoadDictOpen] = useState(false);
   const [selectedSound, setSelectedSound] = useState<SoundId>("gameover");
 
   const toggleDeck = () => {
-    const order = DECKS.map((d) => d.id);
+    // Hanya papan yang sudah terbuka (misinya selesai) yang bisa diputar-putar di pengaturan.
+    const unlockedDecks = useUI.getState().unlockedDecks;
+    const order = DECKS.map((d) => d.id).filter((id) => unlockedDecks.includes(id) || id === deck);
+    if (!order.length) return;
     const next = order[(order.indexOf(deck) + 1) % order.length];
     setDeck(next);
     engine.skinPop();
@@ -304,12 +315,46 @@ function SettingsRow() {
           <span className="text-[3.2cqw]">🎵</span>
           <span className="font-display text-[2.7cqw] font-bold text-[#1f2430]">TES 30 SOUNDS</span>
         </button>
+        {/* Toggle musik BGM — default OFF (senyap) sesuai permintaan; SFX tetap hidup. */}
+        <button
+          type="button"
+          onClick={() => {
+            sfx.click();
+            toggleMusic();
+            // klik ini = gesture audio sah: aktifkan context + (bila ON) mulai BGM sekarang juga
+            unlockAudio();
+            addPopup(
+              musicOn ? "🔇 MUSIK SENYAP LAGI" : "🎵 MUSIK NYALA",
+              musicOn ? "#ffd21f" : "#39c1ea",
+              musicOn ? "BGM dimatikan — SFX tetap aktif" : "BGM Chiptune Tokyo diputar"
+            );
+          }}
+          className={`pointer-events-auto flex min-h-[46px] flex-1 items-center justify-center gap-1.5 rounded-2xl px-2 py-1.5 leading-none shadow-[0_3px_0_rgba(0,0,0,0.12)] transition-transform active:translate-y-[2px] active:shadow-none ${
+            musicOn ? "bg-[#168879] text-white" : "bg-white/95 text-[#1f2430]"
+          }`}
+        >
+          <span className="text-[3.2cqw]">{musicOn ? "🎵" : "🔇"}</span>
+          <span className="font-display text-[2.7cqw] font-bold">MUSIK: {musicOn ? "ON" : "OFF"}</span>
+        </button>
       </div>
       {tips && (
         <div className="rounded-2xl bg-white/90 px-3 py-2 text-center font-body text-[2.7cqw] font-extrabold leading-snug text-[#1f2430]/75 backdrop-blur-[2px]">
           Swipe ↔ pindah jalur · tap / ↑ lompat · SPRINT = kayuh cepat · NOS kalau penuh
         </div>
       )}
+      {/* Kamus visual aset jalan & trotoar — bentuk + nama tiap aset, ditular dari kode game */}
+      <button
+        type="button"
+        onClick={() => {
+          sfx.click();
+          setRoadDictOpen(true);
+        }}
+        className="pointer-events-auto flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl bg-[#1f2430] px-2 py-1.5 leading-none text-white shadow-[0_3px_0_rgba(0,0,0,0.12)] transition-transform active:translate-y-[2px] active:shadow-none"
+      >
+        <span className="text-[3.2cqw]">📖</span>
+        <span className="font-display text-[2.7cqw] font-bold">KAMUS ASET JALAN &amp; TROTOAR</span>
+      </button>
+      {roadDictOpen && <RoadDictPanel onClose={() => setRoadDictOpen(false)} />}
       {soundModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm pointer-events-auto"
@@ -329,6 +374,16 @@ function SettingsRow() {
 }
 
 function MainMenu() {
+  useEffect(() => {
+    // ONE WORLD: terapkan MODE DUNIA tersimpan (kalau bukan default "mix") sebelum lintasan dipakai.
+    const wm = useUI.getState().worldMode;
+    if (wm !== "mix") engine.setWorldMode(wm);
+    // Start loading the lazy 3D carousel while the player is still on the main menu.
+    // This moves the first-open wait off the skin button, including on touch devices.
+    const timer = window.setTimeout(preloadSkinsPanel, 900);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const best = useUI((s) => s.best);
   const wallet = useUI((s) => s.wallet);
   const previewId = useUI((s) => s.preview);
@@ -342,7 +397,11 @@ function MainMenu() {
   const unseenAch = useUI((s) => s.unseenAch);
   const skin = getSkin(previewId);
   const isUnlocked = unlocked.includes(skin.id);
-  const affordable = wallet >= skin.cost;
+  // Syarat buka skin ikut misi (lihat skinMissions.ts) — dipakai untuk label tombol & teks syarat.
+  const { mission: previewMission, status: previewStatus } = missionStatus(skin.id, snapshotCtx(best, wallet));
+  const previewPrice = previewMission?.kind === "price" ? previewMission.goal : skin.cost;
+  const affordable = wallet >= previewPrice;
+  const missionPending = !isUnlocked && !!previewMission && previewMission.kind !== "price" && !(previewStatus?.done ?? true);
 
   const setPreview = useUI((s) => s.setPreview);
   const equippedId = useUI((s) => s.skin);
@@ -351,6 +410,7 @@ function MainMenu() {
   const setAdjustTargetDeck = useUI((s) => s.setAdjustTargetDeck);
   const wordHunt = useUI((s) => s.wordHunt);
   const setShowMysteryBox = useUI((s) => s.setShowMysteryBox);
+  const addPopup = useUI((s) => s.addPopup);
 
   const start = () => {
     unlockAudio();
@@ -368,16 +428,28 @@ function MainMenu() {
 
   const unlock = () => {
     unlockAudio();
+    if (missionPending) {
+      // Syarat belum selesai — tunjukkan misinya, lalu buka carousel skin supaya progresnya terlihat.
+      sfx.deny();
+      setShakeKey((k) => k + 1);
+      if (previewStatus) addPopup(`🔒 ${previewStatus.label}`, "#ff6b6b");
+      useUI.getState().setSkinsCategory("char");
+      open("skins");
+      return;
+    }
     if (unlockSkin(skin.id)) {
       sfx.unlock();
       engine.skinPop();
+      if (previewMission?.kind === "price") addPopup(`🎉 SKIN ${skin.name.toUpperCase()} TERBUKA!`, "#ffd60a");
     } else {
       sfx.deny();
       setShakeKey((k) => k + 1);
+      if (previewStatus?.purchase) addPopup(`🍞 ROTI KURANG — PERLU ${previewStatus.goal}`, "#ff6b6b");
     }
   };
 
   const open = (v: "skins" | "tricks" | "exit") => {
+    if (v === "skins") preloadSkinsPanel();
     unlockAudio();
     sfx.click();
     engine.faceCamera();
@@ -447,22 +519,48 @@ function MainMenu() {
             <span className="shine pointer-events-none absolute inset-y-0 w-[22%] -rotate-12 bg-white/25 blur-[2px]" />
           </button>
         ) : (
-          <div key={shakeKey} className={`w-full ${shakeKey ? "shake" : ""}`}>
+          <div key={shakeKey} className={`flex w-full flex-col items-center gap-2 ${shakeKey ? "shake" : ""}`}>
             <button
               type="button"
               onClick={unlock}
               className={`pointer-events-auto flex w-full items-center justify-center gap-2 rounded-2xl py-[3.8cqw] font-display text-[6.5cqw] leading-none ${
-                affordable
-                  ? "bg-[#ffd60a] text-[#1f2430] shadow-[0_6px_0_#c9a400] active:translate-y-[3px] active:shadow-[0_2px_0_#c9a400]"
-                  : "bg-[#d9dde3] text-[#6b7280] shadow-[0_6px_0_#b3b9c2]"
+                missionPending
+                  ? "bg-[#3b4354] text-[#ffd60a] shadow-[0_6px_0_#272e3b] active:translate-y-[3px] active:shadow-[0_2px_0_#272e3b]"
+                  : affordable
+                    ? "bg-[#ffd60a] text-[#1f2430] shadow-[0_6px_0_#c9a400] active:translate-y-[3px] active:shadow-[0_2px_0_#c9a400]"
+                    : "bg-[#d9dde3] text-[#6b7280] shadow-[0_6px_0_#b3b9c2]"
               }`}
             >
-              {affordable ? "UNLOCK" : "NEED"}
-              <span className="flex items-center gap-1.5">
-                <BreadIcon size={24} />
-                {skin.cost}
-              </span>
+              {missionPending ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span className="flex items-center gap-1.5">🔒 KUNCI — LIHAT MISI</span>
+                </span>
+              ) : (
+                <>
+                  {affordable ? "UNLOCK" : "NEED"}
+                  <span className="flex items-center gap-1.5">
+                    <BreadIcon size={24} />
+                    {previewPrice}
+                  </span>
+                </>
+              )}
             </button>
+            {/* Tulisan syarat terbuka skin — misi yang harus dicapai */}
+            {previewStatus && (
+              <div className="pointer-events-auto w-full rounded-xl bg-[#1f2430]/85 px-3 py-1.5 text-center font-body text-[2.9cqw] font-bold leading-snug text-white">
+                {missionPending ? "🔒 SYARAT: " : "🎉 SYARAT TERPENUHI: "}
+                {previewStatus.label}
+                {!previewStatus.purchase && (
+                  <span className="text-[#ffd60a]">
+                    {" "}— {previewStatus.cur.toLocaleString("id-ID")}/{previewStatus.goal.toLocaleString("id-ID")}
+                  </span>
+                )}
+                {previewStatus.purchase && (
+                  <span className="text-[#ffd60a]"> — dompetmu {previewStatus.cur.toLocaleString("id-ID")} roti</span>
+                )}
+                <span className="block text-[2.4cqw] font-semibold text-white/60">🔓 Skin terbuka otomatis begitu syarat tercapai</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -471,6 +569,8 @@ function MainMenu() {
           {/* 1. Skins / Characters button (KUNING dengan ikon baju/t-shirt) -> buka 3D Voxel Buddies Characters */}
           <button
             type="button"
+            onPointerEnter={preloadSkinsPanel}
+            onFocus={preloadSkinsPanel}
             onClick={() => {
               useUI.getState().setSkinsCategory("char");
               open("skins");
@@ -485,6 +585,8 @@ function MainMenu() {
           {/* 2. Skates button (BIRU dengan ikon skateboard) -> buka 3D Voxel Buddies Skates */}
           <button
             type="button"
+            onPointerEnter={preloadSkinsPanel}
+            onFocus={preloadSkinsPanel}
             onClick={() => {
               useUI.getState().setSkinsCategory("skate");
               open("skins");

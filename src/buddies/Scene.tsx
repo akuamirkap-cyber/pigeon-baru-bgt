@@ -193,9 +193,9 @@ export default function Scene({
   const velRef = useRef(0);
   const n = listIndices.length;
 
-  // Window 9 slot di sekitar target
+  // 7 slot cukup untuk carousel; membatasi model voxel aktif mempercepat canvas pertama.
   const slots: { i: number; skinIdx: number }[] = [];
-  for (let off = -4; off <= 4; off++) {
+  for (let off = -3; off <= 3; off++) {
     const i = pos + off;
     slots.push({ i, skinIdx: listIndices[((i % n) + n) % n] });
   }
@@ -214,8 +214,8 @@ export default function Scene({
         position={[8, 14, 6]}
         intensity={1.6}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-left={-12}
         shadow-camera-right={12}
         shadow-camera-top={12}
@@ -236,10 +236,11 @@ export default function Scene({
         <EffectHolder effectId={effectId} pos={pos} currentRef={currentRef} />
         <ContactShadows
           position={[0, 0.02, 0]}
-          opacity={0.25}
-          scale={20}
-          blur={2.4}
+          opacity={0.2}
+          scale={16}
+          blur={1.8}
           far={5}
+          resolution={128}
         />
       </Suspense>
 

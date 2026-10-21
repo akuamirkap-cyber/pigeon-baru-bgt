@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { SKINS, getSkin, DECKS, type DeckId } from "./skins";
+import { getMission, missionDone, missionStatus, snapshotCtx } from "./skinMissions";
+import { getStats } from "./stats";
 import { TRICKS, type TrickKind } from "./tricks";
 import { loadWordHunt, saveWordHunt, type WordHuntData } from "./wordHunt";
 import { evaluate, markAllSeen, unseenCount, getAch } from "./achievements";
@@ -7,6 +9,8 @@ import { evaluate, markAllSeen, unseenCount, getAch } from "./achievements";
 export type Phase = "menu" | "playing" | "crashed" | "gameover";
 export type TurnMode = "old" | "new";
 export type TrackMode = "tokyo" | "haruna" | "shibuya";
+/** MODE DUNIA: "mix" = satu rute 3 kota (SHIBUYA→TOKYO→TOUGE berulang); sisanya satu kota saja. */
+export type WorldMode = "mix" | TrackMode;
 export type SwipeSens = "cepat" | "normal" | "presisi";
 /** jarak geser (px) minimal untuk dianggap pindah jalur, per preset */
 export const SWIPE_PX_BY_PRESET: Record<SwipeSens, number> = { cepat: 8, normal: 15, presisi: 28 };
@@ -85,6 +89,9 @@ interface UIState {
   setTurnMode: (m: TurnMode) => void;
   /** "tokyo" = city streets & parks; "haruna" = Mount Haruna (Gunma Touge) downhill & hairpins; "shibuya" = Shibuya scramble city */
   trackMode: TrackMode;
+  /** MODE DUNIA pilihan pemain (tersimpan). trackMode = kota AKTIF saat ini di lintasan. */
+  worldMode: WorldMode;
+  setWorldMode: (m: WorldMode) => void;
   setTrackMode: (m: TrackMode) => void;
   /** Crossy Road = elevated, readable follow camera; chase = original low action camera. */
   cameraMode: CameraMode;
@@ -138,7 +145,8 @@ interface UIState {
   importDeckAdjustments: (data: Record<string, Partial<DeckAdjustment>>) => boolean;
   deckOverride: DeckId;
   setDeckOverride: (d: DeckId) => void;
-  selectDeck: (d: string) => void;
+  selectDeck: (d: string) => boolean;
+  unlockedDecks: string[];
   trailEffect: string | null;
   setTrailEffect: (effect: string | null) => void;
   cycleTrailEffect: () => void;
@@ -162,10 +170,18 @@ interface UIState {
   setAllTricks: (on: boolean) => void;
   finishRun: (score: number, bread: number, cause: string) => void;
   toggleMute: () => void;
-  selectSkin: (id: string) => void;
+  /** Sakelar musik BGM — default SENYAP (permintaan HP irit & tenang); nyalakan via tombol 🎵 di menu. */
+  musicOn: boolean;
+  toggleMusic: () => void;
+  /** Stats FPS live — ditulis PerfTracker di dalam canvas 2x per detik, tampil di chip kiri bawah. */
+  fps: number;
+  setFps: (fps: number) => void;
+  selectSkin: (id: string) => boolean;
   setPreview: (id: string) => void;
   cycleSkin: (dir: 1 | -1) => void;
   unlockSkin: (id: string) => boolean;
+  /** Buka otomatis semua skin/papan yang misinya sudah tercapai. Mengembalikan jumlah item baru. */
+  autoOpenMissions: () => number;
   wordHunt: WordHuntData;
   showMysteryBox: boolean;
   setShowMysteryBox: (show: boolean) => void;
@@ -197,11 +213,24 @@ function save(key: string, value: unknown) {
   }
 }
 
-const defaultFree = SKINS.filter((s) => s.cost === 0).map((s) => s.id);
+/**
+ * Kulit yang terbuka sejak awal: gratis (cost 0) DAN tidak punya misi syarat buka.
+ * Skin dengan misi (lihat skinMissions.ts) harus dibuka lewat misi lebih dulu.
+ */
+const defaultFree = SKINS.filter((s) => s.cost === 0 && !getMission(s.id)).map((s) => s.id);
 const initialUnlocked = (() => {
   const u = load<string[]>("pigeon-sk8-unlocked", ["classic"]);
   const set = new Set(Array.isArray(u) ? u : ["classic"]);
   for (const f of defaultFree) set.add(f);
+  return Array.from(set);
+})();
+/** Papan skate yang terbuka sejak awal (starter); sisanya lewat misi. */
+const initialUnlockedDecks = (() => {
+  const u = load<string[]>("pigeon-sk8-decks-unlocked", []);
+  const set = new Set<string>(["default", "baguette", "hoverboard"]);
+  for (const id of Array.isArray(u) ? u : []) {
+    if (DECKS.some((d) => d.id === id)) set.add(id);
+  }
   return Array.from(set);
 })();
 /** Default view kamera pilihan user: TINGGI -1.0, SUDUT +1.0, JARAK +2.2 (lebih dekat & sinematik). */
@@ -261,6 +290,9 @@ export const useUI = create<UIState>((set, get) => ({
   wallet: load<number>("pigeon-sk8-wallet", 0) || 0,
   runs: 0,
   muted: load<boolean>("pigeon-sk8-muted", false) === true,
+  /** MUSIK default MATI dulu — baru bunyi kalau pemain menyalakan lewat tombol 🎵 di menu. */
+  musicOn: load<boolean>("pigeon-sk8-music", false) === true,
+  fps: 0,
   soundProfile: load<string>("pigeon-sk8-sound-profile", "after") === "before" ? "before" : "after",
   tutorialSeen: load<boolean>("pigeon-sk8-tutor", false) === true,
   isNewBest: false,
@@ -269,6 +301,7 @@ export const useUI = create<UIState>((set, get) => ({
   skin: initialSkin,
   preview: initialSkin,
   unlocked: initialUnlocked,
+  unlockedDecks: initialUnlockedDecks,
   crashCause: "obstacle",
   dist: 0,
   nos: 0,
@@ -302,10 +335,17 @@ export const useUI = create<UIState>((set, get) => ({
     save("pigeon-sk8-turn", turnMode);
     set({ turnMode });
   },
-  trackMode: (() => {
-    const m = load<string>("pigeon-sk8-trackmode", "shibuya");
-    return (m === "haruna" || m === "tokyo" ? m : "shibuya") as TrackMode;
+  // ONE WORLD: trackMode = KOTA AKTIF di posisi pemain (ditulis Engine tiap 0.18 dtk).
+  // worldMode = SETTING: "mix" (default, 3 kota satu rute) atau satu kota saja.
+  worldMode: (() => {
+    const m = load<string>("pigeon-sk8-worldmode", "mix");
+    return (m === "shibuya" || m === "tokyo" || m === "haruna" ? m : "mix") as WorldMode;
   })(),
+  setWorldMode: (worldMode) => {
+    save("pigeon-sk8-worldmode", worldMode);
+    set({ worldMode });
+  },
+  trackMode: "shibuya" as TrackMode,
   cameraMode: (() => {
     const m = load<string>("pigeon-sk8-camera-v2", "chase");
     return m === "crossy" ? "crossy" : "chase";
@@ -419,7 +459,7 @@ export const useUI = create<UIState>((set, get) => ({
     set({ shibuyaTime });
   },
   setTrackMode: (trackMode) => {
-    save("pigeon-sk8-trackmode", trackMode);
+    // ONE WORLD: tidak dipersist lagi — nilai ini hidup-mati mengikuti zona; engine yang menulis.
     set({ trackMode });
   },
   deckAdjustments: (() => {
@@ -507,7 +547,9 @@ export const useUI = create<UIState>((set, get) => ({
   },
   deckOverride: (() => {
     const d = load<string>("pigeon-sk8-deck", "default");
-    return DECKS.some((k) => k.id === d) ? (d as DeckId) : "default";
+    const valid = DECKS.some((k) => k.id === d) ? (d as DeckId) : "default";
+    // Jangan pakai papan yang belum terbuka (mis. data lama yang sudah di-rolback).
+    return initialUnlockedDecks.includes(valid) ? valid : "default";
   })(),
   setDeckOverride: (deckOverride) => {
     save("pigeon-sk8-deck", deckOverride);
@@ -515,8 +557,26 @@ export const useUI = create<UIState>((set, get) => ({
   },
   selectDeck: (d) => {
     const valid = DECKS.some((k) => k.id === d) ? (d as DeckId) : "default";
+    const s = get();
+    if (!s.unlockedDecks.includes(valid)) {
+      const mission = getMission(valid);
+      if (mission) {
+        const ctx = snapshotCtx(s.best, s.wallet);
+        if (!missionDone(valid, ctx)) return false;
+        if (mission.kind === "price") {
+          const wallet = s.wallet - mission.goal;
+          if (wallet < 0) return false;
+          save("pigeon-sk8-wallet", wallet);
+          set({ wallet });
+        }
+      }
+      const unlockedDecks = [...get().unlockedDecks, valid];
+      save("pigeon-sk8-decks-unlocked", unlockedDecks);
+      set({ unlockedDecks });
+    }
     save("pigeon-sk8-deck", valid);
     set({ deckOverride: valid });
+    return true;
   },
   trailEffect: (() => {
     const raw = load<string | null>("pigeon-sk8-trail-effect", "rainbow");
@@ -648,12 +708,22 @@ export const useUI = create<UIState>((set, get) => ({
     save("pigeon-sk8-best", best);
     save("pigeon-sk8-wallet", wallet);
     set({ score, bread, best, wallet, isNewBest, phase: "gameover", runs: s.runs + 1, crashCause: cause, newAch: [] });
+    // Setelah run selesai: skin/papan yang misinya baru tercapai langsung terbuka sendiri.
+    get().autoOpenMissions();
     get().recheckAchievements();
   },
   toggleMute: () => {
     const muted = !get().muted;
     save("pigeon-sk8-muted", muted);
     set({ muted });
+  },
+  toggleMusic: () => {
+    const musicOn = !get().musicOn;
+    save("pigeon-sk8-music", musicOn);
+    set({ musicOn });
+  },
+  setFps: (fps) => {
+    if (get().fps !== fps) set({ fps }); // guard: hindari render ulang UI tiap frame
   },
   toggleSoundProfile: () => {
     const next = get().soundProfile === "after" ? "before" : "after";
@@ -673,13 +743,28 @@ export const useUI = create<UIState>((set, get) => ({
       rawId === "pigeon"
         ? "classic"
         : SKINS.find((s) => s.id === rawId || s.buddyId === rawId)?.id ?? rawId;
-    const unlockedNow = get().unlocked;
-    const nextUnlocked = unlockedNow.includes(resolved) ? unlockedNow : [...unlockedNow, resolved];
-    if (nextUnlocked !== unlockedNow) {
+    const s = get();
+    if (!s.unlocked.includes(resolved)) {
+      // Skin dengan misi hanya bisa dibuka kalau syaratnya sudah tercapai.
+      const mission = getMission(resolved);
+      if (mission) {
+        const ctx = snapshotCtx(s.best, s.wallet);
+        if (!missionDone(resolved, ctx)) return false;
+        if (mission.kind === "price") {
+          const wallet = s.wallet - mission.goal;
+          if (wallet < 0) return false;
+          save("pigeon-sk8-wallet", wallet);
+          set({ wallet });
+        }
+      }
+      const nextUnlocked = [...get().unlocked, resolved];
       save("pigeon-sk8-unlocked", nextUnlocked);
+      set({ unlocked: nextUnlocked });
     }
     save("pigeon-sk8-skin", resolved);
-    set({ skin: resolved, preview: resolved, unlocked: nextUnlocked });
+    set({ skin: resolved, preview: resolved });
+    get().recheckAchievements();
+    return true;
   },
   setPreview: (id) => set({ preview: id }),
   /** Character carousel: browse every skin; unlocked ones are equipped immediately. */
@@ -696,15 +781,77 @@ export const useUI = create<UIState>((set, get) => ({
     const s = get();
     const skin = getSkin(id);
     if (s.unlocked.includes(id)) return true;
-    if (s.wallet < skin.cost) return false;
+    const mission = getMission(skin.id);
+    // Misi non-harga harus sudah selesai dulu; misi harga memakai targetnya sebagai harga.
+    const price = mission?.kind === "price" ? mission.goal : skin.cost;
+    if (mission && mission.kind !== "price" && !missionDone(skin.id, snapshotCtx(s.best, s.wallet))) return false;
+    if (s.wallet < price) return false;
     const unlocked = [...s.unlocked, id];
-    const wallet = s.wallet - skin.cost;
+    const wallet = s.wallet - price;
     save("pigeon-sk8-unlocked", unlocked);
     save("pigeon-sk8-wallet", wallet);
     save("pigeon-sk8-skin", id);
     set({ unlocked, wallet, skin: id, preview: id });
     get().recheckAchievements();
     return true;
+  },
+  /**
+   * BUKA OTOMATIS: semua skin karakter & papan skate yang syarat misinya sudah
+   * tercapai langsung terbuka sendiri (dipanggil saat load game, setelah tiap run
+   * selesai, dan saat dompet roti berubah). Skin bertipe "tukar roti" otomatis
+   * dibayar dari dompet. Mengembalikan jumlah item yang baru terbuka.
+   */
+  autoOpenMissions: () => {
+    const s = get();
+    const stats = getStats();
+    let wallet = s.wallet;
+    let unlocked = s.unlocked;
+    let unlockedDecks = s.unlockedDecks;
+    let changedSkins = false;
+    let changedDecks = false;
+    let opened = 0;
+    for (const skin of SKINS) {
+      if (unlocked.includes(skin.id)) continue;
+      const { mission, status } = missionStatus(skin.id, { best: s.best, wallet, stats });
+      if (!mission) {
+        unlocked = [...unlocked, skin.id];
+        changedSkins = true;
+        opened += 1;
+        continue;
+      }
+      if (!status?.done) continue;
+      if (mission.kind === "price") {
+        if (wallet < mission.goal) continue;
+        wallet -= mission.goal;
+      }
+      unlocked = [...unlocked, skin.id];
+      changedSkins = true;
+      opened += 1;
+    }
+    for (const deck of DECKS) {
+      if (unlockedDecks.includes(deck.id)) continue;
+      const { mission, status } = missionStatus(deck.id, { best: s.best, wallet, stats });
+      if (!mission) {
+        unlockedDecks = [...unlockedDecks, deck.id];
+        changedDecks = true;
+        continue;
+      }
+      if (!status?.done) continue;
+      if (mission.kind === "price") {
+        if (wallet < mission.goal) continue;
+        wallet -= mission.goal;
+      }
+      unlockedDecks = [...unlockedDecks, deck.id];
+      changedDecks = true;
+      opened += 1;
+    }
+    if (!changedSkins && !changedDecks) return 0;
+    if (changedSkins) save("pigeon-sk8-unlocked", unlocked);
+    if (changedDecks) save("pigeon-sk8-decks-unlocked", unlockedDecks);
+    if (wallet !== s.wallet) save("pigeon-sk8-wallet", wallet);
+    set({ unlocked, unlockedDecks, wallet });
+    if (opened > 0) get().addPopup(`🎉 ${opened} SKIN/PAPAN TERBUKA OTOMATIS!`, "#2ecc71");
+    return opened;
   },
   wordHunt: loadWordHunt(),
   showMysteryBox: false,
@@ -751,6 +898,7 @@ export const useUI = create<UIState>((set, get) => ({
       wallet: newWallet,
       wordHunt: updated,
     });
+    get().autoOpenMissions(); // roti mendadak banyak → skin "tukar roti" boleh langsung terbeli
     get().recheckAchievements(); // achievement 🎁 Pemburu Kata & wallet total
     return {
       bread: breadReward,
@@ -778,9 +926,17 @@ export const useUI = create<UIState>((set, get) => ({
     const wallet = s.wallet + bonus;
     save("pigeon-sk8-wallet", wallet);
     set({ wallet, newAch: [...s.newAch, ...newly], unseenAch: unseenCount() });
+    // Hadiah achievement menambah dompet → skin bertipe "tukar roti" boleh langsung terbeli.
+    get().autoOpenMissions();
   },
   markAchSeen: () => {
     markAllSeen();
     set({ unseenAch: 0, newAch: [] });
   },
 }));
+
+/**
+ * Saat game dimuat, langsung buka semua skin/papan yang syaratnya sudah tercapai
+ * (mis. progres pemain lama yang terkumpul sebelum fitur auto-buka ini ada).
+ */
+useUI.getState().autoOpenMissions();

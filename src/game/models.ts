@@ -3,6 +3,7 @@ import { bustGeometryCache } from "./voxel";
 import {
   COASTER_VARIANT,
   RAIL_THICK,
+  RAIL_TOP,
   WAVE_VARIANT,
   railGrindHeight,
   railLatOffset,
@@ -114,8 +115,8 @@ function rawCarParts(variant: number): Part[] {
       // Kap depan putih & bagasi belakang putih (panda police livery)
       { x: 1.05, y: 0.72, z: 0, w: 1.15, h: 0.24, d: 1.52, color: "#f8fafd" },
       { x: -1.25, y: 0.72, z: 0, w: 0.7, h: 0.24, d: 1.52, color: "#f8fafd" },
-      // Kabin atas putih
-      { x: -0.15, y: 1.22, z: 0, w: 1.7, h: 0.55, d: 1.4, color: "#f8fafd" },
+      // Kabin turun menembus envelope bodi agar sambungan bodi-atap benar-benar rapat.
+      { x: -0.15, y: 1.19, z: 0, w: 1.7, h: 0.64, d: 1.4, color: "#f8fafd" },
       // Kaca mobil
       { x: 0.72, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
       { x: -1.02, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
@@ -149,7 +150,8 @@ function rawCarParts(variant: number): Part[] {
     const taxiPaint = "#f4c430"; // Tokyo Yellow Cab / Yellow Taxi
     return [
       { x: 0, y: 0.6, z: 0, w: 3.2, h: 0.7, d: 1.6, color: taxiPaint },
-      { x: -0.15, y: 1.22, z: 0, w: 1.7, h: 0.55, d: 1.4, color: taxiPaint },
+      // Overlap the lower body by 0.08 units so the cabin cannot read as floating.
+      { x: -0.15, y: 1.19, z: 0, w: 1.7, h: 0.64, d: 1.4, color: taxiPaint },
       { x: 0.72, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
       { x: -1.02, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
       { x: -0.15, y: 1.22, z: 0.72, w: 1.3, h: 0.36, d: 0.06, color: glass },
@@ -251,7 +253,8 @@ function rawCarParts(variant: number): Part[] {
   const color = CAR_COLORS[variant % CAR_COLORS.length];
   return [
     { x: 0, y: 0.6, z: 0, w: 3.2, h: 0.7, d: 1.6, color },
-    { x: -0.15, y: 1.22, z: 0, w: 1.7, h: 0.55, d: 1.4, color },
+    // Drop the cabin shell into the body by 0.08 units; its roof stays at 1.51.
+    { x: -0.15, y: 1.19, z: 0, w: 1.7, h: 0.64, d: 1.4, color },
     { x: 0.72, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
     { x: -1.02, y: 1.22, z: 0, w: 0.08, h: 0.4, d: 1.2, color: glass },
     { x: -0.15, y: 1.22, z: 0.72, w: 1.3, h: 0.36, d: 0.06, color: glass },
@@ -297,7 +300,7 @@ export function motorcycleParts(variant: number): Part[] {
   const riderJacket = RIDER_JACKETS[variant % RIDER_JACKETS.length];
   const pants = RIDER_PANTS[variant % RIDER_PANTS.length];
   const boots = "#1f2430";
-  const helmet = HELMET_COLORS[variant % HELMET_COLORS.length];
+  const helmet = Math.abs(variant) % 2 === 0 ? "#f4f4f4" : "#20242c"; // white/black shells; the visor remains blue
   // -0.04: tinggi roda diturunkan sedikit supaya ban benar-benar menapak aspal (y = 0)
   const DROP = -0.04;
   const parts: Part[] = [
@@ -357,21 +360,38 @@ export function motorcycleParts(variant: number): Part[] {
     // tas punggung kecil (menempel punggung yang tegak)
     { x: -0.52, y: 1.06, z: 0, w: 0.2, h: 0.34, d: 0.34, color: "#3f434c" },
     { x: -0.61, y: 1.1, z: 0, w: 0.06, h: 0.16, d: 0.24, color: "#2b2f38" },
-    // ---- helm bulat dengan kaca depan (visor), tepat di atas leher yang tegak ----
-    { x: -0.29, y: 1.34, z: 0, w: 0.15, h: 0.12, d: 0.15, color: "#e0b48f" }, // leher
-    { x: -0.28, y: 1.44, z: 0, w: 0.3, h: 0.17, d: 0.32, color: helmet }, // tempurung bawah
-    { x: -0.28, y: 1.555, z: 0, w: 0.25, h: 0.09, d: 0.28, color: helmet }, // tempurung atas (membulat)
-    { x: -0.28, y: 1.62, z: 0, w: 0.17, h: 0.045, d: 0.2, color: helmet }, // puncak helm
-    { x: -0.28, y: 1.36, z: 0, w: 0.32, h: 0.08, d: 0.34, color: helmet }, // dasar helm menutup tengkuk
-    { x: -0.28, y: 1.52, z: 0.175, w: 0.24, h: 0.16, d: 0.05, color: helmet }, // pelipis kiri
-    { x: -0.28, y: 1.52, z: -0.175, w: 0.24, h: 0.16, d: 0.05, color: helmet },
-    { x: -0.12, y: 1.47, z: 0, w: 0.1, h: 0.13, d: 0.29, color: "#20242c" }, // kaca helm (gelap)
-    { x: -0.13, y: 1.55, z: 0, w: 0.13, h: 0.05, d: 0.32, color: helmet }, // bibir atas kaca
-    { x: -0.14, y: 1.375, z: 0, w: 0.2, h: 0.09, d: 0.28, color: helmet }, // dagu (chin bar)
-    { x: -0.28, y: 1.6, z: 0, w: 0.22, h: 0.06, d: 0.33, color: paint }, // strip senada motor
-    { x: -0.45, y: 1.46, z: 0, w: 0.1, h: 0.12, d: 0.22, color: paint }, // spoiler belakang
+    // leher tetap ukuran normal; hanya tempurung + visor helm yang dibesarkan.
+    { x: -0.29, y: 1.34, z: 0, w: 0.15, h: 0.12, d: 0.15, color: "#e0b48f" },
   ];
-  return parts.map((p) => ({ ...p, y: p.y + DROP }));
+  const helmetParts: Part[] = [
+    // Open-face shell: leave a real window for the rider's face behind the blue visor.
+    { x: -0.30, y: 1.56, z: 0, w: 0.26, h: 0.09, d: 0.32, color: helmet }, // crown brow
+    { x: -0.30, y: 1.635, z: 0, w: 0.18, h: 0.05, d: 0.24, color: helmet }, // rounded crown
+    { x: -0.43, y: 1.49, z: 0, w: 0.16, h: 0.2, d: 0.28, color: helmet }, // back shell
+    { x: -0.22, y: 1.50, z: 0.17, w: 0.18, h: 0.14, d: 0.07, color: helmet }, // left temple
+    { x: -0.22, y: 1.50, z: -0.17, w: 0.18, h: 0.14, d: 0.07, color: helmet }, // right temple
+    { x: -0.17, y: 1.47, z: 0, w: 0.08, h: 0.08, d: 0.18, color: "#e8b58f" }, // visible face
+    { x: -0.12, y: 1.465, z: 0.055, w: 0.02, h: 0.018, d: 0.025, color: "#202b3a" }, // eye
+    { x: -0.12, y: 1.465, z: -0.055, w: 0.02, h: 0.018, d: 0.025, color: "#202b3a" }, // eye
+    { x: -0.11, y: 1.425, z: 0, w: 0.022, h: 0.012, d: 0.035, color: "#9d5e50" }, // mouth
+    { x: -0.12, y: 1.47, z: 0, w: 0.1, h: 0.13, d: 0.29, color: "#69c9ff", opacity: 0.5 }, // lightly tinted visor
+    { x: -0.13, y: 1.55, z: 0, w: 0.13, h: 0.05, d: 0.32, color: helmet }, // brow lip
+    { x: -0.14, y: 1.375, z: 0, w: 0.2, h: 0.09, d: 0.28, color: helmet }, // chin bar below the face
+    { x: -0.28, y: 1.6, z: 0, w: 0.22, h: 0.06, d: 0.33, color: helmet }, // matching shell stripe
+    { x: -0.45, y: 1.46, z: 0, w: 0.1, h: 0.12, d: 0.22, color: helmet }, // rear shell spoiler
+  ];
+  const helmetScale = 1.6;
+  const helmetPivot = { x: -0.28, y: 1.33, z: 0 };
+  const enlargedHelmet = helmetParts.map((part) => ({
+    ...part,
+    x: helmetPivot.x + (part.x - helmetPivot.x) * helmetScale,
+    y: helmetPivot.y + (part.y - helmetPivot.y) * helmetScale,
+    z: helmetPivot.z + (part.z - helmetPivot.z) * helmetScale,
+    w: part.w * helmetScale,
+    h: part.h * helmetScale,
+    d: part.d * helmetScale,
+  }));
+  return [...parts, ...enlargedHelmet].map((p) => ({ ...p, y: p.y + DROP }));
 }
 
 /** Warna bodi motor, jaket pengendara, dan helm (satu set per varian). */
@@ -379,7 +399,6 @@ export const MOTOR_PAINTS = ["#e63946", "#2ec4b6", "#3d5a80", "#ffd60a", "#c77df
 const RIDER_JACKETS = ["#1f2430", "#3a3d45", "#5c4b3a", "#2b2f38", "#6b3f3f", "#2f4f4f"];
 /** Warna celana pengendara (denim gelap .. krem) supaya tiap varian kelihatan beda. */
 const RIDER_PANTS = ["#2f3440", "#4a4238", "#33415c", "#3d3a44", "#514a3d", "#2a3b3b"];
-const HELMET_COLORS = ["#f1faee", "#ffd60a", "#e63946", "#2ec4b6", "#dfe4ea", "#ff9f1c"];
 
 export function rampParts(): Part[] {
   const parts: Part[] = [];
@@ -418,7 +437,7 @@ export function railParts(length = 7, variant = 0, phase = 0): Part[] {
   const post = "#8d949c";
   const base = "#6e747c";
   const half = length / 2;
-  const topY = 0.55;
+  const topY = RAIL_TOP - RAIL_THICK / 2;
   const extra = variant === 1 ? 0.4 : 0;
   const kinkA = -half + length * 0.4; // end of the high section
   const kinkB = -half + length * 0.6; // start of the low section
@@ -435,8 +454,8 @@ export function railParts(length = 7, variant = 0, phase = 0): Part[] {
     parts.push({ x: 0, y: topY, z: 0, w: length, h: 0.14, d: 0.14, color: steel });
   }
   // end caps
-  parts.push({ x: -half + 0.05, y: topY + (variant === 1 ? extra : 0), z: 0, w: 0.1, h: 0.2, d: 0.2, color: "#b8bec7" });
-  parts.push({ x: half - 0.05, y: topY, z: 0, w: 0.1, h: 0.2, d: 0.2, color: "#b8bec7" });
+  parts.push({ x: -half + 0.05, y: topY + (variant === 1 ? extra : 0), z: 0, w: 0.1, h: RAIL_THICK, d: RAIL_THICK, color: "#b8bec7" });
+  parts.push({ x: half - 0.05, y: topY, z: 0, w: 0.1, h: RAIL_THICK, d: RAIL_THICK, color: "#b8bec7" });
   // posts every ~1.5 units, following the rail height
   const n = Math.max(2, Math.round(length / 1.5) + 1);
   for (let i = 0; i < n; i++) {
@@ -447,7 +466,7 @@ export function railParts(length = 7, variant = 0, phase = 0): Part[] {
     parts.push({ x, y: 0.03, z: 0, w: 0.3, h: 0.06, d: 0.3, color: base });
   }
   // long rails get a couple of yellow safety tape wraps so their length reads from afar
-  if (length >= 12) for (let x = -half + 3; x < half - 1; x += 6) parts.push({ x, y: topY, z: 0, w: 0.3, h: 0.16, d: 0.16, color: "#ffd21f" });
+  if (length >= 12) for (let x = -half + 3; x < half - 1; x += 6) parts.push({ x, y: RAIL_TOP - 0.005, z: 0, w: 0.3, h: 0.02, d: 0.16, color: "#ffd21f" });
   return parts;
 }
 
@@ -510,8 +529,8 @@ function curvedRailParts(length: number, variant: number, phase: number): Part[]
       y: profY(endX),
       z: profZ(endX),
       w: 0.12,
-      h: 0.2,
-      d: 0.2,
+      h: RAIL_THICK,
+      d: variant === COASTER_VARIANT ? 0.2 : RAIL_THICK,
       color: steelDark,
     });
   }
@@ -984,7 +1003,7 @@ export const RAIL_LAT_MIN = -17;
 export const RAIL_LAT_MAX = 15;
 export const ROAD_HALF = 4.05;
 export const GATE_LAT = 4.6;
-export const ARM_LEN = 3.4;
+export const ARM_LEN = 4.5; // opposing booms overlap slightly, leaving no drive-through gap
 export const ARM_PIVOT_H = 1.1;
 export const TRAIN_CAR_LEN = 4.2;
 export const TRAIN_GAP = 0.3;
@@ -992,6 +1011,48 @@ export const TRAIN_W = 2.6;
 
 const YEL = "#ffd21f";
 const BLK = "#15171c";
+
+const SIGN_FONT_3X5: Readonly<Record<string, readonly string[]>> = {
+  A: ["010", "101", "111", "101", "101"],
+  I: ["111", "010", "010", "010", "111"],
+  N: ["101", "111", "111", "111", "101"],
+  O: ["111", "101", "101", "101", "111"],
+  P: ["110", "101", "110", "100", "100"],
+  R: ["110", "101", "110", "101", "101"],
+  S: ["111", "100", "111", "001", "111"],
+  T: ["111", "010", "010", "010", "010"],
+};
+
+/** Small, high-contrast 3×5 pixel lettering for signs built from voxel Parts. */
+function pixelSignTextParts(
+  word: string,
+  { xFace, y, z, cell, color, thickness = 0.02, glow = false }: { xFace: number; y: number; z: number; cell: number; color: string; thickness?: number; glow?: boolean },
+): Part[] {
+  const letters = [...word.toUpperCase()].map((letter) => SIGN_FONT_3X5[letter]);
+  if (letters.some((glyph) => !glyph)) return [];
+  const totalColumns = letters.reduce((sum, glyph, index) => sum + glyph[0].length + (index ? 1 : 0), 0);
+  const parts: Part[] = [];
+  let columnOffset = 0;
+  for (const glyph of letters) {
+    for (let row = 0; row < glyph.length; row++) {
+      for (let column = 0; column < glyph[row].length; column++) {
+        if (glyph[row][column] !== "1") continue;
+        parts.push({
+          x: xFace - thickness / 2,
+          y: y + (glyph.length - 1 - row) * cell - ((glyph.length - 1) * cell) / 2,
+          z: z + (columnOffset + column - (totalColumns - 1) / 2) * cell,
+          w: thickness,
+          h: cell * 0.84,
+          d: cell * 0.84,
+          color,
+          glow,
+        });
+      }
+    }
+    columnOffset += glyph[0].length + 1;
+  }
+  return parts;
+}
 
 /** Rails across the road. Local frame: +x = road direction, +z = lateral (toward camera), origin on the road surface. */
 export function railsParts(): Part[] {
@@ -1116,6 +1177,10 @@ export function gateArmParts(): Part[] {
     const taper = 0.13 - i * 0.006;
     parts.push({ x: 0, y: 0, z, w: taper, h: taper, d: seg + 0.005, color: i % 2 ? BLK : YEL });
   }
+  // Pale reflective panels add a second readable cue without obscuring the hazard stripes.
+  for (const z of [0.62, 1.38, 2.14, 2.9, 3.66]) {
+    parts.push({ x: -0.073, y: 0, z, w: 0.022, h: 0.075, d: 0.15, color: "#fff1c2" });
+  }
   // little red reflector disc near the tip (typical) and a round tip cap
   parts.push({ x: 0, y: 0, z: 0.15 + ARM_LEN - 0.35, w: 0.03, h: 0.22, d: 0.22, color: "#e63946" });
   parts.push({ x: 0, y: 0, z: 0.15 + ARM_LEN + 0.02, w: 0.1, h: 0.1, d: 0.06, color: BLK });
@@ -1126,29 +1191,32 @@ export function gateArmParts(): Part[] {
 }
 
 /**
- * Japanese 踏切あり warning sign: yellow diamond with a black steam-locomotive silhouette, on a grey post.
- * Faces -x (toward the approaching player).
+ * Railway-crossing warning sign: high-contrast yellow diamond, locomotive pictogram, and a TRAIN label.
+ * Its face points toward local -x, like the approaching vehicle.
  */
 export function trainSignParts(): Part[] {
-  const b = BLK;
-  const fx = -0.06; // face plane
+  const fx = -0.06;
   const parts: Part[] = [
     { x: 0, y: 0.06, z: 0, w: 0.34, h: 0.12, d: 0.34, color: "#6b7078" },
     { x: 0, y: 1.2, z: 0, w: 0.09, h: 2.4, d: 0.09, color: "#8d949c" },
-    // diamond plate with black edge
-    { x: 0.02, y: 2.75, z: 0, w: 0.06, h: 1.3, d: 1.3, rx: Math.PI / 4, color: b },
-    { x: 0.0, y: 2.75, z: 0, w: 0.07, h: 1.18, d: 1.18, rx: Math.PI / 4, color: YEL },
-    // ---- locomotive silhouette (side view, facing +z) ----
-    { x: fx, y: 2.62, z: 0.02, w: 0.02, h: 0.26, d: 0.78, color: b }, // boiler/body
-    { x: fx, y: 2.86, z: -0.26, w: 0.02, h: 0.26, d: 0.26, color: b }, // cab
-    { x: fx, y: 2.92, z: 0.22, w: 0.02, h: 0.16, d: 0.1, color: b }, // funnel
-    { x: fx, y: 2.84, z: 0.02, w: 0.02, h: 0.1, d: 0.14, color: b }, // dome
-    { x: fx, y: 2.44, z: 0.02, w: 0.02, h: 0.1, d: 0.9, color: b }, // frame
-    { x: fx, y: 2.36, z: -0.28, w: 0.02, h: 0.14, d: 0.14, color: b }, // wheels
-    { x: fx, y: 2.36, z: -0.04, w: 0.02, h: 0.14, d: 0.14, color: b },
-    { x: fx, y: 2.36, z: 0.2, w: 0.02, h: 0.14, d: 0.14, color: b },
-    { x: fx, y: 2.5, z: 0.44, w: 0.02, h: 0.12, d: 0.08, color: b }, // cowcatcher
+    // Bright yellow diamond with a thick charcoal outline.
+    { x: 0.02, y: 2.75, z: 0, w: 0.06, h: 1.3, d: 1.3, rx: Math.PI / 4, color: BLK },
+    { x: 0.0, y: 2.75, z: 0, w: 0.07, h: 1.16, d: 1.16, rx: Math.PI / 4, color: YEL },
+    // Large, simplified steam locomotive silhouette (side view, facing +z).
+    { x: fx, y: 2.62, z: 0.02, w: 0.02, h: 0.26, d: 0.78, color: BLK }, // boiler/body
+    { x: fx, y: 2.86, z: -0.26, w: 0.02, h: 0.26, d: 0.26, color: BLK }, // cab
+    { x: fx, y: 2.92, z: 0.22, w: 0.02, h: 0.16, d: 0.1, color: BLK }, // funnel
+    { x: fx, y: 2.84, z: 0.02, w: 0.02, h: 0.1, d: 0.14, color: BLK }, // dome
+    { x: fx, y: 2.44, z: 0.02, w: 0.02, h: 0.1, d: 0.9, color: BLK }, // frame
+    { x: fx, y: 2.35, z: -0.28, w: 0.02, h: 0.14, d: 0.14, color: BLK }, // wheels
+    { x: fx, y: 2.35, z: -0.04, w: 0.02, h: 0.14, d: 0.14, color: BLK },
+    { x: fx, y: 2.35, z: 0.2, w: 0.02, h: 0.14, d: 0.14, color: BLK },
+    { x: fx, y: 2.5, z: 0.44, w: 0.02, h: 0.12, d: 0.08, color: BLK }, // cowcatcher
+    // Supplementary plate: a clear label reinforces the train pictogram from a distance.
+    { x: -0.02, y: 1.58, z: 0, w: 0.08, h: 0.34, d: 1.05, color: BLK },
+    { x: -0.067, y: 1.58, z: 0, w: 0.03, h: 0.28, d: 0.99, color: YEL },
   ];
+  parts.push(...pixelSignTextParts("TRAIN", { xFace: -0.082, y: 1.58, z: 0, cell: 0.034, color: BLK }));
   return parts;
 }
 
@@ -1160,20 +1228,17 @@ export function stopPoleParts(): Part[] {
   return parts;
 }
 
-/** Overhead 踏切 nameplate board hung between the two masts' side: small white sign on the mast. */
+/** Symmetric yellow/black crossing icon below the lamps; remains readable from either gate approach. */
 export function crossingNameplateParts(): Part[] {
   return [
-    { x: -0.11, y: 1.75, z: 0, w: 0.04, h: 0.34, d: 0.9, color: "#ffffff" },
-    { x: -0.135, y: 1.75, z: 0, w: 0.01, h: 0.28, d: 0.84, color: "#f6f6f6" },
-    // "踏切" as chunky glyph blocks
-    { x: -0.15, y: 1.75, z: -0.22, w: 0.01, h: 0.18, d: 0.05, color: BLK },
-    { x: -0.15, y: 1.75, z: -0.14, w: 0.01, h: 0.05, d: 0.2, color: BLK },
-    { x: -0.15, y: 1.68, z: -0.14, w: 0.01, h: 0.04, d: 0.2, color: BLK },
-    { x: -0.15, y: 1.82, z: -0.14, w: 0.01, h: 0.04, d: 0.2, color: BLK },
-    { x: -0.15, y: 1.75, z: 0.14, w: 0.01, h: 0.18, d: 0.05, color: BLK },
-    { x: -0.15, y: 1.75, z: 0.24, w: 0.01, h: 0.05, d: 0.16, color: BLK },
-    { x: -0.15, y: 1.67, z: 0.2, w: 0.01, h: 0.04, d: 0.16, color: BLK },
-    { x: -0.15, y: 1.83, z: 0.2, w: 0.01, h: 0.04, d: 0.16, color: BLK },
+    { x: -0.11, y: 1.75, z: 0, w: 0.08, h: 0.68, d: 1.0, color: BLK },
+    { x: -0.16, y: 1.75, z: 0, w: 0.03, h: 0.6, d: 0.92, color: YEL },
+    // Bold crossbuck mark replaces the tiny pseudo-lettering and is legible at game scale.
+    { x: -0.18, y: 1.75, z: 0, w: 0.02, h: 0.075, d: 0.72, rx: Math.PI / 4, color: BLK },
+    { x: -0.18, y: 1.75, z: 0, w: 0.02, h: 0.075, d: 0.72, rx: -Math.PI / 4, color: BLK },
+    // Small red reflectors at both ends tie the plaque to the flashing signal lights.
+    { x: -0.19, y: 1.75, z: -0.36, w: 0.02, h: 0.12, d: 0.12, color: "#e63946" },
+    { x: -0.19, y: 1.75, z: 0.36, w: 0.02, h: 0.12, d: 0.12, color: "#e63946" },
   ];
 }
 
@@ -1742,8 +1807,8 @@ export function rwbParts(colorIdx: number): Part[] {
     { x: 1.02, y: 0.62, z: -0.93, w: 0.72, h: 0.34, d: 0.12, color: paint },
     { x: -1.02, y: 0.62, z: 0.95, w: 0.78, h: 0.38, d: 0.14, color: paint },
     { x: -1.02, y: 0.62, z: -0.95, w: 0.78, h: 0.38, d: 0.14, color: paint },
-    // Kabin bubble coupe mungil + kaca
-    { x: -0.28, y: 1.12, z: 0, w: 1.15, h: 0.5, d: 1.35, color: paint },
+    // Kabin bubble overlap 0.055 dengan bodi utama supaya tidak tampak melayang.
+    { x: -0.28, y: 1.045, z: 0, w: 1.15, h: 0.65, d: 1.35, color: paint },
     { x: 0.28, y: 1.1, z: 0, w: 0.08, h: 0.36, d: 1.15, color: glass },
     { x: -0.88, y: 1.02, z: 0, w: 0.3, h: 0.3, d: 1.2, rx: 0.5, color: glass }, // kaca belakang fastback
     { x: -0.28, y: 1.1, z: 0.68, w: 0.8, h: 0.3, d: 0.05, color: glass },
@@ -1777,8 +1842,8 @@ export function skylineR34Parts(colorIdx: number): Part[] {
     { x: 0, y: 0.55, z: 0, w: 3.2, h: 0.62, d: 1.7, color: paint },
     { x: 0.95, y: 0.88, z: 0, w: 1.15, h: 0.14, d: 1.5, color: paint }, // kap dengan power bulge
     { x: 0.95, y: 0.96, z: 0, w: 0.5, h: 0.06, d: 0.5, color: paint },
-    // Kabin 2-door dengan pilar tebal
-    { x: -0.2, y: 1.16, z: 0, w: 1.5, h: 0.52, d: 1.42, color: paint },
+    // Kabin 2-door turun 0.06 ke dalam bodi, pilar tetap tebal.
+    { x: -0.2, y: 1.11, z: 0, w: 1.5, h: 0.62, d: 1.42, color: paint },
     { x: 0.56, y: 1.14, z: 0, w: 0.1, h: 0.4, d: 1.24, color: glass },
     { x: -0.95, y: 1.12, z: 0, w: 0.14, h: 0.38, d: 1.24, rx: 0.35, color: glass },
     { x: -0.05, y: 1.14, z: 0.72, w: 1.15, h: 0.34, d: 0.05, color: glass },
@@ -1824,8 +1889,8 @@ export function ae86Parts(colorIdx: number): Part[] {
     { x: 0, y: 0.55, z: 0, w: 2.9, h: 0.5, d: 1.6, color: paint },
     { x: 0, y: 0.34, z: 0, w: 2.9, h: 0.18, d: 1.62, color: lower }, // rocker bawah
     { x: 0.85, y: 0.84, z: 0, w: 1.0, h: 0.14, d: 1.4, color: hood }, // kap (HITAM pada panda!)
-    // Kabin hatchback: kabin + atap rata + pilar C miring khas liftback
-    { x: -0.1, y: 1.1, z: 0, w: 1.3, h: 0.44, d: 1.34, color: paint },
+    // Kabin hatchback overlap 0.06 dengan bodi; atap tetap pada tinggi aslinya.
+    { x: -0.1, y: 1.03, z: 0, w: 1.3, h: 0.58, d: 1.34, color: paint },
     { x: 0.55, y: 1.08, z: 0, w: 0.1, h: 0.34, d: 1.16, color: glass },
     { x: -0.75, y: 0.98, z: 0, w: 0.28, h: 0.34, d: 1.16, rx: 0.45, color: glass }, // jendela hatch miring
     { x: -0.1, y: 1.08, z: 0.68, w: 1.0, h: 0.28, d: 0.05, color: glass },
@@ -2085,102 +2150,101 @@ export const CROSS_STREET_LEN = 38;
 const CROSS_STREET_MID = 4 + CROSS_STREET_LEN / 2;
 export const HOOD_JUMP_CLEAR_H = 0.88;
 
-/** Complete 4-way asphalt cross-street with raised lateral roadbeds, sidewalks, corner curb cuts, tactile blocks, and 4-way zebra crossings. */
-export function intersectionRoadParts(W: number = INTERSECTION_W): Part[] {
-  const asphalt = "#424752";
-  const asphaltDark = "#383c44";
+/** Continuous, level four-way asphalt with aligned sidewalks, curb returns, tactile pads, and four zebra arms. */
+export function intersectionRoadParts(W: number = INTERSECTION_W, asphaltColor = "#555a66"): Part[] {
+  const asphalt = asphaltColor;
   const white = "#f8fafc";
   const yellow = "#f59e0b";
   const curb = "#b8b4aa";
-  const curbDark = "#9e9a90";
   const sidewalk = "#dcd7cb";
-  const signBlue = "#1d4ed8";
-  const signGreen = "#059669";
-  const metal = "#4b5563";
   const parts: Part[] = [];
+  // One shared marking elevation keeps stop bars, arrows, and all zebra arms flush
+  // with the level asphalt (rather than floating above the side-street surface).
+  const markingY = 0.04;
 
   const halfW = W / 2;
 
-  // 1. Center Junction Asphalt (inside the main street, y = 0.016 to prevent z-fighting with main road y = 0)
-  parts.push({ x: 0, y: 0.016, z: 0, w: W, h: 0.024, d: 8.0, color: asphalt });
-  // Subtle tire wear grooves across the junction
-  parts.push({ x: -halfW * 0.43, y: 0.018, z: 0, w: 1.4, h: 0.025, d: 7.8, color: asphaltDark });
-  parts.push({ x: halfW * 0.43, y: 0.018, z: 0, w: 1.4, h: 0.025, d: 7.8, color: asphaltDark });
+  // One continuous asphalt ribbon forms both branches and the junction. A single
+  // surface avoids visible seams where the old center patch met the side-street slabs.
+  const crossStreetHalfLen = CROSS_STREET_MID + CROSS_STREET_LEN / 2;
+  parts.push({ x: 0, y: 0.015, z: 0, w: W, h: 0.03, d: crossStreetHalfLen * 2, color: asphalt });
+  // Hidden sub-base stays below grade; it supports the road without a raised platform edge.
+  parts.push({ x: 0, y: -0.16, z: 0, w: W + 0.1, h: 0.28, d: crossStreetHalfLen * 2, color: "#79847c" });
 
-  // 2. Lateral Cross-Streets (Left: z = -4.0 to -30, Right: z = +4.0 to +30)
-  // The cross street must sit flush with the main asphalt. The old raised deck
-  // made a floating grey platform visible from the player's right side.
-  for (const sz of [-CROSS_STREET_MID, CROSS_STREET_MID]) {
-    // Roadbed asphalt: top at roughly y = 0.03, matching the main road.
-    parts.push({ x: 0, y: 0.015, z: sz, w: W, h: 0.03, d: CROSS_STREET_LEN, color: asphalt });
-    // Hidden sub-base: below the ground plane, so no concrete wall is visible
-    // along the near/far edge of the crossing.
-    parts.push({ x: 0, y: -0.16, z: sz, w: W + 0.1, h: 0.28, d: CROSS_STREET_LEN, color: "#79847c" });
-  }
-
-  // Flat join to the main street. No raised two-step ramp: the cross street
-  // now meets the road cleanly without a visible wedge or broken-looking slab.
-  for (const dir of [-1, 1]) {
-    parts.push({ x: 0, y: 0.018, z: dir * 3.9, w: W, h: 0.03, d: 0.3, color: asphalt });
-  }
-
-  // 3. Sidewalks along both sides of the Cross-Street (x = -halfW - 0.7 and x = +halfW + 0.7)
+  // 2. Sidewalks along both sides of the Cross-Street (x = -halfW - 0.7 and x = +halfW + 0.7)
   for (const side of [-1, 1]) {
     const curbX = side * (halfW + 0.18);
     const walkX = side * (halfW + 1.46);
     for (const dir of [-1, 1]) {
       const walkZ = dir * CROSS_STREET_MID;
-      // Curb stone along the side street
-      parts.push({ x: curbX, y: 0.18, z: walkZ, w: 0.36, h: 0.14, d: CROSS_STREET_LEN - 0.5, color: curb });
-      // Sidewalk paving tiles along the side street — lebar 2.2 m, muat 2 orang berdampingan
-      parts.push({ x: walkX, y: 0.165, z: walkZ, w: 2.2, h: 0.11, d: CROSS_STREET_LEN - 0.5, color: sidewalk });
+      // Curb and sidewalk share a flush 22 cm walking surface; the curb starts at road grade.
+      parts.push({ x: curbX, y: 0.125, z: walkZ, w: 0.36, h: 0.19, d: CROSS_STREET_LEN - 0.5, color: curb });
+      // Fill below the thin paving cap so the raised sidewalk does not appear to float.
+      parts.push({ x: walkX, y: 0.095, z: walkZ, w: 2.2, h: 0.19, d: CROSS_STREET_LEN - 0.5, color: curb });
+      parts.push({ x: walkX, y: 0.205, z: walkZ, w: 2.2, h: 0.03, d: CROSS_STREET_LEN - 0.5, color: sidewalk });
     }
   }
 
-  // 4. 4-Corner Curved Curbs & Pedestrian Ramps
+  // 2b. Apron penutup sudut (pas di belakang box trotoar cross-street): ground memotong paving
+  //     jalan sampai halfW+2.62 supaya paving TIDAK lagi menusuk keluar dari bawah box (bug
+  //     "sidewalk putus-putus/blok nongol"). Celah lat 3.78–4.22 antara tepi box dan aspal
+  //     avenue ditutup apron setinggi permukaan box (.22) → sudut junction rapat, tanpa slot kosong.
+  for (const side of [-1, 1]) {
+    for (const dir of [-1, 1]) {
+      parts.push({ x: side * (halfW + 1.49), y: 0.11, z: dir * 4.0, w: 2.26, h: 0.22, d: 0.44, color: curb });
+    }
+  }
+
+  // 3. Four compact curb returns with flat tactile pads on the sidewalk side.
+  // Avoid stacked curb cubes protruding into the zebra and make the yellow pads sit flush.
   for (const sx of [-halfW, halfW]) {
     for (const sz of [-4.2, 4.2]) {
-      // Corner curb block
-      parts.push({ x: sx, y: 0.12, z: sz, w: 0.75, h: 0.22, d: 0.75, color: curb });
-      parts.push({ x: sx + Math.sign(sx) * 0.3, y: 0.14, z: sz + Math.sign(sz) * 0.3, w: 0.6, h: 0.18, d: 0.6, color: curbDark });
-      // Yellow braille tactile tiles (Tenji blocks) at the 4 corner pedestrian entry ramps
-      parts.push({ x: sx - Math.sign(sx) * 0.35, y: 0.155, z: sz - Math.sign(sz) * 0.35, w: 0.6, h: 0.03, d: 0.6, color: yellow });
+      parts.push({ x: sx, y: 0.125, z: sz, w: 0.72, h: 0.19, d: 0.72, color: curb });
+      parts.push({
+        x: sx + Math.sign(sx) * 0.68,
+        y: 0.232,
+        z: sz + Math.sign(sz) * 0.68,
+        w: 0.54,
+        h: 0.02,
+        d: 0.54,
+        color: yellow,
+      });
     }
   }
 
-  // 5. White Stop Lines sebelum zebra (hanya di lajur mendekat — kiri ala Jepang —
+  // 4. White Stop Lines sebelum zebra (hanya di lajur mendekat — kiri ala Jepang —
   //    bukan membentang penuh menyeberangi garis kuning tengah)
   for (const dir of [-1, 1]) {
     const stopZ = dir * 7.0;
     // Jepang = kiri-jalan: mobil yang mendekat dari +z melaju ke -z di lajur x<0, dan sebaliknya
     const laneCx = -dir * (halfW / 2 + 0.1);
-    parts.push({ x: laneCx, y: 0.18, z: stopZ, w: halfW - 0.8, h: 0.022, d: 0.45, color: white });
+    parts.push({ x: laneCx, y: markingY, z: stopZ, w: halfW - 0.8, h: 0.022, d: 0.45, color: white });
   }
 
-  // 6. Double Solid Yellow Center Dividing Lines on the Cross-Street
+  // 5. Double Solid Yellow Center Dividing Lines on the Cross-Street
   //    (mulai SETELAH zebra cross selesai di |z|=6.9 → marka tidak saling tumpuk)
   for (const dir of [-1, 1]) {
     for (let z = 6.95; z <= CROSS_STREET_MID + CROSS_STREET_LEN / 2 - 1; z += 1.8) {
       const cz = dir * z;
-      parts.push({ x: -0.15, y: 0.18, z: cz, w: 0.14, h: 0.022, d: 1.3, color: yellow });
-      parts.push({ x: 0.15, y: 0.18, z: cz, w: 0.14, h: 0.022, d: 1.3, color: yellow });
+      parts.push({ x: -0.15, y: markingY, z: cz, w: 0.14, h: 0.022, d: 1.3, color: yellow });
+      parts.push({ x: 0.15, y: markingY, z: cz, w: 0.14, h: 0.022, d: 1.3, color: yellow });
     }
     // Solid white shoulder edge lines — juga mulai rapi setelah zebra
     for (const sx of [-halfW + 0.5, halfW - 0.5]) {
       const cz = dir * (6.95 + (CROSS_STREET_MID + CROSS_STREET_LEN / 2 - 6.95) / 2);
-      parts.push({ x: sx, y: 0.178, z: cz, w: 0.16, h: 0.022, d: CROSS_STREET_MID + CROSS_STREET_LEN / 2 - 6.95, color: white });
+      parts.push({ x: sx, y: markingY, z: cz, w: 0.16, h: 0.022, d: CROSS_STREET_MID + CROSS_STREET_LEN / 2 - 6.95, color: white });
     }
     // Painted directional arrows on the cross-street lanes
     const arrowZ = dir * 11;
     const arrowXs = halfW > 5 ? [-4.3, -2.0, 2.0, 4.3] : [-2.0, 2.0];
     for (const ax of arrowXs) {
-      parts.push({ x: ax, y: 0.18, z: arrowZ, w: 0.22, h: 0.022, d: 1.6, color: white });
-      parts.push({ x: ax - 0.25, y: 0.18, z: arrowZ + dir * 0.4, w: 0.2, h: 0.022, d: 0.5, color: white });
-      parts.push({ x: ax + 0.25, y: 0.18, z: arrowZ + dir * 0.4, w: 0.2, h: 0.022, d: 0.5, color: white });
+      parts.push({ x: ax, y: markingY, z: arrowZ, w: 0.22, h: 0.022, d: 1.6, color: white });
+      parts.push({ x: ax - 0.25, y: markingY, z: arrowZ + dir * 0.4, w: 0.2, h: 0.022, d: 0.5, color: white });
+      parts.push({ x: ax + 0.25, y: markingY, z: arrowZ + dir * 0.4, w: 0.2, h: 0.022, d: 0.5, color: white });
     }
   }
 
-  // 7. ZEBRA CROSS 4 ARAH — desain benar ala Jepang, rapat & presisi:
+  // 6. ZEBRA CROSS 4 ARAH — desain benar ala Jepang, rapat & presisi:
   // pita selebar ~2.2 m; tiap garis MEMANJANG searah laju mobil dan berulang
   // searah langkah pejalan kaki. Ujung tiap pita PAS di tepi plat/aspal — tidak ada
   // setrip yang mencuat melewati kurb atau melayang di luar badan jalan.
@@ -2188,7 +2252,7 @@ export function intersectionRoadParts(W: number = INTERSECTION_W): Part[] {
   //    Pita mulai tepat di tepi plat junction (|x| = halfW) dan merentang 2.2 m ke luar.
   for (const sx of [-(halfW + 1.1), halfW + 1.1]) {
     for (let zi = -4; zi <= 4; zi++) {
-      parts.push({ x: sx, y: 0.028, z: zi * 0.82, w: 2.2, h: 0.022, d: 0.46, color: white });
+      parts.push({ x: sx, y: markingY, z: zi * 0.82, w: 2.2, h: 0.022, d: 0.46, color: white });
     }
   }
   // B. Menyeberangi cross-street kiri/kanan (pejalan jalan sepanjang x; garis memanjang di z)
@@ -2197,47 +2261,13 @@ export function intersectionRoadParts(W: number = INTERSECTION_W): Part[] {
     const nx = Math.floor((W - 1.6) / 0.82);
     for (let xi = 0; xi < nx; xi++) {
       const x = -((nx - 1) * 0.82) / 2 + xi * 0.82;
-      parts.push({ x, y: 0.182, z: sz, w: 0.46, h: 0.022, d: 2.1, color: white });
+      parts.push({ x, y: markingY, z: sz, w: 0.46, h: 0.022, d: 2.1, color: white });
     }
   }
 
-  // 8. Overhead Highway / Cross-Street Directional Gantry Sign
-  // Kolom baja berdiri di TROTOAR main street sisi pendekat (bukan di tengah zebra!):
-  // gantryX menempatkan seluruh gantry SEBELUM zebra A — persis gantry jalan tol asli
-  // yang menyambut pengemudi sebelum masuk perempatan.
-  const gantryX = -(halfW + 2.6);
-  for (const gz of [-4.8, 4.8]) {
-    parts.push({ x: gantryX, y: 2.8, z: gz, w: 0.25, h: 5.6, d: 0.25, color: metal });
-    parts.push({ x: gantryX, y: 0.15, z: gz, w: 0.5, h: 0.3, d: 0.5, color: curb });
-  }
-  // Overhead truss beam spanning across at y = 5.2
-  parts.push({ x: gantryX, y: 5.3, z: 0, w: 0.28, h: 0.35, d: 9.8, color: metal });
-  // Japanese Overhead Directional Signs (menghadap pemain yang datang dari -x):
-  // Sign 1: Blue sign "渋谷 SHIBUYA ➔"
-  parts.push({ x: gantryX - 0.16, y: 4.8, z: -1.8, w: 0.06, h: 1.1, d: 2.4, color: signBlue });
-  parts.push({ x: gantryX - 0.20, y: 4.8, z: -1.8, w: 0.02, h: 0.85, d: 2.15, color: "#ffffff" });
-  parts.push({ x: gantryX - 0.22, y: 4.8, z: -1.8, w: 0.02, h: 0.7, d: 1.95, color: signBlue });
-  // Route 246 badge
-  parts.push({ x: gantryX - 0.24, y: 5.0, z: -2.3, w: 0.02, h: 0.4, d: 0.45, color: "#ffffff" });
-  parts.push({ x: gantryX - 0.25, y: 5.0, z: -2.3, w: 0.02, h: 0.32, d: 0.36, color: signBlue });
-  // Arrow on sign
-  parts.push({ x: gantryX - 0.24, y: 4.8, z: -1.1, w: 0.02, h: 0.2, d: 0.45, color: "#ffffff" });
+  // 7. The overhead gantry is intentionally omitted: its blank, close-up panels
+  // cluttered the compact junction. Roadside warning signs and traffic lights remain.
 
-  // Sign 2: Green sign "CROSSROAD / 交差点"
-  parts.push({ x: gantryX - 0.16, y: 4.8, z: 1.8, w: 0.06, h: 1.1, d: 2.4, color: signGreen });
-  parts.push({ x: gantryX - 0.20, y: 4.8, z: 1.8, w: 0.02, h: 0.85, d: 2.15, color: "#ffffff" });
-  parts.push({ x: gantryX - 0.22, y: 4.8, z: 1.8, w: 0.02, h: 0.7, d: 1.95, color: signGreen });
-  // Street name glyph blocks on green sign
-  parts.push({ x: gantryX - 0.24, y: 4.85, z: 1.8, w: 0.02, h: 0.3, d: 1.5, color: "#ffffff" });
-  parts.push({ x: gantryX - 0.24, y: 4.6, z: 1.8, w: 0.02, h: 0.15, d: 1.2, color: "#ffffff" });
-
-  // 9. Curbside Storm Drain Grates in the road gutters
-  //    (di main street |z| = 3.55 — TEPAT sebelum mulut ramp; tidak terkubur plat cross-street)
-  for (const dx of [-3.5, 3.5]) {
-    for (const dz of [-3.55, 3.55]) {
-      parts.push({ x: dx, y: 0.012, z: dz, w: 0.8, h: 0.015, d: 0.35, color: "#1f2329" });
-    }
-  }
 
   return parts;
 }
@@ -2320,6 +2350,8 @@ export function crossingCarParts(variant: number): Part[] {
   const parts: Part[] = [
     // --- 1. CHASSIS / LOWER BODY ---
     { x: 0, y: 0.42, z: 0, w: 3.25, h: 0.36, d: 1.6, color },
+    // Door/sill shell overlaps chassis, hood, trunk and cabin so no open band remains.
+    { x: -0.22, y: 0.75, z: 0, w: 1.55, h: 0.36, d: 1.6, color: isPolice ? "#f8fafd" : color },
 
     // --- 2. SISI BODY DEPAN / LOW FRONT HOOD ---
     { x: 1.05, y: 0.68, z: 0, w: 1.15, h: 0.22, d: 1.5, color: isPolice ? "#f8fafd" : color },
@@ -2566,7 +2598,23 @@ export function sakuraParts(variant: number, scale = 1): Part[] {
     const dx = Math.cos(a) * len;
     const dz = Math.sin(a) * len;
     const up = (0.5 + rnd() * 0.4) * S;
-    parts.push({ x: lean * 0.6 * S + dx * 0.5, y: 2.0 * S + up * 0.5, z: dz * 0.5, w: 0.16 * S, h: Math.hypot(len, up) + 0.1 * S, d: 0.16 * S, rz: Math.atan2(dx, up), rx: -Math.atan2(dz, up) * 0.9, color: bark2 });
+    const branchLength = Math.hypot(len, up);
+    // A vertical box points along local +y. Use the exact XYZ angles for the
+    // trunk-to-blossom vector so branches enter their flower clusters instead of
+    // angling away and sticking out of the canopy.
+    const branchRz = -Math.atan2(dx, up);
+    const branchRx = Math.atan2(dz, Math.hypot(dx, up));
+    parts.push({
+      x: lean * 0.6 * S + dx * 0.5,
+      y: 2.0 * S + up * 0.5,
+      z: dz * 0.5,
+      w: 0.14 * S,
+      h: branchLength + 0.04 * S,
+      d: 0.14 * S,
+      rz: branchRz,
+      rx: branchRx,
+      color: bark2,
+    });
     clusters.push({ x: lean * 0.6 * S + dx, y: 2.0 * S + up, z: dz, r: (0.9 + rnd() * 0.35) * S });
   }
   // central crown cluster on top
@@ -3412,7 +3460,7 @@ export function billboardParts(variant: number): Part[] {
  *  built FACING -x so they read as oncoming (headlights toward the player). Purely decorative. */
 export function jamCarParts(variant: number): Part[] {
   const v = ((variant % 5) + 5) % 5;
-  const glass = "#7fb6de";
+  const glass = "#bfe3ff";
   const tire = "#22242a";
   if (v === 4) {
     // green city bus (Toei style) with a row of warm lit windows
@@ -3421,7 +3469,7 @@ export function jamCarParts(variant: number): Part[] {
       { x: 0, y: 1.05, z: 0, w: 5.4, h: 1.7, d: 1.7, color: body },
       { x: 0, y: 0.35, z: 0, w: 5.4, h: 0.3, d: 1.7, color: "#2c5940" },
       { x: -2.72, y: 1.2, z: 0, w: 0.06, h: 0.9, d: 1.5, color: glass }, // front glass (-x!)
-      { x: 2.72, y: 1.2, z: 0, w: 0.06, h: 0.8, d: 1.5, color: "#28323c" },
+      { x: 2.72, y: 1.2, z: 0, w: 0.06, h: 0.8, d: 1.5, color: glass },
       { x: -2.74, y: 0.62, z: 0.55, w: 0.06, h: 0.2, d: 0.34, color: "#fffbe6", glow: true }, // headlights
       { x: -2.74, y: 0.62, z: -0.55, w: 0.06, h: 0.2, d: 0.34, color: "#fffbe6", glow: true },
       { x: 2.74, y: 0.62, z: 0.55, w: 0.06, h: 0.18, d: 0.3, color: "#ff2a2a", glow: true }, // taillights
@@ -3429,8 +3477,8 @@ export function jamCarParts(variant: number): Part[] {
       { x: -2.7, y: 1.95, z: 0, w: 0.5, h: 0.24, d: 1.2, color: "#ffd23f", glow: true }, // route sign box
     ];
     for (let i = 0; i < 5; i++) {
-      parts.push({ x: -1.7 + i * 0.95, y: 1.35, z: 0.86, w: 0.7, h: 0.5, d: 0.04, color: "#ffe9a3", glow: true });
-      parts.push({ x: -1.7 + i * 0.95, y: 1.35, z: -0.86, w: 0.7, h: 0.5, d: 0.04, color: "#ffe9a3", glow: true });
+      parts.push({ x: -1.7 + i * 0.95, y: 1.35, z: 0.86, w: 0.7, h: 0.5, d: 0.04, color: "#4f9fd5" });
+      parts.push({ x: -1.7 + i * 0.95, y: 1.35, z: -0.86, w: 0.7, h: 0.5, d: 0.04, color: "#4f9fd5" });
     }
     for (const wx of [-1.9, 1.9]) {
       parts.push({ x: wx, y: 0.32, z: 0.8, w: 0.62, h: 0.62, d: 0.24, color: tire });
@@ -3443,6 +3491,8 @@ export function jamCarParts(variant: number): Part[] {
   const body = bodies[v];
   const parts: Part[] = [
     { x: 0, y: 0.42, z: 0, w: 3.25, h: 0.36, d: 1.6, color: body },
+    // Continuous door/sill shell overlaps the chassis, front/rear body and cabin.
+    { x: 0.22, y: 0.75, z: 0, w: 1.55, h: 0.34, d: 1.6, color: body },
     { x: -1.05, y: 0.68, z: 0, w: 1.15, h: 0.22, d: 1.5, color: body }, // hood toward -x
     { x: -1.64, y: 0.52, z: 0, w: 0.04, h: 0.18, d: 0.85, color: "#1f2229" }, // grille
     { x: -1.64, y: 0.64, z: 0.52, w: 0.06, h: 0.18, d: 0.32, color: "#fffbe6", glow: true }, // headlights ON
@@ -3456,7 +3506,7 @@ export function jamCarParts(variant: number): Part[] {
     { x: 1.64, y: 0.64, z: 0.52, w: 0.06, h: 0.16, d: 0.3, color: "#ff2a2a", glow: true }, // brake lights ON
     { x: 1.64, y: 0.64, z: -0.52, w: 0.06, h: 0.16, d: 0.3, color: "#ff2a2a", glow: true },
   ];
-  if (v === 3) parts.push({ x: 0.22, y: 1.55, z: 0, w: 0.5, h: 0.2, d: 0.4, color: "#ffe9a3", glow: true }); // taxi roof lamp
+  if (v === 3) parts.push({ x: 0.22, y: 1.54, z: 0, w: 0.5, h: 0.22, d: 0.4, color: "#ffe9a3", glow: true }); // taxi roof lamp, seated on the cabin
   for (const wx of [-1.0, 1.0]) {
     parts.push({ x: wx, y: 0.29, z: 0.74, w: 0.58, h: 0.58, d: 0.26, color: tire });
     parts.push({ x: wx, y: 0.29, z: -0.74, w: 0.58, h: 0.58, d: 0.26, color: tire });
@@ -3734,21 +3784,28 @@ export function catRagdollFlyingParts(variant: number): Part[] {
 
 /* ---------- Rambu & perlengkapan perempatan ---------- */
 
-/** Rambu STOP Jepang (止まれ): segitiga merah terbalik di tiang — dipasang di sudut perempatan. */
+/** Japanese-style octagonal STOP sign with a legible pixel wordmark at each intersection. */
 export function stopSignParts(): Part[] {
-  const red = "#d90429";
-  return [
+  const red = "#c8102e";
+  const parts: Part[] = [
     { x: 0, y: 0.05, z: 0, w: 0.28, h: 0.1, d: 0.28, color: "#6b7078" },
     { x: 0, y: 1.05, z: 0, w: 0.08, h: 2.1, d: 0.08, color: "#8d949c" },
-    // segitiga terbalik: 3 pelat menyempit ke bawah (menyala biar kebaca malam)
-    { x: 0, y: 2.32, z: 0.03, w: 0.05, h: 0.3, d: 0.96, color: red, glow: true },
-    { x: 0, y: 2.06, z: 0.03, w: 0.05, h: 0.24, d: 0.62, color: red, glow: true },
-    { x: 0, y: 1.86, z: 0.03, w: 0.05, h: 0.18, d: 0.3, color: red, glow: true },
-    // tulisan 止まれ (bar putih)
-    { x: 0, y: 2.36, z: 0.07, w: 0.02, h: 0.12, d: 0.66, color: "#ffffff", glow: true },
-    // garis tepi putih atas
-    { x: 0, y: 2.5, z: 0.05, w: 0.03, h: 0.06, d: 0.9, color: "#ffffff", glow: true },
   ];
+  // Stepped silhouette gives the red plate a clean octagonal outline at voxel scale.
+  const rows = [
+    { y: 2.5, h: 0.24, d: 0.5 },
+    { y: 2.36, h: 0.22, d: 0.76 },
+    { y: 2.12, h: 0.32, d: 1.0 },
+    { y: 1.88, h: 0.22, d: 0.76 },
+    { y: 1.74, h: 0.2, d: 0.5 },
+  ];
+  for (const row of rows) {
+    parts.push({ x: 0, y: row.y, z: 0, w: 0.08, h: row.h, d: row.d, color: "#f8f8f8" });
+    parts.push({ x: -0.045, y: row.y, z: 0, w: 0.04, h: row.h - 0.04, d: row.d - 0.1, color: red, glow: true });
+  }
+  // The face points toward local -x; bold white lettering stays readable after the sign is rotated into place.
+  parts.push(...pixelSignTextParts("STOP", { xFace: -0.065, y: 2.12, z: 0, cell: 0.04, color: "#ffffff", glow: true }));
+  return parts;
 }
 
 /** Rambu penyeberangan pejalan kaki Jepang: panel biru persegi dengan figur pejalan putih. */
@@ -4218,8 +4275,8 @@ export function subwayTrainCarParts(
   const darkChassis = "#1e2229";
   const tireColor = "#15181e";
   const rimColor = "#cbd5e1";
-  const glassTint = "#1a2433";
-  const warmInterior = "#fff7d6";
+  const glassTint = "#4f9fd5";
+  const glassGlow = "#75bee8";
 
   const L = SUBWAY_CAR_LEN; // 11.0m panjang bus
   const W = SUBWAY_CAR_W;   // 2.4m lebar bus
@@ -4251,8 +4308,8 @@ export function subwayTrainCarParts(
   parts.push({ x: -L / 2 + 0.1, y: 0.45, z: 0, w: 0.35, h: 0.32, d: W, color: "#111418" });
   parts.push({ x: L / 2 - 0.1, y: 0.45, z: 0, w: 0.35, h: 0.32, d: W, color: "#111418" });
 
-  // BADAN BAWAH BUS (WARNA UTAMA LIVERY)
-  parts.push({ x: 0, y: 0.95, z: 0, w: L, h: 0.72, d: W, color: primary });
+  // BADAN BAWAH BUS memanjang hingga menyatu rapat dengan badan atas.
+  parts.push({ x: 0, y: 0.985, z: 0, w: L, h: 0.81, d: W, color: primary });
 
   // STRIP AKSEN WARNA MEWAH SEPANJANG BADAN BUS
   for (const sz of [-W / 2 - 0.015, W / 2 + 0.015]) {
@@ -4263,15 +4320,15 @@ export function subwayTrainCarParts(
   // BADAN ATAS BUS (PUTIH BERSIH)
   parts.push({ x: 0, y: 1.88, z: 0, w: L, h: 0.98, d: W, color: bodyWhite });
 
-  // JENDELA SAMPING PANORAMA (KACA TINTED + PENUMPANG MENYALA HANGAT)
+  // JENDELA SAMPING PANORAMA dengan kaca biru dan pantulan lembut.
   const nWindows = 5;
   for (let i = 0; i < nWindows; i++) {
     const wx = -L * 0.34 + i * (L * 0.68 / (nWindows - 1));
     for (const sz of [-W / 2 - 0.018, W / 2 + 0.018]) {
-      // Bingkai kaca hitam
+      // Bingkai kaca biru terang
       parts.push({ x: wx, y: 1.72, z: sz, w: 1.15, h: 0.68, d: 0.03, color: glassTint });
-      // Cahaya interior hangat
-      parts.push({ x: wx, y: 1.72, z: sz, w: 1.05, h: 0.56, d: 0.035, color: warmInterior, glow: true });
+      // Pantulan biru muda agar kaca tetap terlihat biru
+      parts.push({ x: wx, y: 1.72, z: sz, w: 1.05, h: 0.56, d: 0.035, color: glassGlow, glow: true });
     }
   }
 
@@ -4281,8 +4338,8 @@ export function subwayTrainCarParts(
     parts.push({ x: dx, y: 1.55, z: W / 2 + 0.025, w: 0.65, h: 0.65, d: 0.03, color: glassTint });
   }
 
-  // ATAP BUS DATAR TEMPAT BERSELANCAR (ROOF SURFING PLATFORM at y = 2.45m)
-  parts.push({ x: 0, y: H - 0.06, z: 0, w: L, h: 0.12, d: W - 0.15, color: "#dbe2ea" });
+  // Roof slab overlaps the upper body and keeps its top surface at y = 2.45m.
+  parts.push({ x: 0, y: H - 0.08, z: 0, w: L, h: 0.16, d: W - 0.15, color: "#dbe2ea" });
   // Catwalk anti-selip bertekstur di atap
   parts.push({ x: 0, y: H + 0.02, z: 0, w: L - 0.6, h: 0.04, d: 0.95, color: "#f8fafc" });
   // Strip marka neon di tepi atap bus
@@ -4310,8 +4367,8 @@ export function subwayTrainCarParts(
     const fx = -L / 2 - 0.02;
     // Kaca depan lebar aerodinamis (Windshield)
     parts.push({ x: fx - 0.08, y: 1.75, z: 0, w: 0.12, h: 0.88, d: W - 0.35, color: glassTint });
-    // Kaca depan interior glow lembut
-    parts.push({ x: fx - 0.05, y: 1.72, z: 0, w: 0.06, h: 0.78, d: W - 0.5, color: warmInterior, glow: true });
+    // Pantulan biru lembut pada kaca depan
+    parts.push({ x: fx - 0.05, y: 1.72, z: 0, w: 0.06, h: 0.78, d: W - 0.5, color: glassGlow, glow: true });
 
     // PAPAN ROLLSIGN TUJUAN BUS BERCAHAYA: "回送 / PARKED" atau "渋谷駅前 / SHIBUYA BUS"
     parts.push({ x: fx - 0.12, y: 2.22, z: 0, w: 0.06, h: 0.25, d: 1.55, color: "#111827" });
@@ -4367,7 +4424,7 @@ export function cityBusObstacleParts(variant = 0): Part[] {
   const yellowToei = "#f4b41a";
   const white = "#f5f7fa";
   const tire = "#1f2228";
-  const glass = "#72a8d4";
+  const glass = "#4f9fd5";
   const primary = v === 0 ? greenToei : "#c1121f"; // Toei green or Tokyo red bus
 
   const L = 8.4; // panjang bus sepanjang x
@@ -4400,12 +4457,13 @@ export function cityBusObstacleParts(variant = 0): Part[] {
     // Jendela samping
     { x: 0, y: 1.5, z: 0, w: L - 1.2, h: 0.6, d: W + 0.02, color: glass },
 
-    // ATAP BUS DATAR TEMPAT BERSELANCAR (y = 2.05m)
-    { x: 0, y: H, z: 0, w: L, h: 0.1, d: W - 0.1, color: "#dbe1e8" },
+    // Roof slab is thickened downward to overlap the upper body, without moving its top surface.
+    { x: 0, y: H - 0.05, z: 0, w: L, h: 0.2, d: W - 0.1, color: "#dbe1e8" },
     // Catwalk / non-slip atap bus
     { x: 0, y: H + 0.06, z: 0, w: L - 0.6, h: 0.03, d: 0.85, color: "#eef2f7" },
-    // AC bus di belakang
-    { x: 1.8, y: H + 0.18, z: 0, w: 1.8, h: 0.22, d: 1.4, color: "#9ca3af" },
+    // AC bus di belakang, duduk rapat di atas slab
+    { x: 1.8, y: H + 0.15, z: 0, w: 1.8, h: 0.22, d: 1.4, color: "#9ca3af" },
+
   ];
 
   return parts;

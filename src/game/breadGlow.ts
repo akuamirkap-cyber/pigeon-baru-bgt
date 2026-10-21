@@ -13,8 +13,8 @@
  * Desain baru:
  *   • Inti halo TRANSPARAN (cincin lembut di pinggir siluet roti) → roti tetap tajam & berwarna,
  *     glow terbaca sebagai aura, bukan noda.
- *   • Kontribusi additive puncak sengaja kecil (BREAD_HALO_PEAK) sehingga dua roti yang
- *     tumpuk masih enak dilihat (<= ~0.65) dan tidak melewati ambang bloom 1.0 di mode malam.
+ *   • Halo dibuat lebih redup: dua roti yang bertumpuk hanya menambah cahaya secukupnya
+ *     (<= ~0.25), tetap jauh dari ambang bloom 1.0 di mode malam.
  *   • Kecerahan per butir roti: memudar saat sangat dekat kamera (tidak memutihkan layar saat
  *     terbang melewatinya) dan memudar di kejauhan (formasi jauh tidak jadi kabut emas).
  *   • Denyutnya halus di KECERAHAN (bukan skala), supaya bentuknya tetap rapi.
@@ -24,19 +24,18 @@
 export const BREAD_HALO_SIZE = 1.05;
 /** Titik tengah visual roti (geometri roti bertitik asal di alas 0.03..0.75). */
 export const BREAD_HALO_Y = 0.37;
-/** Opacity material halo. Kontribusi additive puncak = 0.34 (cincin) x 0.85 = ~0.29,
- *  jauh di bawah ambang bloom 1.0 → halo sendiri tidak pernah jadi blob besar di malam hari;
- *  kilau malam tetap datang dari bagian roti yang memang `glow: true` (mentega & garis crumb). */
-export const BREAD_HALO_PEAK = 0.85;
+/** Opacity material halo. Kontribusi additive puncak = 0.22 (cincin) x 0.55 = ~0.12,
+ *  sekitar 60% lebih redup dari sebelumnya; halo tetap terbaca tanpa memutihkan roti/latar. */
+export const BREAD_HALO_PEAK = 0.55;
 
-/** Bentuk halo (emas hangat). Inti alpha 0 → roti tidak tertimpa; cincin paling kuat di
+/** Bentuk halo kuning-keemasan. Inti alpha 0 → roti tidak tertimpa; cincin paling kuat di
  *  r 0.56, yaitu tepat di pinggir siluet roti (roti selebar 0.56 m di bidang 1.05 m). */
 export const BREAD_HALO_STOPS: [number, string][] = [
-  [0.0, "rgba(255,206,120,0)"],
-  [0.34, "rgba(255,214,132,0.10)"],
-  [0.56, "rgba(255,224,152,0.34)"],
-  [0.74, "rgba(255,196,96,0.15)"],
-  [1.0, "rgba(255,170,40,0)"],
+  [0.0, "rgba(255,232,48,0)"],
+  [0.34, "rgba(255,236,54,0.05)"],
+  [0.56, "rgba(255,239,68,0.22)"],
+  [0.74, "rgba(255,216,38,0.10)"],
+  [1.0, "rgba(255,190,12,0)"],
 ];
 
 /**

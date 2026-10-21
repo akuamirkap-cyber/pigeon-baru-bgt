@@ -235,7 +235,7 @@ function CameraRig() {
                   ? "#f7cda4"
                   : trackModeNow === "shibuya" && st.shibuyaTime === "pagi"
                     ? "#ffe7cd"
-                    : "#dbeeff",
+                    : "#d2f0ff",
         );
       }
     }
@@ -277,7 +277,7 @@ function Lights() {
         ? { hemi: ["#fff0dd", "#8a90b8", 1.7] as const, amb: [0.4, "#ffe9d0"] as const, dir: [2.1, "#fff0d8"] as const }
         : mode === "shibuya" && tod === "sore"
           ? { hemi: ["#ffd9b0", "#6a7095", 1.5] as const, amb: [0.42, "#ffd3ae"] as const, dir: [1.95, "#ffc088"] as const }
-          : { hemi: ["#ffffff", "#9ac2ea", 2.15] as const, amb: [0.44, "#ffffff"] as const, dir: [2.4, "#fff9eb"] as const };
+          : { hemi: ["#ffffff", "#7fb4ee", 2.25] as const, amb: [0.38, "#fff7ef"] as const, dir: [2.62, "#fff5df"] as const };
   const target = useMemo(() => new THREE.Object3D(), []);
   useEffect(() => {
     const l = light.current;
@@ -321,6 +321,77 @@ function Lights() {
   );
 }
 
+/** Cap DPR awal di HP sentuh kecil — 1.25 vs 1.5 memangkas ~30% beban piksel (FPS HP aman),
+ *  dan di layar ≤1080p fisiknya hampir tak terlihat. Desktop tetap 1.5. */
+const MOBILE_DPR_CAP =
+  typeof window !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0 && window.innerWidth < 900 ? 1.25 : 1.5;
+
+/** Stats FPS kiri bawah: hitung frame asli, publish ke store 2x per detik.
+ *  Murah — satu counter per frame + satu setState per 0.5 dtk (guard di store mencegah render ulang). */
+function PerfTracker() {
+  const acc = useRef({ frames: 0, t0: 0 });
+  useFrame(() => {
+    const a = acc.current;
+    const now = performance.now();
+    a.frames++;
+    if (a.t0 === 0) {
+      a.t0 = now;
+      return;
+    }
+    const dt = (now - a.t0) / 1000;
+    if (dt >= 0.5) {
+      useUI.getState().setFps(Math.min(999, Math.max(1, Math.round(a.frames / dt))));
+      a.frames = 0;
+      a.t0 = now;
+    }
+  }); // PENTING: priority 0 — memberi priority >0 di R3F mengambil alih render loop
+  // dan MEMATIKAN auto-render, yang membuat dunia 3D tidak ter-render (layar jadi kosong).
+  return null;
+}
+
+/** Lower the render resolution only when the live frame rate is consistently struggling;
+ * raise it again gradually after the scene has recovered, keeping shadows and geometry intact. */
+function AdaptiveDpr() {
+  const setDpr = useThree((state) => state.setDpr);
+  const dpr = useThree((state) => state.viewport.dpr);
+  const maxDpr = useThree((state) => Math.min(state.viewport.initialDpr || 1, MOBILE_DPR_CAP));
+  const sample = useRef({ elapsed: 0, frames: 0, slowWindows: 0, fastWindows: 0 });
+
+  useFrame((_, dt) => {
+    if (!Number.isFinite(dt) || dt <= 0 || dt > 0.2) return;
+    const s = sample.current;
+    s.elapsed += dt;
+    s.frames++;
+    if (s.elapsed < 2) return;
+
+    const fps = s.frames / s.elapsed;
+    let target = dpr;
+    if (fps < 50) {
+      s.slowWindows++;
+      s.fastWindows = 0;
+      if (s.slowWindows >= 1) {
+        target = Math.max(1, Math.round((dpr - 0.15) * 100) / 100);
+        s.slowWindows = 0;
+      }
+    } else if (fps > 58) {
+      s.fastWindows++;
+      s.slowWindows = 0;
+      if (s.fastWindows >= 3) {
+        target = Math.min(maxDpr, Math.round((dpr + 0.1) * 100) / 100);
+        s.fastWindows = 0;
+      }
+    } else {
+      s.slowWindows = 0;
+      s.fastWindows = 0;
+    }
+    if (Math.abs(target - dpr) > 0.01) setDpr(target);
+    s.elapsed = 0;
+    s.frames = 0;
+  });
+
+  return null;
+}
+
 function Loop() {
   useFrame((_, dt) => {
     // Auto-pause: tab disembunyikan = dunia beku penuh (HP hemat daya, balik lagi tanpa lompat waktu)
@@ -337,7 +408,7 @@ function Loop() {
  *  dan permukaan putih biasa (maks 1.0) dijamin TIDAK ikut bloom. Radius besar + strength
  *  kalem = halo lembut yang tidak menyilaukan. Kecerahan mengikuti setelan LAMPU. */
 function NightBloom() {
-  const { gl, scene, camera, size } = useThree();
+  const { gl, scene, camera, size, viewport } = useThree();
   const nightBright = useUI((s) => s.nightBright);
   const built = useMemo(() => {
     const composer = new EffectComposer(gl);
@@ -349,9 +420,9 @@ function NightBloom() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, scene, camera]);
   useEffect(() => {
-    built.composer.setPixelRatio(gl.getPixelRatio());
+    built.composer.setPixelRatio(viewport.dpr);
     built.composer.setSize(size.width, size.height);
-  }, [built, gl, size]);
+  }, [built, gl, size, viewport.dpr]);
   useEffect(() => {
     // REDUP / PAS / TERANG — semua tetap smooth, hangat dan elegan (bukan neon tajam)
     built.bloom.strength = [0.15, 0.22, 0.32][nightBright];
@@ -374,18 +445,18 @@ function NightBloomGate() {
 }
 
 /** Sky dome + distant haze so the curved horizon fades nicely. */
-const SKY_DAY = { top: "#249bed", mid: "#55b8f5", bot: "#ccecff" };
+const SKY_DAY = { top: "#0d84ea", mid: "#33aef7", bot: "#d4f3ff" };
 // Shibuya Night: deep midnight blue zenith melting into a clean, calm city ambient glow (NO purple/magenta cyberpunk!)
 const SKY_NIGHT = { top: "#0b1220", mid: "#18243b", bot: "#24324d" };
-// Siang berawan yang lembut: zenith abu kebiruan turun ke horizon putih keperakan
-const SKY_CLOUDY = { top: "#7d93ab", mid: "#c9d6e0", bot: "#eaf0f5" };
+// Siang berawan yang cerah: zenith biru perak turun ke horizon putih bersih (tetap lembut, tidak muram)
+const SKY_CLOUDY = { top: "#7fb0d8", mid: "#d5e8f2", bot: "#f4fbff" };
 // Cuaca bersalju: gradien KHAS cantik & ceria (bukan kelabu muram) —
-// zenith biru powder lembut -> tengah periwinkle cerah -> horizon blush kemerahan hangat
-const SKY_SNOW = { top: "#6aa9ec", mid: "#b8d4f6", bot: "#ffe6dc" };
-// Shibuya pagi: biru muda dengan horizon emas lembut
-const SKY_PAGI = { top: "#4f9be0", mid: "#ffdab6", bot: "#ffedd6" };
-// Shibuya sore: senja — zenith biru tua, horizon oranye hangat
-const SKY_SORE = { top: "#3d4f8f", mid: "#ff9e6e", bot: "#ffd9a0" };
+// zenith biru powder cerah -> tengah periwinkle terang -> horizon blush kemerahan hangat
+const SKY_SNOW = { top: "#4ea5f5", mid: "#cbe2ff", bot: "#ffe9dd" };
+// Shibuya pagi: biru terang dengan horizon emas yang lebih bercahaya
+const SKY_PAGI = { top: "#2f92ec", mid: "#ffd09a", bot: "#fff3da" };
+// Shibuya sore: senja — zenith biru pekat, horizon oranye menyala
+const SKY_SORE = { top: "#31439e", mid: "#ff8a52", bot: "#ffc97f" };
 function Sky() {
   const mode = useUI((s) => s.trackMode);
   const tod = useUI((s) => s.shibuyaTime);
@@ -527,8 +598,8 @@ export function Scene({ onContextLost }: { onContextLost?: () => void }) {
     <Canvas
       shadows
       flat
-      dpr={[1, 1.5]}
-      gl={{ antialias: true, powerPreference: "default", alpha: false }}
+      dpr={[1, MOBILE_DPR_CAP]}
+      gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
       camera={{ fov: 60, near: 0.3, far: 220, position: [-8, 5, 0] }}
       onCreated={({ scene, gl }) => {
         gl.setClearColor("#bfe3ff");
@@ -536,7 +607,7 @@ export function Scene({ onContextLost }: { onContextLost?: () => void }) {
         gl.debug.onShaderError = (ctx, program, vs, fs) => {
           console.error("[pigeon-sk8] shader failed, disabling world curve:", ctx.getProgramInfoLog(program), ctx.getShaderInfoLog(vs), ctx.getShaderInfoLog(fs));
           disableCurve(scene);
-          scene.fog = new THREE.Fog("#dbeeff", 90, 170);
+          scene.fog = new THREE.Fog("#d2f0ff", 90, 170);
         };
         gl.domElement.addEventListener("webglcontextlost", (e) => {
           e.preventDefault();
@@ -548,13 +619,15 @@ export function Scene({ onContextLost }: { onContextLost?: () => void }) {
           scene,
           disableCurve: () => {
             disableCurve(scene);
-            scene.fog = new THREE.Fog("#dbeeff", 90, 170);
+            scene.fog = new THREE.Fog("#d2f0ff", 90, 170);
           },
         };
       }}
-      style={{ position: "absolute", inset: 0, touchAction: "none", filter: "saturate(1.28) contrast(1.06) brightness(1.055)" }}
+      style={{ position: "absolute", inset: 0, touchAction: "none", filter: "saturate(1.5) contrast(1.12) brightness(1.08)" }}
     >
       <CameraRig />
+      <AdaptiveDpr />
+      <PerfTracker />
       <NightBloomGate />
       <Lights />
       <Loop />

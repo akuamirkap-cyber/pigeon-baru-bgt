@@ -15,7 +15,7 @@ export class PanelBoundary extends Component<{ onBack: () => void; children: Rea
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-[#72D4EC] p-6 text-center">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-[#3ec6f0] p-6 text-center">
         <div className="font-display text-[6cqw] text-white drop-shadow">Panel belum bisa dibuka</div>
         <div className="font-body text-sm font-bold text-white/90">Coba lagi, atau pastikan perangkat mendukung WebGL.</div>
         <button

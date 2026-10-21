@@ -46,7 +46,7 @@ export function Backdrop() {
     // Shibuya: malam = skyline neon Tokyo; SIANG = panorama perbukitan & pemandangan
     // (bukan "tembok" kota) — gaya ilustratifnya selaras dengan Gunung Fuji. Mode lain tetap bukit.
     const dayTod = tod === "malam" ? "siang" : tod;
-    const dayMist = snowW && !night ? "#e6eef6" : cloudy ? "#dfe7ee" : dayTod === "pagi" ? "#ffe7cd" : dayTod === "sore" ? "#f7cda4" : "#dbeeff";
+    const dayMist = snowW && !night ? "#eaf2fa" : cloudy ? "#eef6fb" : dayTod === "pagi" ? "#ffe7cd" : dayTod === "sore" ? "#f7cda4" : "#d2f0ff";
     const hillsTex = mk(
       mode === "shibuya"
         ? night
@@ -116,16 +116,16 @@ export function Backdrop() {
         return t;
       })(),
       rayMat: new THREE.MeshBasicMaterial({
-        transparent: true, opacity: 0.3,
+        transparent: true, opacity: 0.19,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
         side: THREE.DoubleSide, fog: false, toneMapped: false,
       }),
       sunMat: new THREE.MeshBasicMaterial({
-        color: "#fff7d6", transparent: true, opacity: 0.95,
+        color: "#fff7d6", transparent: true, opacity: 0.72,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
       }),
       haloMat: new THREE.MeshBasicMaterial({
-        color: "#ffefc0", transparent: true, opacity: 0.25,
+        color: "#ffefc0", transparent: true, opacity: 0.14,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
       }),
       rayGeo: new THREE.PlaneGeometry(7.5, 46),
@@ -196,8 +196,10 @@ export function Backdrop() {
       rg.position.set(Math.cos(a2) * 64, 46, Math.sin(a2) * 64);
       rg.lookAt(camera.position);
       rg.scale.setScalar(cloudy ? 0.75 : 1);
-      built.rayMat.opacity = (cloudy ? 0.13 : 0.3) + Math.sin(engine.time * 0.55) * 0.05;
-      built.sunMat.opacity = (cloudy ? 0.5 : 0.92) + Math.sin(engine.time * 0.4) * 0.05;
+      // Keep the sunlight warm and cinematic without bleaching the sky or washing out buildings.
+      built.rayMat.opacity = (cloudy ? 0.075 : 0.19) + Math.sin(engine.time * 0.55) * 0.018;
+      built.sunMat.opacity = (cloudy ? 0.36 : 0.72) + Math.sin(engine.time * 0.4) * 0.025;
+      built.haloMat.opacity = (cloudy ? 0.07 : 0.14) + Math.sin(engine.time * 0.38) * 0.012;
     }
   });
 

@@ -1,17 +1,13 @@
 /**
  * Trik rel (rail tricks) — dijalankan OTOMATIS saat karakter mendarat di rel (startGrind).
  * Setiap pendaratan di rel memainkan trik ACAK, dan tidak pernah sama dengan trik sebelumnya.
+ * (NOSESLIDE, BLUNTSLIDE, SMITH, TAILSLIDE & CROOKED DIHAPUS atas permintaan user — deck kini 4 trik.)
  */
 
 export type RailTrickKind =
   | "fiftyFifty"
   | "boardslide"
   | "lipslide"
-  | "noseslide"
-  | "tailslide"
-  | "bluntslide"
-  | "crooked"
-  | "smith"
   | "feeble";
 
 export interface RailTrickDef {
@@ -49,46 +45,6 @@ export const RAIL_TRICKS: RailTrickDef[] = [
     pts: 120,
     color: "#ff5c8a",
     desc: "Papan melintang di rel setelah melompati rel",
-  },
-  {
-    kind: "noseslide",
-    name: "NOSESLIDE",
-    short: "Noseslide",
-    pts: 100,
-    color: "#4cc9f0",
-    desc: "Ujung depan papan bergesekan dengan rel",
-  },
-  {
-    kind: "tailslide",
-    name: "TAILSLIDE",
-    short: "Tailslide",
-    pts: 100,
-    color: "#c77dff",
-    desc: "Ujung belakang papan bergesekan dengan rel",
-  },
-  {
-    kind: "bluntslide",
-    name: "BLUNTSLIDE",
-    short: "Bluntslide",
-    pts: 130,
-    color: "#80ed99",
-    desc: "Bagian tail papan bertumpu pada rel, roda berada di luar",
-  },
-  {
-    kind: "crooked",
-    name: "CROOKED GRIND",
-    short: "Crooked",
-    pts: 110,
-    color: "#ff9f1c",
-    desc: "Truck depan mengunci rel dengan posisi papan miring",
-  },
-  {
-    kind: "smith",
-    name: "SMITH GRIND",
-    short: "Smith",
-    pts: 110,
-    color: "#38bdf8",
-    desc: "Truck belakang bertumpu pada rel, depan papan miring ke bawah",
   },
   {
     kind: "feeble",
@@ -174,32 +130,7 @@ export const RAIL_POSE: Record<RailTrickKind, RailPose> = {
     yaw: -Math.PI / 2, pitch: 0.22, roll: 0.2, crouch: 0.6, bodyYaw: -0.3, lean: 0.08, bodyRoll: 0.15,
     arms: { rxL: -0.1, rxR: -0.1, spL: 0.7, spR: 0.7 },
   },
-  // 4. Noseslide: hidung papan di rel, ekor sedikit terangkat, badan condong ke depan
-  noseslide: {
-    yaw: 0.12, pitch: -0.6, roll: 0, crouch: 0.6, bodyYaw: 0, lean: -0.3, bodyRoll: 0,
-    arms: { rxL: 0.5, rxR: 0.5, spL: 0.5, spR: 0.5 },
-  },
-  // 5. Tailslide: ekor papan di rel, hidung terangkat, badan condong ke belakang
-  tailslide: {
-    yaw: -0.12, pitch: 0.6, roll: 0, crouch: 0.6, bodyYaw: 0, lean: 0.3, bodyRoll: 0,
-    arms: { rxL: -0.5, rxR: -0.5, spL: 0.6, spR: 0.6 },
-  },
-  // 6. Bluntslide: ekor bertumpu di rel, papan miring menyamping, hidung naik tinggi, lutut menekuk dalam
-  bluntslide: {
-    yaw: 0.4, pitch: 0.45, roll: 0.4, crouch: 0.9, bodyYaw: 0.1, lean: 0.12, bodyRoll: -0.1,
-    arms: { rxL: 0.1, rxR: 0.1, spL: 0.6, spR: 0.6 },
-  },
-  // 7. Crooked: papan menyerong, truck depan mengunci rel, hidung sedikit turun, bahu ikut arah
-  crooked: {
-    yaw: 0.6, pitch: -0.2, roll: 0.08, crouch: 0.6, bodyYaw: 0.3, lean: 0, bodyRoll: 0,
-    arms: { rxL: 0, rxR: 0, spL: 0.5, spR: 0.5 },
-  },
-  // 8. Smith: truck belakang di rel, depan papan menjulur ke samping & miring ke bawah, badan condong belakang
-  smith: {
-    yaw: 0, pitch: -0.45, roll: 0, crouch: 0.6, bodyYaw: 0, lean: 0.25, bodyRoll: 0,
-    arms: { rxL: -0.2, rxR: -0.2, spL: 0.8, spR: 0.8 },
-  },
-  // 9. Feeble: truck belakang di rel, papan menyerong ke sisi luar, badan condong menjaga keseimbangan
+  // 4. Feeble: truck belakang di rel, papan menyerong ke sisi luar, badan condong menjaga keseimbangan
   feeble: {
     yaw: -0.7, pitch: 0.18, roll: -0.08, crouch: 0.7, bodyYaw: -0.25, lean: 0.15, bodyRoll: -0.15,
     arms: { rxL: 0.2, rxR: -0.1, spL: 0.2, spR: 0.9 },
