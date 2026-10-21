@@ -31,9 +31,10 @@ function ensure(): AudioContext | null {
     sfxGain.gain.value = 1.0;
     sfxGain.connect(master);
 
-    // Music bus
+    // Music bus — gain awal menghormati sakelar musik (default SENYAP / musicOn=false);
+    // perubahan toggle ditangani subscribe() di bawah.
     musicGain = ctx.createGain();
-    musicGain.gain.value = 0.55;
+    musicGain.gain.value = useUI.getState().musicOn ? 0.55 : 0.0001;
     musicGain.connect(master);
 
     // Skateboard wheel rolling synth bus
@@ -97,6 +98,16 @@ if (typeof window !== "undefined") {
       const target = state.muted ? 0.0001 : 0.35;
       master.gain.setTargetAtTime(target, ctx.currentTime, 0.04);
     }
+    if (musicGain && ctx) {
+      // Bus musik: 0.55 hanya kalau toggle MUSIK ON dan tidak global mute.
+      const mTarget = state.muted || !state.musicOn ? 0.0001 : 0.55;
+      musicGain.gain.setTargetAtTime(mTarget, ctx.currentTime, 0.06);
+    }
+    // Stop/start timer beat 35ms — saat musik senyap, nol overhead sama sekali.
+    if (unlocked) {
+      if (state.musicOn) bgm.start();
+      else bgm.stop();
+    }
   });
 }
 
@@ -112,7 +123,9 @@ export function unlockAudio() {
   if (!unlocked) {
     unlocked = true;
     ensure();
-    bgm.start();
+    // Musik default SENYAP: jangan nyalakan BGM kalau toggle musik masih off
+    // (subscribe() akan bgm.start() saat pemain menyalakannya).
+    if (useUI.getState().musicOn) bgm.start();
   }
 }
 
@@ -980,6 +993,9 @@ class SoundEngineBGM {
 
   start() {
     if (this.active) return;
+    //musik-senyap-guard Musik default senyap: timer beat tidak dijalankan sama sekali
+    // (subscribe() akan memanggil start() lagi saat toggle 🎵 dinyalakan).
+    if (!useUI.getState().musicOn) return;
     this.active = true;
     const c = ensure();
     if (!c) return;
@@ -1041,7 +1057,15 @@ class SoundEngineBGM {
 
   private schedule() {
     const c = ensure();
-    if (!c || !musicGain || useUI.getState().muted) return;
+    if (!c || !musicGain) return;
+    //musik-senyap-guard Musik senyap (musicOn=false default) atau global mute: JANGAN menjadwalkan
+    // not — tapi geser jam beat ke masa kini supaya saat dinyalakan tidak ada burst
+    // nota lama yang tertunda.
+    const us = useUI.getState();
+    if (us.muted || !us.musicOn) {
+      if (this.nextStepTime < c.currentTime) this.nextStepTime = c.currentTime + 0.05;
+      return;
+    }
 
     let bpm = 126;
     if (this.currentPhase === "menu") bpm = 104;

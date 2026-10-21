@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { buildVoxelPair, getGeometry, getGeometryPair, glossyGroundMaterial, glowMaterial, pick, transparentVoxelMaterial, voxelMaterial, type GeoPair } from "./voxel";
 import { applyCurve } from "./curve";
+import { zoneForS } from "./track";
 import { BREAD_HALO_PEAK, BREAD_HALO_SIZE, BREAD_HALO_STOPS, BREAD_HALO_Y, breadHaloBrightness } from "./breadGlow";
 import {
   CHUNK_LEN,
@@ -77,6 +78,7 @@ import {
   hakoneTrainCarParts,
   catenaryParts,
   intersectionRoadParts,
+  INTERSECTION_W,
   INTERSECTION_W_WIDE,
   trafficLightParts,
   intersectionSignParts,
@@ -120,6 +122,8 @@ import { citizenActivityModel } from "../shibuya/voxel/citizenActivities";
 import {
   engine,
   track,
+  crossingArmRotation,
+  crossingLampIsLit,
   ARM_S,
   CAT_SCALE,
   CHICKEN_SCALE,
@@ -220,9 +224,25 @@ const RamenCustomerView = memo(function RamenCustomerView({
 });
 
 /* ---------- Decorations ---------- */
-const DecorView = memo(function DecorView({ d }: { d: Decor }) {
+const ShopperView = memo(function ShopperView({ d, geo, rotationY }: { d: Decor; geo: GeoPair; rotationY: number }) {
   const groupRef = useRef<THREE.Group>(null);
-  const isShibuya = useUI((state) => state.trackMode === "shibuya");
+  useFrame(() => {
+    if (groupRef.current) groupRef.current.position.y = d.pos[1] + Math.sin(engine.time * 2.2 + d.variant) * 0.018;
+  });
+  return (
+    <group ref={groupRef} position={d.pos} rotation-y={rotationY} scale={d.spec?.assetScale ?? 1}>
+      <mesh geometry={geo.lit} material={voxelMaterial} castShadow receiveShadow />
+      {geo.glow && <mesh geometry={geo.glow} material={glowMaterial} />}
+      {geo.transparent && <mesh geometry={geo.transparent} material={transparentVoxelMaterial} renderOrder={2} />}
+    </group>
+  );
+});
+
+const DecorView = memo(function DecorView({ d }: { d: Decor }) {
+  const globalMode = useUI((state) => state.trackMode);
+  // ONE WORLD: sakura 2x / rig toko dipilih dari ZONA MILIK DECOR ITU (d.zone), bukan
+  // mode global — supaya saat pemain berdiri di batas kota, decor kota sebelah tidak ikut ganti.
+  const isShibuya = (d.zone ?? globalMode) === "shibuya";
   // true saat panel karakter/trick sedang dibuka dari menu (kamera preview podium)
   const previewFocus = useUI((s) => s.phase === "menu" && (s.menuView === "skins" || s.menuView === "tricks"));
   const geo: GeoPair = useMemo(() => {
@@ -350,12 +370,6 @@ const DecorView = memo(function DecorView({ d }: { d: Decor }) {
         geo.glow?.dispose();
       };
   }, [d, geo]);
-  useFrame(() => {
-    if ((d.kind !== "ramen_customer" && d.kind !== "shopper") || !groupRef.current) return;
-    // Reuse the Shibuya Blocks activity pose and add a tiny living motion.
-    groupRef.current.position.y = d.pos[1] + Math.sin(engine.time * 2.2 + d.variant) * 0.018;
-  });
-
   const facing =
     d.kind === "house" ||
     d.kind === "ramen" ||
@@ -381,6 +395,12 @@ const DecorView = memo(function DecorView({ d }: { d: Decor }) {
     const customer = (["salaryman", "student", "yakuza", "sumo", "chef"] as const)[Math.abs(d.variant) % 5];
     return <RamenCustomerView d={d} customer={customer} rotationY={d.rotY + flip} />;
   }
+  if (d.kind === "shopper") return <ShopperView d={d} geo={geo} rotationY={d.rotY + flip} />;
+  // Curved-world vertices move on the GPU, so their original static bounds can incorrectly
+  // cull a landmark at a bend. Keep only the large structures out of that stale-bound path.
+  const curveStableStructure =
+    d.kind === "building" || d.kind === "tower109" || d.kind === "house" ||
+    d.kind === "village_house" || d.kind === "machiya" || d.kind === "konbini" || d.kind === "ramen";
   // Saat panel karakter/trick terbuka di menu: kamera menyorot podium — pepohonan
   // di dekat podium disembunyikan supaya tidak menutupi pandangan ke merpati.
   if (previewFocus && (d.kind === "tree" || d.kind === "sakura" || d.kind === "bush")) {
@@ -389,23 +409,49 @@ const DecorView = memo(function DecorView({ d }: { d: Decor }) {
     if (dx * dx + dz * dz < 15 * 15) return null;
   }
   return (
-    <group ref={groupRef} position={d.pos} rotation-y={d.rotY + flip} scale={d.spec?.assetScale ?? 1}>
-      <mesh geometry={geo.lit} material={voxelMaterial} castShadow={d.kind !== "flowers"} receiveShadow />
-      {geo.glow && <mesh geometry={geo.glow} material={glowMaterial} />}
-      {geo.transparent && <mesh geometry={geo.transparent} material={transparentVoxelMaterial} renderOrder={2} />}
+    <group position={d.pos} rotation-y={d.rotY + flip} scale={d.spec?.assetScale ?? 1}>
+      <mesh geometry={geo.lit} material={voxelMaterial} castShadow={d.kind !== "flowers"} receiveShadow frustumCulled={!curveStableStructure} />
+      {geo.glow && <mesh geometry={geo.glow} material={glowMaterial} frustumCulled={!curveStableStructure} />}
+      {geo.transparent && <mesh geometry={geo.transparent} material={transparentVoxelMaterial} renderOrder={2} frustumCulled={!curveStableStructure} />}
     </group>
   );
 });
 
-const ChunkView = memo(function ChunkView({ chunk }: { chunk: Chunk }) {
+/** Setengah lebar jendela pemotong paving sisi jalan (ground strip) di sekitar simpang.
+ *  Dulu hanya untuk perempatan Tokyo — di Shibuya/MIX trotoar+plaza+median setinggi 0.10–0.16 m
+ *  menembus lurus aspal perempatan (±0.045 m) yang seharusnya jadi jalur lintas mobil.
+ *  Scramble: apronnnya selebar avenue (13.4 m) → potong ±6.9. Scramble & regular kini SERAGAM
+ *  di semua kota (zone guard tetap: haruna tak punya perempatan, jadi potongannya kosong). */
+const SCRAMBLE_CUT_HALF = 6.9;
+function junctionCutHalfWidth(it: { scramble?: boolean; wide?: boolean }): number {
+  if (it.scramble) return SCRAMBLE_CUT_HALF;
+  // Model junction punya kotaknya sendiri (curb/walk boxes) yang merentang sampai
+  // halfW + 2.56 m dari pusat. Kalau ground cuma dipotong sampai halfW, paving trotoar
+  // ground (top .12) muncul "menusuk" keluar dari bawah box (top .22) → sidewalk terlihat
+  // putus-putus berpola blok gelap di tiap perempatan. Potong tepat melewati tepi luar box.
+  return (it.wide ? INTERSECTION_W_WIDE : INTERSECTION_W) / 2 + 2.62;
+}
+
+const ChunkView = memo(function ChunkView({ chunk, roadCutKey }: { chunk: Chunk; roadCutKey: string }) {
   const geo = useMemo(() => {
+    const roadCuts = roadCutKey
+      ? engine.intersections
+        .filter((it) => {
+          const halfWidth = junctionCutHalfWidth(it);
+          return it.s + halfWidth >= chunk.s0 && it.s - halfWidth <= chunk.s0 + CHUNK_LEN;
+        })
+        .map((it) => {
+          const halfWidth = junctionCutHalfWidth(it);
+          return { startS: it.s - halfWidth, endS: it.s + halfWidth };
+        })
+      : [];
     return buildGroundGeometry(track, chunk.s0, CHUNK_LEN, chunk.kind, (sc) => {
       const atInter = engine.intersections.some((it) => Math.abs(it.s - sc) < (it.scramble ? 11.5 : it.wide ? 10.5 : 8.5));
       const atCross = engine.crossings.some((cr) => Math.abs(cr.s - sc) < 8.5);
       const inTun = engine.subwayTunnels.some((st) => sc >= st.startS - 2 && sc <= st.endS + 2);
       return atInter || atCross || inTun;
-    });
-  }, [chunk]);
+    }, roadCuts);
+  }, [chunk, roadCutKey]);
   useEffect(() => () => geo.dispose(), [geo]);
   return (
     <group>
@@ -502,6 +548,13 @@ const PED_SCALE = 1.06; // Skala pejalan kaki proporsional, alami, dan nyaman di
    Setelah diskalakan, model harus diangkat 0.98 * skala supaya kaki MENAPAK di permukaan,
    bukan menembus jalan. */
 const PED_LIFT = 0.98 * PED_SCALE + 0.005;
+const motorcycleVisorMaterial = applyCurve(new THREE.MeshLambertMaterial({
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.44,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+}));
 /* CAT_SCALE / CHICKEN_SCALE (ukuran hewan, sudah termasuk boost 1.7x & 1.2x)
    diimpor dari engine.ts supaya hitbox di sana selalu sinkron dengan model di sini. */
 
@@ -785,7 +838,7 @@ const MoverView = memo(function MoverView({
     }
   });
 
-  const geo = useMemo(() => {
+  const geo = useMemo<THREE.BufferGeometry | GeoPair>(() => {
     if (m.kind === "car") {
       return getGeometry(`car-${m.variant % 7}`, () => carParts(m.variant));
     }
@@ -793,7 +846,7 @@ const MoverView = memo(function MoverView({
       if (m.shibuyaMoto) {
         return getShibuyaMotorcycleGeo(m.shibuyaMoto, m.motorcycleHelmet !== false);
       }
-      return getGeometry(`moto-${m.variant % 6}`, () => motorcycleParts(m.variant));
+      return getGeometryPair(`moto-${m.variant % 6}`, () => motorcycleParts(m.variant));
     }
     if (m.kind === "shibuya_animal") {
       return getShibuyaAnimalWorldGeo(m.shibuyaAnimal ?? "shiba");
@@ -806,6 +859,8 @@ const MoverView = memo(function MoverView({
     }
     return getGeometry("chicken", chickenParts);
   }, [m.kind, m.variant, m.phase, m.shibuyaMoto, m.motorcycleHelmet, m.shibuyaAnimal]);
+  const litGeo = "lit" in geo ? geo.lit : geo;
+  const visorGeo = "lit" in geo ? geo.transparent : null;
   const bathGeo = useMemo(() => (
     m.kind === "shibuya_animal" && m.shibuyaAnimalActivity === "bathing" && (m.shibuyaAnimal === "monkey" || m.shibuyaAnimal === "capybara")
       ? getShibuyaBathGeo()
@@ -835,7 +890,8 @@ const MoverView = memo(function MoverView({
     <>
       <group ref={(g) => register(m.id, g)}>
         <group rotation-y={innerRot}>
-          <mesh geometry={geo} material={flashMat ?? voxelMaterial} castShadow receiveShadow />
+          <mesh geometry={litGeo} material={flashMat ?? voxelMaterial} castShadow receiveShadow />
+          {visorGeo && <mesh geometry={visorGeo} material={motorcycleVisorMaterial} renderOrder={2} />}
           {bathGeo && <mesh geometry={bathGeo} material={voxelMaterial} castShadow receiveShadow />}
           {lightsGeo && <mesh geometry={lightsGeo} material={glowMaterial} />}
         </group>
@@ -854,7 +910,6 @@ const MoverView = memo(function MoverView({
 
 function Movers() {
   const { camera } = useThree();
-  const isShibuya = useUI((state) => state.trackMode === "shibuya");
   const refs = useRef(new Map<number, THREE.Group>());
   const signs = useRef(new Map<number, THREE.Group>());
   const seen = useRef(-1);
@@ -997,7 +1052,7 @@ function Movers() {
     <>
       {engine.movers.map((m) =>
         m.kind === "pedestrian" ? (
-          m.shibuyaChar && isShibuya ? (
+          m.shibuyaChar ? (
             <ShibuyaPedestrianMover key={m.id} m={m} />
           ) : (
             <PedestrianMover key={m.id} m={m} />
@@ -1036,17 +1091,12 @@ const CrossingView = memo(function CrossingView({ cr }: { cr: Crossing }) {
   }, [cr]);
 
   useFrame(() => {
-    const a = -(Math.PI / 2) * (1 - cr.armT);
-    for (const g of arms.current) if (g) g.rotation.x = a;
-    const active = cr.state === "warning" || cr.state === "clearing";
-    const phase = Math.floor(cr.lightPhase / 0.42) % 2;
-    lamps.current.forEach((m, i) => {
-      if (m) m.material = active && i % 2 === phase ? lampOn : lampOff;
-    });
-    glows.current.forEach((m, i) => {
-      if (!m) return;
-      const on = active && i % 2 === phase;
-      if (glowMats[i]) glowMats[i].opacity = on ? 0.45 : 0;
+    const armAngle = crossingArmRotation(cr.armT);
+    for (const gateArm of arms.current) if (gateArm) gateArm.rotation.x = armAngle;
+    lamps.current.forEach((lamp, i) => {
+      const lit = crossingLampIsLit(cr, i % 2);
+      if (lamp) lamp.material = lit ? lampOn : lampOff;
+      if (glowMats[i]) glowMats[i].opacity = lit ? 0.45 : 0;
     });
   });
 
@@ -1305,7 +1355,7 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: In
     // median 0.18 / dek jalan lintas 0.175); DI LUAR apron (saat menyusuri trotoar jauh)
     // pakai tinggi trotoar asli (0.12) — dulu selalu scramblePedH, jadi kaki melayang 5.5 cm
     // begitu penyeberang menyusuri trotoar di luar perempatan.
-    const h = Math.abs(pose.sLocal) <= 6.7 ? scramblePedH(pose.lat) : pedGroundH(pose.lat, track.mode);
+    const h = Math.abs(pose.sLocal) <= 6.7 ? scramblePedH(pose.lat) : pedGroundH(pose.lat, zoneForS(sPos));
     track.frame(sPos, pose.lat, h, root.position);
     track.quat(sPos, root.quaternion);
     inner.rotation.y = pose.yaw;
@@ -1347,11 +1397,15 @@ const ScrambleWalker = memo(function ScrambleWalker({ inter, path }: { inter: In
 });
 
 const IntersectionView = memo(function IntersectionView({ inter, lightState }: { inter: Intersection; lightState: Intersection["lightState"] }) {
-  const isShibuya = useUI((s) => s.trackMode) === "shibuya";
+  const isShibuya = inter.zone === "shibuya";
   const wide = !!inter.wide;
+  const roadAsphalt = isShibuya ? "#343a4c" : "#555a66";
   const roadGeo = useMemo(
-    () => getGeometry(wide ? "intersection-road-wide" : "intersection-road", () => intersectionRoadParts(wide ? INTERSECTION_W_WIDE : undefined)),
-    [wide],
+    () => getGeometry(
+      `intersection-road-${wide ? "wide" : "normal"}-${isShibuya ? "shibuya" : "tokyo"}`,
+      () => intersectionRoadParts(wide ? INTERSECTION_W_WIDE : undefined, roadAsphalt),
+    ),
+    [wide, isShibuya],
   );
   const scrambleGeo = useMemo(() => getGeometryPair("scramble-road", scrambleRoadParts), []);
   const signGeo = useMemo(() => getGeometry("intersection-sign", intersectionSignParts), []);
@@ -1751,6 +1805,66 @@ function NosCans() {
   );
 }
 
+/* ---------- Magnet pickup: a bright, readable blue horseshoe that floats above the road ---------- */
+const magnetPath = new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0, 0.34, -0.24),
+  new THREE.Vector3(0, 0.12, -0.28),
+  new THREE.Vector3(0, -0.12, -0.24),
+  new THREE.Vector3(0, -0.23, -0.13),
+  new THREE.Vector3(0, -0.25, 0),
+  new THREE.Vector3(0, -0.23, 0.13),
+  new THREE.Vector3(0, -0.12, 0.24),
+  new THREE.Vector3(0, 0.12, 0.28),
+  new THREE.Vector3(0, 0.34, 0.24),
+]);
+const magnetBodyGeo = new THREE.TubeGeometry(magnetPath, 28, 0.085, 8, false);
+const magnetTipGeo = new THREE.SphereGeometry(0.09, 10, 8);
+const magnetRingGeo = new THREE.RingGeometry(0.4, 0.47, 32);
+const magnetBodyMat = applyCurve(new THREE.MeshStandardMaterial({ color: "#318ce7", metalness: 0.3, roughness: 0.28, emissive: "#0d4d9f", emissiveIntensity: 0.24 }));
+const magnetNorthMat = applyCurve(new THREE.MeshStandardMaterial({ color: "#ff6657", metalness: 0.15, roughness: 0.35, emissive: "#9c2117", emissiveIntensity: 0.1 }));
+const magnetSouthMat = applyCurve(new THREE.MeshStandardMaterial({ color: "#f4fbff", metalness: 0.18, roughness: 0.32, emissive: "#5c91b5", emissiveIntensity: 0.08 }));
+const magnetRingMat = applyCurve(new THREE.MeshBasicMaterial({ color: "#54caff", transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+
+function Magnets() {
+  const seen = useRef(-1);
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  const refs = useRef(new Map<number, THREE.Group>());
+  useFrame(() => {
+    if (engine.listVersion !== seen.current) {
+      seen.current = engine.listVersion;
+      force();
+    }
+    const t = engine.time;
+    for (const pickup of engine.magnets) {
+      const group = refs.current.get(pickup.id);
+      if (!group) continue;
+      group.visible = !pickup.taken;
+      group.position.set(pickup.wx, pickup.wy + 0.66 + Math.sin(t * 3 + pickup.phase) * 0.1, pickup.wz);
+      group.rotation.y = t * 1.8 + pickup.phase;
+      group.rotation.z = Math.sin(t * 1.4 + pickup.phase) * 0.055;
+    }
+  });
+  return (
+    <>
+      {engine.magnets.map((pickup) => (
+        <group
+          key={pickup.id}
+          ref={(group) => {
+            if (group) refs.current.set(pickup.id, group);
+            else refs.current.delete(pickup.id);
+          }}
+          scale={1.05}
+        >
+          <mesh geometry={magnetBodyGeo} material={magnetBodyMat} castShadow />
+          <mesh geometry={magnetTipGeo} material={magnetNorthMat} position={[0, 0.34, -0.24]} />
+          <mesh geometry={magnetTipGeo} material={magnetSouthMat} position={[0, 0.34, 0.24]} />
+          <mesh geometry={magnetRingGeo} material={magnetRingMat} position={[0, -0.34, 0]} rotation-x={-Math.PI / 2} />
+        </group>
+      ))}
+    </>
+  );
+}
+
 /* ---------- Item LANGKA: ROKET NOS + kilatan sinar (raylight) ---------- */
 const RARE_TINT: Record<string, string> = {
   rocket: "#ffc93c",
@@ -2018,6 +2132,9 @@ function RareFlash() {
 
 /* ---------- Bread (instanced) ---------- */
 const MAX_BREAD = 200; // cukup untuk roti aspal + roti langit (formasi terbang roket)
+const BREAD_SPIN_SPEED = 1.55;
+const BREAD_BOB_SPEED = 2.4;
+const BREAD_BOB_HEIGHT = 0.045;
 const tmpObj = new THREE.Object3D();
 const tmpGlowPos = new THREE.Vector3();
 const tmpGlowColor = new THREE.Color();
@@ -2392,9 +2509,11 @@ function Breads() {
     }
     for (const b of engine.breads) {
       if (b.taken || i >= MAX_BREAD) continue;
-      const bob = Math.sin(t * 3 + b.phase) * 0.08;
+      // Fase putar dan bob disamakan agar barisan roti bergerak kompak, bukan acak.
+      // `b.phase` tetap khusus untuk variasi denyut halo yang sangat halus.
+      const bob = Math.sin(t * BREAD_BOB_SPEED) * BREAD_BOB_HEIGHT;
       tmpObj.position.set(b.wx, b.wy + bob, b.wz);
-      tmpObj.rotation.set(0, t * 2.2 + b.phase, 0);
+      tmpObj.rotation.set(0, t * BREAD_SPIN_SPEED, 0);
       tmpObj.scale.setScalar(0.9);
       tmpObj.updateMatrix();
       m.setMatrixAt(i, tmpObj.matrix);
@@ -2599,6 +2718,8 @@ interface Walker {
   speed: number;
   t0: number;
   seeded: boolean;
+  safeLat: number;
+  nextAvoidT: number;
 }
 
 const URBAN_CROWD_N = 120; // Trotoar ramai, hidup, dan merata khas kota Tokyo/Shibuya
@@ -2753,7 +2874,7 @@ export function safeWalkLat(mode: TrackMode, side: 1 | -1, s: number, lat: numbe
 
 type WalkerKind = "adult" | "elder" | "suit" | "kid" | "kamen";
 
-const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, trackMode }: { w: Walker; all: Walker[]; variant: number; kind: WalkerKind; trackMode: TrackMode }) {
+const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind }: { w: Walker; all: Walker[]; variant: number; kind: WalkerKind }) {
   const elderly = kind === "elder";
   const kid = kind === "kid";
   const suit = kind === "suit";
@@ -2809,7 +2930,14 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
     if (!w.seeded) {
       w.seeded = true;
       w.s = dist - 20 + Math.random() * 125;
-      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
+      w.lat = safeWalkLat(zoneForS(w.s), w.side, w.s, crowdLat(zoneForS(w.s), w.side, w.dir));
+      w.safeLat = w.lat;
+      w.nextAvoidT = engine.time;
+    }
+    // Re-check the dense sidewalk only 8 times a second; continuous easing keeps the path smooth.
+    if (engine.time >= w.nextAvoidT) {
+      w.safeLat = safeWalkLat(zoneForS(w.s), w.side, w.s, w.lat);
+      w.nextAvoidT = engine.time + 0.12;
     }
     // JAGA KELANCARAN & JARAK ALAMI: tidak dempet, tidak menumpuk jadi antrean macet
     // (langkah trotoar 1.5x lebih cepat: WALK_SPEED_MULT)
@@ -2831,19 +2959,18 @@ const AmbientWalker = memo(function AmbientWalker({ w, all, variant, kind, track
     // KORIDOR + HINDARI BENDA: pejalan kaki tidak boleh menembus pagar pipa di tepi curb,
     // tiang lampu, pohon, planter, vending machine, atau dinding gedung. Pengelakan dibiarkan
     // melebar keluar koridor bila perlu, tapi selalu dibatasi batas fisik trotoar.
-    const [hardMin, hardMax] = walkHardBand(trackMode, w.side);
-    const safeLat = safeWalkLat(trackMode, w.side, w.s, w.lat);
-    w.lat += Math.min(2.2 * dt, Math.max(-2.2 * dt, safeLat - w.lat)); // langkah menyamping cepat
+    const [hardMin, hardMax] = walkHardBand(zoneForS(w.s), w.side);
+    w.lat += Math.min(2.2 * dt, Math.max(-2.2 * dt, w.safeLat - w.lat)); // langkah menyamping cepat
     w.lat = Math.min(hardMax, Math.max(hardMin, w.lat));
     w.s += w.dir * v * dt;
     let rel = w.s - dist;
     // Sirkulasi terus menerus di sekitar pemain agar trotoar selalu ramai merata tanpa zona kosong
     if (w.dir > 0 && rel > 98) {
       w.s = dist - 24 - Math.random() * 12;
-      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
+      w.lat = safeWalkLat(zoneForS(w.s), w.side, w.s, crowdLat(zoneForS(w.s), w.side, w.dir));
     } else if (w.dir < 0 && rel < -24) {
       w.s = dist + 88 + Math.random() * 24;
-      w.lat = safeWalkLat(trackMode, w.side, w.s, crowdLat(trackMode, w.side, w.dir));
+      w.lat = safeWalkLat(zoneForS(w.s), w.side, w.s, crowdLat(zoneForS(w.s), w.side, w.dir));
     }
     rel = w.s - dist;
 
@@ -2912,13 +3039,18 @@ function UrbanCrowd() {
           speed: elderly ? 0.75 + Math.random() * 0.3 : kid ? 1.3 + Math.random() * 0.65 : 1.3 + Math.random() * 0.8,
           t0: Math.random() * 20,
           seeded: false,
+          safeLat: 0,
+          nextAvoidT: 0,
         };
       }),
     [],
   );
   useEffect(() => {
     // ganti track/reset -> sebar ulang di depan kamera
-    for (const w of walkers) w.seeded = false;
+    for (const w of walkers) {
+      w.seeded = false;
+      w.nextAvoidT = 0;
+    }
   }, [trackMode, walkers]);
   if (trackMode === "haruna") return null;
   return (
@@ -2926,7 +3058,7 @@ function UrbanCrowd() {
       {walkers.map((w, i) => {
         // Mix salarymen, children, elders, casual walkers — dan SATU Kamen Rider easter egg.
         const kind: WalkerKind = i === 13 ? "kamen" : CROWD_KINDS[i % CROWD_KINDS.length];
-        return <AmbientWalker key={i} w={w} all={walkers} variant={kind === "suit" ? 5 + (i % 3) : i % 5} kind={kind} trackMode={trackMode} />;
+        return <AmbientWalker key={i} w={w} all={walkers} variant={kind === "suit" ? 5 + (i % 3) : i % 5} kind={kind} />;
       })}
     </>
   );
@@ -2945,9 +3077,18 @@ export function World() {
 
   return (
     <group>
-      {engine.chunks.map((c) => (
-        <ChunkView key={c.id} chunk={c} />
-      ))}
+      {engine.chunks.map((c) => {
+        // Kota mana pun (Tokyo, Shibuya, MIX): tiap simpang memotong paving samping yang raised.
+        // Kunci memo ikut lebar potong, supaya ganti daftar/lebar membangun ulang chunk.
+        const roadCutKey = engine.intersections
+          .filter((it) => {
+            const halfWidth = junctionCutHalfWidth(it);
+            return it.s + halfWidth >= c.s0 && it.s - halfWidth <= c.s0 + CHUNK_LEN;
+          })
+          .map((it) => `${it.id}@${junctionCutHalfWidth(it).toFixed(2)}`)
+          .join(",");
+        return <ChunkView key={c.id} chunk={c} roadCutKey={roadCutKey} />;
+      })}
       {engine.obstacles.map((o) => (
         <ObstacleView key={o.id} o={o} />
       ))}
@@ -2959,6 +3100,7 @@ export function World() {
       <Puddles />
       <Petals />
       <NosCans />
+      <Magnets />
       <Rockets />
       <TrackLetters />
       <RareFlash />

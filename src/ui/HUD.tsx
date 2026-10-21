@@ -87,6 +87,8 @@ export function HUD() {
                   ? "🌸"
                   : "✨";
   const inRun = phase === "playing" || phase === "crashed";
+  // Stats FPS kiri bawah — ditulis PerfTracker dari dalam Canvas 2x per detik.
+  const fps = useUI((s) => s.fps);
   const nosReady = nos >= NOS_MAX * 0.99 && !nosActive;
   // ROKET bisa dinyalakan sejak isi NOS 35% (durasi terbang ikut sisa isi tangki)
   const rocketArmed = nos >= NOS_MAX * NOS_MIN_FIRE && !nosActive;
@@ -359,6 +361,22 @@ export function HUD() {
           );
         })}
       </div>
+
+      {/* STATS FPS — kiri bawah (permintaan): angka live 2x per detik + ms per frame.
+          pointer-events-none, tidak menutupi tombol apa pun (NOS di kanan bawah). */}
+      {inRun && (
+        <div
+          className="pointer-events-none absolute bottom-[4.5%] left-[4%] z-30 rounded-xl bg-[#00131f]/80 px-2.5 py-1.5 text-center shadow-[0_0_10px_rgba(0,145,255,0.35)] ring-1 ring-[#0091ff]/60"
+          aria-label="Stats FPS"
+        >
+          <div className={`font-display text-[4.6cqw] leading-none ${fps >= 55 ? "text-[#3dffa0]" : fps >= 30 ? "text-[#ffd21f]" : "text-[#ff5a4e]"}`}>
+            {fps > 0 ? fps : "--"} FPS
+          </div>
+          <div className="mt-0.5 font-display text-[2.4cqw] leading-none text-white/60">
+            {fps > 0 ? `${(1000 / fps).toFixed(1)} ms` : "mengukur…"}
+          </div>
+        </div>
+      )}
 
       {/* NOS meter + boost button (bottom-right) — SATU-SATUNYA TOMBOL DI BAWAH SEPERTI PERMINTAAN
           (disembunyikan sementara saat panel atur kamera atau atur pigeon terbuka) */}

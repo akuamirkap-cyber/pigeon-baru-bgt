@@ -42,23 +42,23 @@ export function paving(b: Builder, x: number, z: number, width: number, depth: n
 }
 
 export function bush(b: Builder, x: number, z: number, size = 0.65, y = 0.73) {
-  b.box([x - size / 2, y, z - size / 2], [size, size * 0.63, size], '#42792e');
-  b.box([x - size * 0.4, y + size * 0.63, z - size * 0.4], [size * 0.8, size * 0.2, size * 0.8], '#7ea940');
-  b.box([x - size * 0.52, y + size * 0.18, z], [size * 0.22, size * 0.36, size * 0.4], '#5c9734');
+  b.box([x - size / 2, y, z - size / 2], [size, size * 0.63, size], '#42792e', { role: 'landscape' });
+  b.box([x - size * 0.4, y + size * 0.63, z - size * 0.4], [size * 0.8, size * 0.2, size * 0.8], '#7ea940', { role: 'landscape' });
+  b.box([x - size * 0.52, y + size * 0.18, z], [size * 0.22, size * 0.36, size * 0.4], '#5c9734', { role: 'landscape' });
 }
 
 export function cherryTree(b: Builder, x: number, z: number, scale = 1, y = 0.73, seed = 0) {
   const cube = (p: Vec3, s: Vec3, color: string) => b.box(
     [x + p[0] * scale, y + p[1] * scale, z + p[2] * scale],
-    [s[0] * scale, s[1] * scale, s[2] * scale], color,
+    [s[0] * scale, s[1] * scale, s[2] * scale], color, { role: 'landscape' },
   );
   const wood = '#51352b';
   cube([-0.22, 0, -0.21], [0.44, 3.5, 0.42], wood);
   cube([-0.13, 0.25, 0.214], [0.1, 2.86, 0.018], '#76503b');
   for (const [dx, dz] of [[-0.34, 0], [0.13, -0.3], [0, 0.15]]) cube([dx, 0, dz], [0.32, 0.26, 0.32], '#654432');
   for (const side of [-1, 1]) {
-    b.line([x, y + 2.36 * scale, z], [x + side * 1.2 * scale, y + 3.61 * scale, z + side * 0.35 * scale], 0.22 * scale, wood);
-    b.line([x, y + 2.75 * scale, z], [x + side * 0.35 * scale, y + 3.6 * scale, z - side * 1.1 * scale], 0.19 * scale, wood);
+    b.line([x, y + 2.36 * scale, z], [x + side * 1.2 * scale, y + 3.61 * scale, z + side * 0.35 * scale], 0.22 * scale, wood, { role: 'landscape' });
+    b.line([x, y + 2.75 * scale, z], [x + side * 0.35 * scale, y + 3.6 * scale, z - side * 1.1 * scale], 0.19 * scale, wood, { role: 'landscape' });
   }
   const pinks = ['#d792ac', '#eab0be', '#f3c2c9', '#f8d8d4', '#dfa0b3'];
   cube([-1.25, 3.35, -1.22], [2.5, 0.78, 2.44], pinks[1]);
@@ -81,11 +81,11 @@ export function cherryTree(b: Builder, x: number, z: number, scale = 1, y = 0.73
 }
 
 export function greenTree(b: Builder, x: number, z: number, scale = 1, y = 0.73) {
-  b.box([x - 0.13 * scale, y, z - 0.13 * scale], [0.26 * scale, 2.55 * scale, 0.26 * scale], P.woodDark);
-  b.box([x - 0.63 * scale, y + 1.75 * scale, z - 0.58 * scale], [1.26 * scale, 1.34 * scale, 1.16 * scale], '#34843d');
-  b.box([x - 0.44 * scale, y + 3.09 * scale, z - 0.4 * scale], [0.88 * scale, 0.32 * scale, 0.8 * scale], '#7eb74c');
-  b.box([x - 0.85 * scale, y + 2.14 * scale, z - 0.35 * scale], [0.38 * scale, 0.66 * scale, 0.7 * scale], '#4d9c3e');
-  b.box([x + 0.53 * scale, y + 2.0 * scale, z - 0.31 * scale], [0.31 * scale, 0.75 * scale, 0.65 * scale], '#559e37');
+  b.box([x - 0.13 * scale, y, z - 0.13 * scale], [0.26 * scale, 2.55 * scale, 0.26 * scale], P.woodDark, { role: 'landscape' });
+  b.box([x - 0.63 * scale, y + 1.75 * scale, z - 0.58 * scale], [1.26 * scale, 1.34 * scale, 1.16 * scale], '#34843d', { role: 'landscape' });
+  b.box([x - 0.44 * scale, y + 3.09 * scale, z - 0.4 * scale], [0.88 * scale, 0.32 * scale, 0.8 * scale], '#7eb74c', { role: 'landscape' });
+  b.box([x - 0.85 * scale, y + 2.14 * scale, z - 0.35 * scale], [0.38 * scale, 0.66 * scale, 0.7 * scale], '#4d9c3e', { role: 'landscape' });
+  b.box([x + 0.53 * scale, y + 2.0 * scale, z - 0.31 * scale], [0.31 * scale, 0.75 * scale, 0.65 * scale], '#559e37', { role: 'landscape' });
 }
 
 export function stoneLantern(b: Builder, x: number, z: number, scale = 1) {
@@ -217,7 +217,7 @@ export function taxi(b: Builder, x: number, z: number, color = '#eac34c', rotate
   const cube = (p: Vec3, s: Vec3, c: string, glow = 0) => {
     const position: Vec3 = rotate ? [x + p[2], p[1] + y - 0.73, z + p[0]] : [x + p[0], p[1] + y - 0.73, z + p[2]];
     const size: Vec3 = rotate ? [s[2], s[1], s[0]] : s;
-    b.box(position, size, c, { glow });
+    b.box(position, size, c, { glow, role: 'vehicle' });
   };
   cube([0, 0.86, 0], [1.72, 0.43, 0.81], color);
   cube([0.4, 1.29, 0.08], [0.9, 0.37, 0.65], '#dbe9dc');
@@ -236,17 +236,20 @@ export function taxi(b: Builder, x: number, z: number, color = '#eac34c', rotate
 }
 
 export function pedestrian(b: Builder, x: number, z: number, color = '#b25541', y = 0.73) {
-  b.box([x, y, z], [0.12, 0.41, 0.15], '#334753');
-  b.box([x + 0.17, y, z], [0.12, 0.41, 0.15], '#334753');
-  b.box([x - 0.012, y - 0.015, z + 0.008], [0.15, 0.065, 0.21], '#303a32');
-  b.box([x + 0.166, y - 0.015, z + 0.008], [0.15, 0.065, 0.21], '#303a32');
-  b.box([x - 0.022, y + 0.41, z - 0.028], [0.34, 0.37, 0.23], color);
-  b.box([x + 0.02, y + 0.78, z - 0.02], [0.25, 0.25, 0.23], '#e9c79f');
-  b.box([x + 0.005, y + 0.96, z - 0.04], [0.28, 0.1, 0.25], '#443e31');
-  b.box([x + 0.064, y + 0.85, z + 0.214], [0.029, 0.026, 0.009], '#443e31');
-  b.box([x + 0.202, y + 0.85, z + 0.214], [0.029, 0.026, 0.009], '#443e31');
-  b.box([x - 0.1, y + 0.49, z - 0.02], [0.08, 0.26, 0.16], color);
-  b.box([x + 0.32, y + 0.43, z - 0.015], [0.085, 0.31, 0.16], color);
+  // Keep the identity on every cube so the game can replace source-diorama figures
+  // with full-height pedestrians instead of scaling them with the building.
+  const personBox = (p: Vec3, s: Vec3, shade: string) => b.box(p, s, shade, { role: 'pedestrian' });
+  personBox([x, y, z], [0.12, 0.41, 0.15], '#334753');
+  personBox([x + 0.17, y, z], [0.12, 0.41, 0.15], '#334753');
+  personBox([x - 0.012, y - 0.015, z + 0.008], [0.15, 0.065, 0.21], '#303a32');
+  personBox([x + 0.166, y - 0.015, z + 0.008], [0.15, 0.065, 0.21], '#303a32');
+  personBox([x - 0.022, y + 0.41, z - 0.028], [0.34, 0.37, 0.23], color);
+  personBox([x + 0.02, y + 0.78, z - 0.02], [0.25, 0.25, 0.23], '#e9c79f');
+  personBox([x + 0.005, y + 0.96, z - 0.04], [0.28, 0.1, 0.25], '#443e31');
+  personBox([x + 0.064, y + 0.85, z + 0.214], [0.029, 0.026, 0.009], '#443e31');
+  personBox([x + 0.202, y + 0.85, z + 0.214], [0.029, 0.026, 0.009], '#443e31');
+  personBox([x - 0.1, y + 0.49, z - 0.02], [0.08, 0.26, 0.16], color);
+  personBox([x + 0.32, y + 0.43, z - 0.015], [0.085, 0.31, 0.16], color);
 }
 
 export function yamanote(b: Builder, x: number, y: number, z: number, length = 12) {

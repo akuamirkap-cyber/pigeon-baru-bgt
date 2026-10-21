@@ -73,6 +73,42 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
+  // Wake Lock: layar HP tidak mati sendiri saat bermain (Chrome/Android WebView & Safari).
+  // Re-acquire tiap tab/app kembali terlihat — sentinel dilepas otomatis saat background.
+  useEffect(() => {
+    type Sentinel = { release: () => Promise<void>; addEventListener?: (t: string, cb: () => void) => void };
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<Sentinel> } };
+    if (!nav.wakeLock) return;
+    let sentinel: Sentinel | null = null;
+    let disposed = false;
+    const acquire = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      nav
+        .wakeLock!.request("screen")
+        .then((s) => {
+          if (disposed) {
+            s.release().catch(() => {});
+            return;
+          }
+          sentinel = s;
+          s.addEventListener?.("release", () => {
+            sentinel = null;
+          });
+        })
+        .catch(() => {}); // device tanpa dukungan: abaikan diam-diam
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+    acquire();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", onVis);
+      sentinel?.release().catch(() => {});
+    };
+  }, []);
+
   const [glKey, setGlKey] = useState(0);
   const [glLost, setGlLost] = useState(false);
   const phase = useUI((s) => s.phase);

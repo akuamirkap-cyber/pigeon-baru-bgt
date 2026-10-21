@@ -7,12 +7,14 @@
 export interface LifeStats {
   runs: number;
   maxDist: number;
+  /** Roti terbanyak yang pernah dikumpulkan dalam SATU run (syarat buka skin). */
+  maxBread: number;
   rockets: number;
   shibuyaRuns: number;
 }
 
 const KEY = "pigeon-sk8-life";
-const DEFAULTS: LifeStats = { runs: 0, maxDist: 0, rockets: 0, shibuyaRuns: 0 };
+const DEFAULTS: LifeStats = { runs: 0, maxDist: 0, maxBread: 0, rockets: 0, shibuyaRuns: 0 };
 
 let cache: LifeStats | null = null;
 
@@ -41,10 +43,11 @@ function saveStats() {
 }
 
 /** Catat satu run selesai (dipanggil engine tepat saat game over). */
-export function recordRun(distM: number, rockets: number): LifeStats {
+export function recordRun(distM: number, rockets: number, bread = 0): LifeStats {
   const s = getStats();
   s.runs += 1;
   s.maxDist = Math.max(s.maxDist, Math.floor(distM));
+  s.maxBread = Math.max(s.maxBread, Math.floor(bread));
   s.rockets += Math.max(0, Math.floor(rockets));
   saveStats();
   return s;

@@ -9,12 +9,16 @@ interface Strip {
   skirt: boolean;
 }
 
-const ROAD = "#555a66";
-const CURB = "#c9c5bb";
-const WALK = "#dcd7cb";
-const PLAZA = "#a9a49b";
-const G1 = "#8ed04e";
-const G2 = "#84c645";
+export interface GroundRoadCut {
+  startS: number;
+  endS: number;
+}
+
+const ROAD = "#474f60";
+const CURB = "#d8d3c5";
+const PLAZA = "#b7b2a6";
+const G1 = "#95e055";
+const G2 = "#89d64c";
 
 function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
   if (kind === "shibuya") {
@@ -23,18 +27,19 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
       // beyond a tree-lined centre median runs the opposite 3-lane carriageway.
       // playable carriageway (3 lanes)
       { lat0: -3.75, lat1: 3.75, top: 0, colors: ["#343a4c"], skirt: false },
-      // near curb + granite sidewalk + plaza under the towers
+      // near curb + granite sidewalk + plaza under the towers. Keep the paving base
+      // continuous: alternating 1 m bands read like broken steps when the boulevard bends.
       { lat0: -4.0, lat1: -3.7, top: 0.14, colors: ["#9aa2b5"], skirt: true },
-      { lat0: -8.2, lat1: -4.0, top: 0.12, colors: ["#5b6178", "#525871"], skirt: true },
-      { lat0: -24, lat1: -8.2, top: 0.1, colors: ["#3d4257", "#444a61"], skirt: true },
+      { lat0: -8.2, lat1: -4.0, top: 0.12, colors: ["#575d75"], skirt: true },
+      { lat0: -24, lat1: -8.2, top: 0.1, colors: ["#41465c"], skirt: true },
       // raised centre median (street trees & lamps live here)
-      { lat0: 3.7, lat1: 5.0, top: 0.16, colors: ["#4b5169", "#454b62"], skirt: true },
+      { lat0: 3.7, lat1: 5.0, top: 0.16, colors: ["#484e66"], skirt: true },
       // opposite carriageway (3 more lanes)
       { lat0: 5.0, lat1: 12.3, top: 0, colors: ["#31374a"], skirt: false },
       // far curb + sidewalk + plaza
       { lat0: 12.3, lat1: 12.6, top: 0.14, colors: ["#9aa2b5"], skirt: true },
-      { lat0: 12.6, lat1: 16.1, top: 0.12, colors: ["#5b6178", "#525871"], skirt: true },
-      { lat0: 16.1, lat1: 26, top: 0.1, colors: ["#3d4257", "#444a61"], skirt: true },
+      { lat0: 12.6, lat1: 16.1, top: 0.12, colors: ["#575d75"], skirt: true },
+      { lat0: 16.1, lat1: 26, top: 0.1, colors: ["#41465c"], skirt: true },
     ];
   }
   if (kind === "haruna") {
@@ -56,10 +61,11 @@ function stripsFor(kind: "street" | "park" | "haruna" | "shibuya"): Strip[] {
     { lat0: -3.75, lat1: 3.75, top: 0, colors: [ROAD], skirt: false },
     { lat0: -4.0, lat1: -3.7, top: 0.14, colors: [CURB], skirt: true },
     { lat0: 3.7, lat1: 4.0, top: 0.14, colors: [CURB], skirt: true },
-    { lat0: -7.0, lat1: -4.0, top: 0.12, colors: [WALK], skirt: true },
-    { lat0: 4.0, lat1: 6.3, top: 0.12, colors: [WALK], skirt: true },
-    { lat0: -24, lat1: -7.0, top: 0.1, colors: kind === "park" ? [G1, G2] : [PLAZA], skirt: true },
-    { lat0: 6.3, lat1: 22, top: 0.1, colors: [G1, G2], skirt: true },
+    // SIDEWALK band TOKYO DIHAPUS (permintaan user): pita WALK .12 + garis nat di antara
+    // jalan dan deret rumah/toko terbaca sebagai "jalan abu-abu" sendiri. Plaza/rumput
+    // kini rata (.1) menyatu sampai kerb — di Shibuya pita granit TETAP (bukan sasaran).
+    { lat0: -24, lat1: -4.0, top: 0.1, colors: kind === "park" ? [G1, G2] : [PLAZA], skirt: true },
+    { lat0: 4.0, lat1: 22, top: 0.1, colors: [G1, G2], skirt: true },
   ];
 }
 
@@ -86,6 +92,7 @@ export function buildGroundGeometry(
   len: number,
   kind: "street" | "park" | "haruna" | "shibuya",
   skipRailing?: (s: number) => boolean,
+  roadCuts: readonly GroundRoadCut[] = [],
 ): THREE.BufferGeometry {
   const pos: number[] = [];
   const nrm: number[] = [];
@@ -104,8 +111,9 @@ export function buildGroundGeometry(
     return { x: t.x, y: t.y, z: t.z, sn, cs, ux: ux / l, uy: uy / l, uz: uz / l, kappa: t.kappa };
   };
   const smp: S[] = [];
-  // Strip tanah (trotoar, median, curb) disampel lebih rapat supaya ikut kontur tikungan tanpa patah.
-  const SUB = 4;
+  // Sample Shibuya's wide paving more densely than the asphalt: the outer plaza edge
+  // spans much farther from the road centre, so coarse cross-sections can look stepped on bends.
+  const SUB = kind === "shibuya" ? 12 : 4;
   const subSteps = steps * SUB;
   for (let i = 0; i <= subSteps; i++) smp.push(sampleAt(s0 + i / SUB));
 
@@ -142,46 +150,85 @@ export function buildGroundGeometry(
   };
 
   for (const st of stripsFor(kind)) {
+    // The normal road strip remains continuous. In Tokyo City, side-street asphalt
+    // replaces the raised sidewalk/plaza strips while crossing a junction.
+    const sideStrip = st.lat0 < -3.75 || st.lat1 > 3.75;
     for (let i = 0; i < subSteps; i++) {
-      const a = smp[i];
-      const b = smp[i + 1];
+      const baseStart = s0 + i / SUB;
+      const baseEnd = s0 + (i + 1) / SUB;
+      const cuts = [baseStart, baseEnd];
+      if (sideStrip && roadCuts.length) {
+        for (const cut of roadCuts) {
+          if (cut.startS > baseStart + 1e-8 && cut.startS < baseEnd - 1e-8) cuts.push(cut.startS);
+          if (cut.endS > baseStart + 1e-8 && cut.endS < baseEnd - 1e-8) cuts.push(cut.endS);
+        }
+      }
+      cuts.sort((a, b) => a - b);
       const hex = st.colors.length > 1 ? st.colors[Math.round(s0 + Math.floor(i / SUB)) & 1] : st.colors[0];
-      const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
-      quad(a, b, st.lat0, st.lat1, st.top, n, shade(hex, 1.05));
-      if (st.skirt) {
-        const sc = shade(hex, 0.86);
-        const bottom = st.top - 0.5;
-        const nOut: P = [-(a.sn + b.sn) / 2, 0, (a.cs + b.cs) / 2];
-        const nIn: P = [-nOut[0], 0, -nOut[2]];
-        const p00 = pt(a, st.lat0, st.top);
-        const p01 = pt(a, st.lat1, st.top);
-        const p10 = pt(b, st.lat0, st.top);
-        const p11 = pt(b, st.lat1, st.top);
-        const q00 = pt(a, st.lat0, bottom);
-        const q01 = pt(a, st.lat1, bottom);
-        const q10 = pt(b, st.lat0, bottom);
-        const q11 = pt(b, st.lat1, bottom);
-        tri(q01, q11, p11, nOut, sc);
-        tri(q01, p11, p01, nOut, sc);
-        tri(q00, p10, q10, nIn, sc);
-        tri(q00, p00, p10, nIn, sc);
+
+      for (let j = 0; j < cuts.length - 1; j++) {
+        const segStart = cuts[j];
+        const segEnd = cuts[j + 1];
+        if (segEnd - segStart < 1e-8) continue;
+        const midS = (segStart + segEnd) / 2;
+        if (sideStrip && roadCuts.some((cut) => midS > cut.startS && midS < cut.endS)) continue;
+
+        const a = Math.abs(segStart - baseStart) < 1e-8 ? smp[i] : sampleAt(segStart);
+        const b = Math.abs(segEnd - baseEnd) < 1e-8 ? smp[i + 1] : sampleAt(segEnd);
+        const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
+        quad(a, b, st.lat0, st.lat1, st.top, n, shade(hex, 1.05));
+        if (st.skirt) {
+          const sc = shade(hex, 0.86);
+          const bottom = st.top - 0.5;
+          const nOut: P = [-(a.sn + b.sn) / 2, 0, (a.cs + b.cs) / 2];
+          const nIn: P = [-nOut[0], 0, -nOut[2]];
+          const p00 = pt(a, st.lat0, st.top);
+          const p01 = pt(a, st.lat1, st.top);
+          const p10 = pt(b, st.lat0, st.top);
+          const p11 = pt(b, st.lat1, st.top);
+          const q00 = pt(a, st.lat0, bottom);
+          const q01 = pt(a, st.lat1, bottom);
+          const q10 = pt(b, st.lat0, bottom);
+          const q11 = pt(b, st.lat1, bottom);
+          tri(q01, q11, p11, nOut, sc);
+          tri(q01, p11, p01, nOut, sc);
+          tri(q00, p10, q10, nIn, sc);
+          tri(q00, p00, p10, nIn, sc);
+        }
       }
     }
   }
 
-  const white = shade("#e9e9e9", 1);
+  const white = shade("#ffffff", 1);
+
+  /** Sweep marking pita lurus mengikuti LINTASAN PADAT yang sama dengan permukaan jalan
+   *  (array smp, SUB sampel per meter) — bukan chord lurus per 1 m. Marka "garis tepi utuh"
+   *  sebelumnya dipatahkan tiap 1 m segmen straight sehingga di tikungan Shibuya terlihat
+   *  zigzag/patah dan bisa z-fight sama aspal (tingginya konstan di dunia, jalannya melengkung).
+   *  Dengan jalur padat + tinggi relatif terhadap tiap sampel, marka nempel mulus di aspal. */
+  const sweepMark = (lat0: number, lat1: number, top: number, cl: P, fromIdx: number, toIdx: number, step: number) => {
+    const i0 = Math.max(0, fromIdx);
+    const i1 = Math.min(subSteps, toIdx);
+    for (let i = i0; i < i1; i += step) {
+      const j = Math.min(i + step, i1);
+      const a = smp[i];
+      const b = smp[j];
+      const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
+      quad(a, b, lat0, lat1, top, n, cl);
+    }
+  };
+  // resolusi marka: 0.25 m per segmen — cukup halus utk mata, tetap murah
+  const MARK_STEP = Math.max(1, Math.round(SUB / 4));
+  // lift sedikit lebih tinggi dari aspal (dulu 0.008) supaya zero z-fight di kejauhan
+  const MARK_TOP = 0.014;
+
   if (kind === "haruna") {
     // Mount Haruna Touge: continuous double solid orange/yellow center line and white edge lines along gutters
     const yellow = shade("#f59e0b", 1.05);
-    for (let sc = s0; sc < s0 + len; sc += 1) {
-      const a = sampleAt(sc);
-      const b = sampleAt(sc + 1);
-      const n: P = [(a.ux + b.ux) / 2, (a.uy + b.uy) / 2, (a.uz + b.uz) / 2];
-      quad(a, b, -0.16, -0.06, 0.009, n, yellow);
-      quad(a, b, 0.06, 0.16, 0.009, n, yellow);
-      quad(a, b, -3.65, -3.52, 0.009, n, white);
-      quad(a, b, 3.52, 3.65, 0.009, n, white);
-    }
+    sweepMark(-0.16, -0.06, MARK_TOP, yellow, 0, subSteps, MARK_STEP);
+    sweepMark(0.06, 0.16, MARK_TOP, yellow, 0, subSteps, MARK_STEP);
+    sweepMark(-3.65, -3.52, MARK_TOP, white, 0, subSteps, MARK_STEP);
+    sweepMark(3.52, 3.65, MARK_TOP, white, 0, subSteps, MARK_STEP);
 
     // Drift tire skid marks baked into hairpin turns
     const skidColor = shade("#1f2227", 0.95);
@@ -256,38 +303,40 @@ export function buildGroundGeometry(
       }
     }
   } else {
-    // lane dashes (Tokyo City / Shibuya playable lanes)
+    // lane dashes (Tokyo City / Shibuya playable lanes) — tiap pita 1 m kini DISUBDIVIDE
+    // mengikuti lintasan padat, bukan chord lurus tunggal (dulu bikin marka "patah" di tikungan)
     for (let sc = s0 + 1; sc < s0 + len; sc += 2) {
-      const a = sampleAt(sc - 0.5);
-      const b = sampleAt(sc + 0.5);
-      const n: P = [a.ux, a.uy, a.uz];
-      quad(a, b, -1.27, -1.13, 0.008, n, white);
-      quad(a, b, 1.13, 1.27, 0.008, n, white);
+      const i0 = Math.round((sc - 0.5 - s0) * SUB);
+      const i1 = Math.round((sc + 0.5 - s0) * SUB);
+      sweepMark(-1.27, -1.13, MARK_TOP, white, i0, i1, MARK_STEP);
+      sweepMark(1.13, 1.27, MARK_TOP, white, i0, i1, MARK_STEP);
       if (kind === "shibuya") {
         // opposite carriageway lane dividers (3 lanes: 5.0..12.3)
-        quad(a, b, 7.36, 7.5, 0.008, n, white);
-        quad(a, b, 9.8, 9.94, 0.008, n, white);
+        sweepMark(7.36, 7.5, MARK_TOP, white, i0, i1, MARK_STEP);
+        sweepMark(9.8, 9.94, MARK_TOP, white, i0, i1, MARK_STEP);
       }
     }
     if (kind === "shibuya") {
-      // solid white edge lines hugging the median & the far curb
-      for (let sc = s0; sc < s0 + len; sc += 1) {
-        const a = sampleAt(sc);
-        const b = sampleAt(sc + 1);
-        const n: P = [a.ux, a.uy, a.uz];
-        quad(a, b, 5.12, 5.26, 0.008, n, white);
-        quad(a, b, 12.04, 12.18, 0.008, n, white);
-      }
+      // solid white edge lines hugging the median & the far curb — now swept dense along the
+      // SAME ribbon as the asphalt so they read perfectly continuous through every curve.
+      sweepMark(5.12, 5.26, MARK_TOP, white, 0, subSteps, MARK_STEP);
+      sweepMark(12.04, 12.18, MARK_TOP, white, 0, subSteps, MARK_STEP);
     }
-    // sidewalk seams (dark grout lines on Shibuya's night granite, warm concrete by day)
-    const seam = shade(kind === "shibuya" ? "#454b62" : "#cbc6ba", 1);
-    for (let s = s0; s < s0 + len; s += 2) {
-      const a = sampleAt(s - 0.03);
-      const b = sampleAt(s + 0.03);
-      const n: P = [a.ux, a.uy, a.uz];
-      quad(a, b, kind === "shibuya" ? -8.2 : -7, -4, 0.126, n, seam);
-      if (kind === "shibuya") quad(a, b, 12.6, 16.1, 0.126, n, seam);
-      else quad(a, b, 4, 6.3, 0.126, n, seam);
+    // sidewalk seams — SHIBUYA only (dark grout lines on its night granite; the Tokyo band
+    // the user asked to delete no longer exists, so no warm-concrete grout is drawn anymore).
+    if (kind === "shibuya") {
+      const seam = shade("#454b62", 1);
+      for (let s = s0; s < s0 + len; s += 2) {
+        // Di atas perempatan paving-nya dipotong (roadCuts) — seam juga harus hilang,
+        // kalau tidak dia melayang memotong aspal sebagai garis grout gelap (top 0.126 > pad 0.03).
+        if (roadCuts.some((cut) => s + 0.5 > cut.startS - 0.15 && s - 0.5 < cut.endS + 0.15)) continue;
+        // Fine grout only; wide cross-bands can look like raised steps in perspective.
+        const a = sampleAt(s - 0.012);
+        const b = sampleAt(s + 0.012);
+        const n: P = [a.ux, a.uy, a.uz];
+        quad(a, b, -8.2, -4, 0.126, n, seam);
+        quad(a, b, 12.6, 16.1, 0.126, n, seam);
+      }
     }
 
     // Pagar pembatas trotoar pipa putih khas Jepang (横断防止柵)

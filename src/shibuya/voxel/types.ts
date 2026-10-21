@@ -14,6 +14,8 @@ export interface VoxelBox {
   opacity?: number;
   /** Marks rider helmet geometry so traffic variants can render helmet/no-helmet riders. */
   helmet?: boolean;
+  /** Semantic tags prevent diorama-scale actors/vehicles from leaking into the playable city. */
+  role?: "pedestrian" | "vehicle" | "landscape";
   part: Part;
   node?: string;
 }

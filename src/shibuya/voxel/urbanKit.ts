@@ -95,18 +95,19 @@ export function transport(b: Builder, kind: 'taxi' | 'car' | 'bus' | 'truck', x:
     if (turn === 1) { xx = width - p[2] - s[2]; zz = p[0]; ww = s[2]; dd = s[0]; }
     if (turn === 2) { xx = length - p[0] - s[0]; zz = width - p[2] - s[2]; }
     if (turn === 3) { xx = p[2]; zz = length - p[0] - s[0]; ww = s[2]; dd = s[0]; }
-    b.box([x + xx, p[1], z + zz], [ww, s[1], dd], c, { glow });
+    b.box([x + xx, p[1], z + zz], [ww, s[1], dd], c, { glow, role: 'vehicle' });
   };
   cube([0, 0.87, 0], [length, 0.38, width], color);
   if (kind === 'bus') {
     cube([0.05, 1.25, 0.03], [length - 0.1, 0.77, width - 0.06], '#dfebd9');
     for (let i = 0; i < 6; i++) {
-      for (const zz of [0.024, width - 0.044]) cube([0.21 + i * 0.49, 1.49, zz], [0.35, 0.39, 0.024], '#4c889b');
+      for (const zz of [0.024, width - 0.044]) cube([0.21 + i * 0.49, 1.49, zz], [0.35, 0.39, 0.024], '#bfe3ff');
     }
     cube([0, 1.29, -0.009], [length, 0.2, width + 0.018], '#4d9b48');
-    cube([0.17, 2.02, 0.075], [length - 0.34, 0.075, width - 0.15], '#f1eed1');
+    // Seat the roof cap into the upper body so it cannot read as a floating slab.
+    cube([0.05, 1.96, 0.03], [length - 0.1, 0.15, width - 0.06], '#f1eed1');
     cube([1.35, 2.1, 0.29], [0.8, 0.08, 0.49], '#879d90');
-    cube([length - 0.14, 1.58, 0.12], [0.025, 0.32, width - 0.24], '#527f8f');
+    cube([length - 0.14, 1.58, 0.12], [0.025, 0.32, width - 0.24], '#bfe3ff');
   } else if (kind === 'truck') {
     cube([0.05, 1.25, 0.035], [1.7, 1.0, width - 0.07], '#f3f0df');
     cube([0.01, 2.25, 0], [1.8, 0.08, width], '#d4dfcf');
@@ -147,11 +148,11 @@ export function railViaduct(b: Builder, x: number, z: number, length: number) {
 }
 
 export function parkTree(b: Builder, x: number, z: number, scale = 1, variant = 0) {
-  b.box([x - 0.35 * scale, 0.73, z - 0.35 * scale], [0.7 * scale, 0.1, 0.7 * scale], '#90b962');
-  b.box([x - 0.12 * scale, 0.82, z - 0.12 * scale], [0.24 * scale, 2.2 * scale, 0.24 * scale], '#825331');
+  b.box([x - 0.35 * scale, 0.73, z - 0.35 * scale], [0.7 * scale, 0.1, 0.7 * scale], '#90b962', { role: 'landscape' });
+  b.box([x - 0.12 * scale, 0.82, z - 0.12 * scale], [0.24 * scale, 2.2 * scale, 0.24 * scale], '#825331', { role: 'landscape' });
   const greens = ['#50a537', '#74bd37', '#91cf40', '#62ad32'];
-  b.box([x - 0.61 * scale, 0.73 + 1.57 * scale, z - 0.56 * scale], [1.22 * scale, 1.17 * scale, 1.12 * scale], greens[variant % 4]);
-  b.box([x - 0.41 * scale, 0.73 + 2.74 * scale, z - 0.38 * scale], [0.82 * scale, 0.34 * scale, 0.76 * scale], greens[(variant + 2) % 4]);
-  b.box([x - 0.84 * scale, 0.73 + 1.98 * scale, z - 0.28 * scale], [0.39 * scale, 0.55 * scale, 0.66 * scale], greens[(variant + 1) % 4]);
-  b.box([x + 0.48 * scale, 0.73 + 1.69 * scale, z - 0.3 * scale], [0.38 * scale, 0.65 * scale, 0.68 * scale], greens[(variant + 3) % 4]);
+  b.box([x - 0.61 * scale, 0.73 + 1.57 * scale, z - 0.56 * scale], [1.22 * scale, 1.17 * scale, 1.12 * scale], greens[variant % 4], { role: 'landscape' });
+  b.box([x - 0.41 * scale, 0.73 + 2.74 * scale, z - 0.38 * scale], [0.82 * scale, 0.34 * scale, 0.76 * scale], greens[(variant + 2) % 4], { role: 'landscape' });
+  b.box([x - 0.84 * scale, 0.73 + 1.98 * scale, z - 0.28 * scale], [0.39 * scale, 0.55 * scale, 0.66 * scale], greens[(variant + 1) % 4], { role: 'landscape' });
+  b.box([x + 0.48 * scale, 0.73 + 1.69 * scale, z - 0.3 * scale], [0.38 * scale, 0.65 * scale, 0.68 * scale], greens[(variant + 3) % 4], { role: 'landscape' });
 }

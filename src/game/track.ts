@@ -14,6 +14,39 @@ export interface TrackSample {
 const DS = 0.5; // integration step (world units)
 const DEG = Math.PI / 180;
 
+/* =========================================================================
+ * ONE WORLD — three cities on a single continuous track.
+ * The route cycles SHIBUYA -> TOKYO -> MT. HARUNA, each district a block of
+ * ZONE_BLOCK meters (28 x 12 m chunks, so every chunk belongs entirely to
+ * one city and ground geometry / decor never straddles a border).
+ * ========================================================================= */
+export const ZONE_ORDER = ["shibuya", "tokyo", "haruna"] as const;
+export type Zone = (typeof ZONE_ORDER)[number];
+/** World selector: "mix" = satu lintasan 3 kota berulang; lainnya = satu kota saja. */
+export type WorldMode = Zone | "mix";
+export const ZONE_BLOCK = 336;
+let ACTIVE_MODE: WorldMode = "mix";
+export function setActiveZoneMode(m: WorldMode): void {
+  ACTIVE_MODE = m;
+}
+export function worldMode(): WorldMode {
+  return ACTIVE_MODE;
+}
+/** true hanya di MIX — pemakai guard batas kota (tunnel fit, edge chunk, entry descent). */
+export function zoneBoundariesActive(): boolean {
+  return ACTIVE_MODE === "mix";
+}
+export function zoneForS(s: number): Zone {
+  if (ACTIVE_MODE !== "mix") return ACTIVE_MODE;
+  return ZONE_ORDER[Math.floor(Math.max(0, s) / ZONE_BLOCK) % ZONE_ORDER.length];
+}
+/** End s of the zone block that contains s (== start of the next city).
+ *  Mode satu-kota TIDAK punya batas -> s + 100000 membuat semua guard batas jadi no-op. */
+export function zoneBlockEnd(s: number): number {
+  if (ACTIVE_MODE !== "mix") return s + 100000;
+  return (Math.floor(Math.max(0, s) / ZONE_BLOCK) + 1) * ZONE_BLOCK;
+}
+
 interface Turn {
   s0: number;
   s1: number;
@@ -47,7 +80,7 @@ const _s: TrackSample = { x: 0, y: 0, z: 0, th: 0, g: 0, kappa: 0 };
  */
 export class Track {
   end = 0;
-  mode: "tokyo" | "haruna" | "shibuya" = "shibuya";
+  mode: WorldMode = "mix";
   private turns: Turn[] = [];
   private ramps: Ramp[] = [];
   private planEnd = 0;
@@ -63,13 +96,14 @@ export class Track {
   private iz = 0;
   private ith = 0;
 
-  constructor(mode: "tokyo" | "haruna" | "shibuya" = "shibuya") {
+  constructor(mode: WorldMode = "mix") {
     this.mode = mode;
     this.reset(mode);
   }
 
-  reset(mode?: "tokyo" | "haruna" | "shibuya") {
+  reset(mode?: WorldMode) {
     if (mode) this.mode = mode;
+    if (mode) setActiveZoneMode(mode);
     this.featureCount = 0;
     this.turns = [];
     this.ramps = [];
@@ -118,25 +152,37 @@ export class Track {
   }
 
   private addFeature() {
-    const isHaruna = this.mode === "haruna";
-    const s = this.planEnd + (isHaruna ? rand(4, 10) : rand(8, 18));
+    let s = this.planEnd + rand(8, 18);
+    const z = zoneForS(s);
+    if (z === "haruna") s = this.planEnd + rand(4, 10);
     const dir = Math.random() < 0.5 ? 1 : -1;
     const idx = this.featureCount++;
+    // BATAS-KOTA AMAN: satu fitur tidak boleh melintasi batas zona. Bila sisa blok < 110 m,
+    // pakai straight penghubung (grade & heading sudah 0 di titik ini) — pergantian kota
+    // terasa seperti jalan sambungan, bukan hairpin/descent yang terpotong di tengah.
+    const bend = zoneBlockEnd(s);
+    if (bend - s < 110) {
+      this.planEnd = Math.max(this.planEnd + 24, bend + rand(14, 40));
+      return;
+    }
 
-    if (isHaruna) {
+    if (z === "haruna") {
       // Mount Haruna (Gunma Touge Downhill Pass / Initial D Akina)
       const r = Math.random();
-      if (idx === 0) {
-        // Immediate start of the Haruna mountain downhill touge right after starting line
-        const total = this.addDescent(s, 0.24, 75, 12);
+      // MIX: downhill pembuka setiap masuk blok touge. Mode Haruna-only: perilaku lama (fitur #0).
+      const isEntry = zoneBoundariesActive() ? s - (bend - ZONE_BLOCK) < 150 : idx === 0;
+      if (isEntry) {
+        // Immediate start of the Haruna mountain downhill touge at the district entrance
+        const total = this.addDescent(s, 0.24, Math.min(75, bend - s - 42), 12);
         this.turns.push(
           { s0: s + 10, s1: s + 38, dth: dir * 24 * DEG },
           { s0: s + 38, s1: s + 66, dth: -dir * 24 * DEG }
         );
-        this.planEnd = s + total + 6;
+        this.planEnd = Math.min(s + total + 6, bend);
         return;
       }
-      if (r < 0.35) {
+      const room = bend - s; // ruang tersisa di blok touge — fitur besar hanya bila muat penuh
+      if (room >= 250 && r < 0.35) {
         // The legendary 5 consecutive hairpins of Mount Haruna (5-ren hairpin)!
         const hpL = rand(24, 30);
         const hpDth = dir * rand(26, 36) * DEG;
@@ -150,7 +196,7 @@ export class Track {
           curDir = -curDir;
         }
         this.planEnd = Math.max(curS, s + totalDesc);
-      } else if (r < 0.65) {
+      } else if (room >= 150 && r < 0.65) {
         // Double hairpin S-chicane downhill
         const L = rand(26, 36);
         const dth = dir * rand(24, 34) * DEG;
@@ -158,7 +204,7 @@ export class Track {
         const total = this.addDescent(s, G, L * 2 + 12, 10);
         this.turns.push({ s0: s, s1: s + L, dth }, { s0: s + L, s1: s + 2 * L, dth: -dth });
         this.planEnd = s + Math.max(total, 2 * L);
-      } else if (r < 0.85) {
+      } else if (room >= 120 && r < 0.85) {
         // Steep mountain plunge ("Akina Gutter Drop") with high-speed sweeping turn
         const L = rand(32, 44);
         const dth = dir * rand(18, 26) * DEG;
@@ -176,16 +222,17 @@ export class Track {
 
     // Tokyo City mode — Shibuya Night shares the city plan but stays flatter with long neon
     // boulevards and gentle sweepers so the glowing building canyon reads well at speed.
-    if (this.mode === "shibuya") {
+    const cityRoom = bend - s;
+    if (z === "shibuya") {
       const dthS = dir * rand(7, 13) * DEG;
       const LS = rand(34, 48);
       const rS = Math.random();
-      if (rS < 0.3) {
+      if (rS < 0.3 || cityRoom < 130) {
         this.planEnd = s + rand(16, 30); // long straight under the billboards
-      } else if (rS < 0.66) {
+      } else if (rS < 0.66 || cityRoom < 220) {
         this.turns.push({ s0: s, s1: s + LS, dth: dthS }, { s0: s + LS, s1: s + 2 * LS, dth: -dthS });
         this.planEnd = s + 2 * LS;
-      } else if (rS < 0.82) {
+      } else if (rS < 0.82 && cityRoom >= 4 * 48 + 14) {
         this.turns.push({ s0: s, s1: s + LS, dth: dthS }, { s0: s + LS, s1: s + 3 * LS, dth: -2 * dthS }, { s0: s + 3 * LS, s1: s + 4 * LS, dth: dthS });
         this.planEnd = s + 4 * LS;
       } else {
@@ -209,7 +256,7 @@ export class Track {
       // wide S-curve
       this.turns.push({ s0: s, s1: s + L, dth }, { s0: s + L, s1: s + 2 * L, dth: -dth });
       this.planEnd = s + 2 * L;
-    } else if (r < 0.58) {
+    } else if (r < 0.58 && bend - s >= 180) {
       // triple S (out - back through - return)
       this.turns.push({ s0: s, s1: s + L, dth }, { s0: s + L, s1: s + 3 * L, dth: -2 * dth }, { s0: s + 3 * L, s1: s + 4 * L, dth });
       this.planEnd = s + 4 * L;

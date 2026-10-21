@@ -18,6 +18,9 @@ html,
 body,
 #root {
   height: 100%;
+  /* dvh = viewport dinamis: aman saat URL bar mobile show/hide & di WebView fullscreen.
+     Fallback 100% sudah di baris atas untuk engine lama. */
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
   background: #151823;
@@ -25,6 +28,7 @@ body,
   overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none; /* long-press di WebView APK: tidak memunculkan callout/save-dialog */
   -webkit-tap-highlight-color: transparent;
   font-family: var(--font-body);
 }
@@ -303,7 +307,7 @@ body,
 }
 
 .sky {
-  background: linear-gradient(180deg, #9fd4ff 0%, #c9e9ff 40%, #e6f5ff 100%);
+  background: linear-gradient(180deg, #55bfff 0%, #8fdcff 45%, #e9fbff 100%);
 }
 
 .shake {
